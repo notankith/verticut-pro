@@ -10,11 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ProjectIdRouteImport } from './routes/project/$id'
 import { Route as ApiPublicRenderCompleteRouteImport } from './routes/api/public/render-complete'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectIdRoute = ProjectIdRouteImport.update({
+  id: '/project/$id',
+  path: '/project/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicRenderCompleteRoute = ApiPublicRenderCompleteRouteImport.update({
@@ -25,27 +31,31 @@ const ApiPublicRenderCompleteRoute = ApiPublicRenderCompleteRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/project/$id': typeof ProjectIdRoute
   '/api/public/render-complete': typeof ApiPublicRenderCompleteRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/project/$id': typeof ProjectIdRoute
   '/api/public/render-complete': typeof ApiPublicRenderCompleteRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/project/$id': typeof ProjectIdRoute
   '/api/public/render-complete': typeof ApiPublicRenderCompleteRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/public/render-complete'
+  fullPaths: '/' | '/project/$id' | '/api/public/render-complete'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/public/render-complete'
-  id: '__root__' | '/' | '/api/public/render-complete'
+  to: '/' | '/project/$id' | '/api/public/render-complete'
+  id: '__root__' | '/' | '/project/$id' | '/api/public/render-complete'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ProjectIdRoute: typeof ProjectIdRoute
   ApiPublicRenderCompleteRoute: typeof ApiPublicRenderCompleteRoute
 }
 
@@ -56,6 +66,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/project/$id': {
+      id: '/project/$id'
+      path: '/project/$id'
+      fullPath: '/project/$id'
+      preLoaderRoute: typeof ProjectIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/render-complete': {
@@ -70,6 +87,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ProjectIdRoute: ProjectIdRoute,
   ApiPublicRenderCompleteRoute: ApiPublicRenderCompleteRoute,
 }
 export const routeTree = rootRouteImport
