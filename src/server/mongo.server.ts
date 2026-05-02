@@ -1,14 +1,19 @@
-import { MongoClient, type Db } from "mongodb";
+import { MongoClient, type Collection, type Document } from "mongodb";
 
 let client: MongoClient | null = null;
-let dbPromise: Promise<Db> | null = null;
+let dbPromise: Promise<{ coll: <T extends Document = Document>(name: string) => Collection<T> }> | null = null;
 
-export function getDb(): Promise<Db> {
+export function getDb() {
   if (dbPromise) return dbPromise;
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error("MONGODB_URI is not configured");
   client = new MongoClient(uri);
-  dbPromise = client.connect().then((c) => c.db("verticut"));
+  dbPromise = client.connect().then((c) => {
+    const db = c.db("verticut");
+    return {
+      coll: <T extends Document = Document>(name: string) => db.collection<T>(name),
+    };
+  });
   return dbPromise;
 }
 
