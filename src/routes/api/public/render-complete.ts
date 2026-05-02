@@ -22,7 +22,7 @@ export const Route = createFileRoute("/api/public/render-complete")({
         if (typeof body.progress === "number") update.progress = body.progress;
         if (body.url) update.url = body.url;
         if (body.error) update.error = body.error;
-        await db.collection("renders").updateOne({ _id: body.jobId }, { $set: update });
+        await db.collection("renders").updateOne({ _id: body.jobId } as never, { $set: update });
         return Response.json({ ok: true });
       },
     },

@@ -1,11 +1,21 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
 import { randomUUID } from "crypto";
 import { getDb, type ProjectDoc, type SettingsDoc, type ClipDoc, type RenderDoc } from "./mongo.server";
 import { presignPut, publicUrl } from "./r2.server";
 import { submitTranscript, getTranscript } from "./assemblyai.server";
 
-// ---------------- R2 presign ----------------
+// Untyped collection helper to avoid Mongo's ObjectId _id constraint (we use string ids)
+async function C<T = unknown>(name: string) {
+  const db = await getDb();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return db.collection(name) as unknown as {
+    insertOne: (doc: T) => Promise<unknown>;
+    findOne: (filter: unknown, opts?: unknown) => Promise<T | null>;
+    find: (filter?: unknown, opts?: unknown) => { sort: (s: unknown) => { limit?: (n: number) => { toArray: () => Promise<T[]> }; toArray: () => Promise<T[]> }; toArray: () => Promise<T[]> };
+    updateOne: (filter: unknown, update: unknown, opts?: unknown) => Promise<unknown>;
+  };
+}
+
 export const presignUpload = createServerFn({ method: "POST" })
   .inputValidator((d: { kind: "audio" | "image" | "music"; ext: string; contentType: string }) => d)
   .handler(async ({ data }) => {
@@ -16,7 +26,6 @@ export const presignUpload = createServerFn({ method: "POST" })
     return { uploadUrl: url, key, publicUrl: publicUrl(key) };
   });
 
-// ---------------- Projects ----------------
 function defaultSettings(projectId: string): SettingsDoc {
   return {
     _id: projectId,
@@ -36,11 +45,12 @@ function defaultSettings(projectId: string): SettingsDoc {
 export const createProjectFromAudio = createServerFn({ method: "POST" })
   .inputValidator((d: { audioKey: string; audioUrl: string }) => d)
   .handler(async ({ data }) => {
-    const db = await getDb();
+    const projects = await C<ProjectDoc>("projects");
+    const settings = await C<SettingsDoc>("settings");
     const id = randomUUID();
     const transcriptId = await submitTranscript(data.audioUrl);
     const now = Date.now();
-    const doc: ProjectDoc & { transcriptJobId: string; clips: ClipDoc[] } = {
+    await projects.insertOne({
       _id: id,
       name: "Transcribing…",
       audioKey: data.audioKey,
@@ -52,16 +62,24 @@ export const createProjectFromAudio = createServerFn({ method: "POST" })
       clips: [],
       createdAt: now,
       updatedAt: now,
-    };
-    await db.collection("projects").insertOne(doc as never);
-    await db.collection("settings").insertOne(defaultSettings(id) as never);
+    });
+    await settings.insertOne(defaultSettings(id));
     return { id };
   });
 
-export const listProjects = createServerFn({ method: "GET" }).handler(async () => {
-  const db = await getDb();
-  const projects = await db.collection("projects").find({}, { projection: { transcript: 0 } }).sort({ createdAt: -1 }).toArray();
-  return projects.map((p) => ({
+export type ProjectListItem = {
+  id: string;
+  name: string;
+  duration: number;
+  clipCount: number;
+  createdAt: number;
+  transcriptStatus: ProjectDoc["transcriptStatus"];
+};
+
+export const listProjects = createServerFn({ method: "GET" }).handler(async (): Promise<ProjectListItem[]> => {
+  const projects = await C<ProjectDoc>("projects");
+  const docs = await projects.find({}, { projection: { transcript: 0 } }).sort({ createdAt: -1 }).toArray();
+  return docs.map((p) => ({
     id: p._id,
     name: p.name,
     duration: p.audioDuration ?? 0,
@@ -71,21 +89,32 @@ export const listProjects = createServerFn({ method: "GET" }).handler(async () =
   }));
 });
 
+export type ProjectFull = {
+  id: string;
+  name: string;
+  audioUrl: string;
+  audioDuration: number;
+  transcript: ProjectDoc["transcript"];
+  transcriptStatus: ProjectDoc["transcriptStatus"];
+  clips: ClipDoc[];
+  settings: SettingsDoc;
+};
+
 export const getProject = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => d)
-  .handler(async ({ data }) => {
-    const db = await getDb();
-    const p = (await db.collection("projects").findOne({ _id: data.id })) as (ProjectDoc & { transcriptJobId?: string; clips: ClipDoc[] }) | null;
+  .handler(async ({ data }): Promise<ProjectFull> => {
+    const projects = await C<ProjectDoc>("projects");
+    const settingsC = await C<SettingsDoc>("settings");
+    const p = await projects.findOne({ _id: data.id });
     if (!p) throw new Error("Project not found");
 
-    // If pending, poll AssemblyAI
     if (p.transcriptStatus === "pending" && p.transcriptJobId) {
       const r = await getTranscript(p.transcriptJobId);
       if (r.status === "completed") {
         const words = (r.words ?? []).map((w) => ({ text: w.text, start: w.start / 1000, end: w.end / 1000 }));
         const firstSeven = words.slice(0, 7).map((w) => w.text).join(" ").trim() || "Untitled Project";
         const duration = r.audio_duration ?? (words.at(-1)?.end ?? 0);
-        await db.collection("projects").updateOne(
+        await projects.updateOne(
           { _id: data.id },
           {
             $set: {
@@ -102,12 +131,12 @@ export const getProject = createServerFn({ method: "POST" })
         p.audioDuration = duration;
         p.transcriptStatus = "ready";
       } else if (r.status === "error") {
-        await db.collection("projects").updateOne({ _id: data.id }, { $set: { transcriptStatus: "error" } });
+        await projects.updateOne({ _id: data.id }, { $set: { transcriptStatus: "error" } });
         p.transcriptStatus = "error";
       }
     }
 
-    const settings = (await db.collection("settings").findOne({ _id: data.id })) as SettingsDoc | null;
+    const settings = await settingsC.findOne({ _id: data.id });
     return {
       id: p._id,
       name: p.name,
@@ -123,8 +152,8 @@ export const getProject = createServerFn({ method: "POST" })
 export const saveProject = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string; clips: ClipDoc[] }) => d)
   .handler(async ({ data }) => {
-    const db = await getDb();
-    await db.collection("projects").updateOne(
+    const projects = await C<ProjectDoc>("projects");
+    await projects.updateOne(
       { _id: data.id },
       { $set: { clips: data.clips, updatedAt: Date.now() } },
     );
@@ -134,8 +163,8 @@ export const saveProject = createServerFn({ method: "POST" })
 export const saveSettings = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string; settings: SettingsDoc }) => d)
   .handler(async ({ data }) => {
-    const db = await getDb();
-    await db.collection("settings").updateOne(
+    const settingsC = await C<SettingsDoc>("settings");
+    await settingsC.updateOne(
       { _id: data.id },
       { $set: { ...data.settings, _id: data.id } },
       { upsert: true },
@@ -143,24 +172,26 @@ export const saveSettings = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-// ---------------- Render queue ----------------
 function slugFilename(name: string) {
   return (
-    name
+    (name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/(^-|-$)/g, "")
-      .slice(0, 80) || "verticut"
-  ) + ".mp4";
+      .slice(0, 80) || "verticut") + ".mp4"
+  );
 }
 
 export const enqueueRender = createServerFn({ method: "POST" })
   .inputValidator((d: { projectId: string }) => d)
   .handler(async ({ data }) => {
-    const db = await getDb();
-    const project = (await db.collection("projects").findOne({ _id: data.projectId })) as (ProjectDoc & { clips: ClipDoc[] }) | null;
+    const projects = await C<ProjectDoc>("projects");
+    const settingsC = await C<SettingsDoc>("settings");
+    const renders = await C<RenderDoc>("renders");
+
+    const project = await projects.findOne({ _id: data.projectId });
     if (!project) throw new Error("Project not found");
-    const settings = (await db.collection("settings").findOne({ _id: data.projectId })) as SettingsDoc | null;
+    const settings = await settingsC.findOne({ _id: data.projectId });
     const id = randomUUID();
     const filename = slugFilename(project.name);
     const render: RenderDoc = {
@@ -171,13 +202,13 @@ export const enqueueRender = createServerFn({ method: "POST" })
       progress: 0,
       createdAt: Date.now(),
     };
-    await db.collection("renders").insertOne(render as never);
+    await renders.insertOne(render);
 
     const workerUrl = process.env.RENDER_WORKER_URL;
     const secret = process.env.RENDER_WORKER_SECRET;
     if (workerUrl && secret) {
       try {
-        await fetch(workerUrl.replace(/\/$/, "") + "/render", {
+        const r = await fetch(workerUrl.replace(/\/$/, "") + "/render", {
           method: "POST",
           headers: { "content-type": "application/json", "x-worker-secret": secret },
           body: JSON.stringify({
@@ -193,11 +224,14 @@ export const enqueueRender = createServerFn({ method: "POST" })
             settings: settings ?? defaultSettings(data.projectId),
           }),
         });
+        if (!r.ok) {
+          await renders.updateOne({ _id: id }, { $set: { status: "error", error: `Worker returned ${r.status}` } });
+        }
       } catch (e) {
-        await db.collection("renders").updateOne({ _id: id }, { $set: { status: "error", error: String(e) } });
+        await renders.updateOne({ _id: id }, { $set: { status: "error", error: String(e) } });
       }
     } else {
-      await db.collection("renders").updateOne(
+      await renders.updateOne(
         { _id: id },
         { $set: { status: "error", error: "Render worker not configured (set RENDER_WORKER_URL & RENDER_WORKER_SECRET)" } },
       );
@@ -205,9 +239,20 @@ export const enqueueRender = createServerFn({ method: "POST" })
     return { id, filename };
   });
 
-export const listRenders = createServerFn({ method: "GET" }).handler(async () => {
-  const db = await getDb();
-  const items = await db.collection("renders").find({}).sort({ createdAt: -1 }).limit(50).toArray();
+export type RenderItem = {
+  id: string;
+  projectId: string;
+  filename: string;
+  status: RenderDoc["status"];
+  progress: number;
+  url?: string;
+  error?: string;
+  createdAt: number;
+};
+
+export const listRenders = createServerFn({ method: "GET" }).handler(async (): Promise<RenderItem[]> => {
+  const renders = await C<RenderDoc>("renders");
+  const items = (await renders.find({}).sort({ createdAt: -1 }).toArray()).slice(0, 50);
   return items.map((r) => ({
     id: r._id,
     projectId: r.projectId,
