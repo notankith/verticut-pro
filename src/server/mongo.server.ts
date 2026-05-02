@@ -1,20 +1,21 @@
-import { MongoClient, type Collection, type Document } from "mongodb";
+import { MongoClient, type Db, type Document } from "mongodb";
 
 let client: MongoClient | null = null;
-let dbPromise: Promise<{ coll: <T extends Document = Document>(name: string) => Collection<T> }> | null = null;
+let dbPromise: Promise<Db> | null = null;
 
-export function getDb() {
+export function getDb(): Promise<Db> {
   if (dbPromise) return dbPromise;
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error("MONGODB_URI is not configured");
   client = new MongoClient(uri);
-  dbPromise = client.connect().then((c) => {
-    const db = c.db("verticut");
-    return {
-      coll: <T extends Document = Document>(name: string) => db.collection<T>(name),
-    };
-  });
+  dbPromise = client.connect().then((c) => c.db("verticut"));
   return dbPromise;
+}
+
+// Helper to get an untyped collection (we use string _ids, not ObjectId)
+export async function coll<T extends Document = Document>(name: string) {
+  const db = await getDb();
+  return db.collection<T & { _id: string }>(name as never) as unknown as ReturnType<Db["collection"]>;
 }
 
 export type ProjectDoc = {
@@ -25,14 +26,16 @@ export type ProjectDoc = {
   audioDuration: number;
   transcript: { text: string; start: number; end: number }[];
   transcriptStatus: "pending" | "ready" | "error";
+  transcriptJobId?: string;
+  clips?: ClipDoc[];
   createdAt: number;
   updatedAt: number;
 };
 
 export type ClipDoc = {
   id: string;
-  start: number; // seconds
-  duration: number; // seconds
+  start: number;
+  duration: number;
   imageKey: string;
   imageUrl: string;
   animation: "zoom-in" | "zoom-out" | "pan-left" | "pan-right";
@@ -41,7 +44,7 @@ export type ClipDoc = {
 };
 
 export type SettingsDoc = {
-  _id: string; // = projectId
+  _id: string;
   defaultLabelText: string;
   defaultFontSize: number;
   animationIntensity: number;
