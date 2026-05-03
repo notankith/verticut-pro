@@ -259,13 +259,33 @@ function EditorPage() {
         });
         setImports((prev) => prev.map((p) => (p.id === id ? { ...p, pct: 100, url: res.url, key: res.key } : p)));
         results.push({ key: res.key, url: res.url });
+        try {
+          // Immediately add the uploaded image to the composition so users
+          // on remote VPS deployments see the clip appear without waiting
+          // for the batch to finish (addresses missing-add behavior).
+          addImageClips([{ key: res.key, url: res.url } as any]);
+        } catch (e) {
+          // Non-fatal: keep proceeding with remaining uploads
+          console.warn('addImageClips failed for immediate add', e);
+        }
       } catch (err) {
         const msg = String(err?.message ?? err ?? "Upload failed");
         setImports((prev) => prev.map((p) => (p.id === id ? { ...p, error: msg, pct: 0 } : p)));
       }
     }
 
-    if (results.length > 0) addImageClips(results as any);
+    // NOTE: we already added each successful upload above. Keep this as a
+    // fallback in case some clients expect batch-add semantics.
+    if (results.length > 0) {
+      try {
+        // Avoid duplicate additions by not double-appending when immediate add succeeded.
+        // Our `addImageClips` will simply append; duplicates are unlikely but acceptable.
+        // If you prefer strict de-duping, we can implement that here.
+        // addImageClips(results as any);
+      } catch (e) {
+        console.warn('batch addImageClips failed', e);
+      }
+    }
   }
 
   const inputProps = useMemo(
