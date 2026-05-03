@@ -214,7 +214,7 @@ app.get('/health', (_req, res) => {
     isProcessing,
     currentJobId,
     currentJobElapsed: currentJobStart ? Math.round((Date.now() - currentJobStart) / 1000) : null,
-    hasCachedBundle: !!cachedBundleUrl,
+    hasCachedBundle: bundleCache.size > 0,
   });
 });
 
