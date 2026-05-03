@@ -1,18 +1,58 @@
 import path from 'path';
 import url from 'url';
+import fs from 'fs';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
 let serverModule;
-try {
-  // The dist is produced during the Vercel build step. Import the server bundle.
-  serverModule = await import(path.join(__dirname, '../dist/server/index.js'));
-} catch (err) {
-  // Fallback: try relative path without join
+let lastError = null;
+
+// Try a set of likely locations for the built server bundle (Vercel may
+// place build outputs in slightly different paths depending on the builder).
+const candidates = [
+  path.join(__dirname, '../dist/server/index.js'),
+  path.join(__dirname, './dist/server/index.js'),
+  path.join(process.cwd(), 'dist/server/index.js'),
+  path.join(process.cwd(), 'dist', 'server', 'index.js'),
+  path.join(__dirname, '../.vercel/output/functions/api/index.func/dist/server/index.js'),
+];
+
+for (const p of candidates) {
+  try {
+    if (fs.existsSync(p)) {
+      serverModule = await import(url.pathToFileURL(p).href);
+      break;
+    }
+    // Try a direct import by specifier as a last resort
+    try {
+      serverModule = await import(p);
+      break;
+    } catch (e) {
+      lastError = e;
+    }
+  } catch (e) {
+    lastError = e;
+  }
+}
+
+// Final fallback: try the simple relative import used previously
+if (!serverModule) {
   try {
     serverModule = await import('../dist/server/index.js');
   } catch (e) {
-    console.error('Failed to load server bundle:', e);
+    lastError = e;
+  }
+}
+
+if (!serverModule) {
+  try {
+    const dirListing = {
+      __dirname: fs.readdirSync(__dirname).slice(0, 200),
+      processCwd: fs.readdirSync(process.cwd()).slice(0, 200),
+    };
+    console.error('Failed to load server bundle. Directory listing:', dirListing, 'lastError:', lastError);
+  } catch (e) {
+    console.error('Failed to load server bundle and could not list directories', e, 'lastError:', lastError);
   }
 }
 
