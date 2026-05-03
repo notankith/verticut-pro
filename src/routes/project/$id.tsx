@@ -96,6 +96,26 @@ function EditorPage() {
     await saveProject({ data: { id, clips: clipsArg } });
   });
 
+  // Aggressively preload all clip images + the gradient overlay into the
+  // browser cache. R2 sets `immutable` Cache-Control, so once an image is
+  // loaded here it stays decoded for the rest of the session — scrubbing
+  // and switching clips never re-downloads.
+  useEffect(() => {
+    const urls = new Set<string>();
+    for (const c of clips) if (c.imageUrl) urls.add(c.imageUrl);
+    urls.add(OVERLAY_URL);
+    const imgs: HTMLImageElement[] = [];
+    for (const u of urls) {
+      const img = new Image();
+      img.decoding = "async";
+      img.src = u;
+      imgs.push(img);
+    }
+    return () => {
+      for (const i of imgs) i.src = "";
+    };
+  }, [clips]);
+
   const totalFrames = Math.max(1, Math.round(audioDuration * FPS));
 
   const seekTo = useCallback(
@@ -107,9 +127,7 @@ function EditorPage() {
   );
 
   const [pasting, setPasting] = useState(false);
-  const [pasteProgress, setPasteProgress] = useState<number | null>(null);
   const [pasteError, setPasteError] = useState<string | null>(null);
-  const [imports, setImports] = useState<Array<{ id: string; name: string; pct: number; error?: string; url?: string; key?: string }>>([]);
 
   // Global Ctrl+V image paste — uploads clipboard images (blobs or URLs) and
   // appends them as new clips. Skipped while the user is typing in any input.
@@ -128,11 +146,7 @@ function EditorPage() {
       }
       try {
         setPasteError(null);
-        setPasteProgress(0);
         const uploaded = await extractAndUploadPastedImages(ev, {
-          onProgress: (_idx, pct) => {
-            setPasteProgress(pct);
-          },
           onError: (_idx, err) => {
             setPasteError(String(err));
           },
@@ -145,12 +159,10 @@ function EditorPage() {
           addImageClips(uploaded);
         } finally {
           setPasting(false);
-          setPasteProgress(null);
         }
       } catch (err) {
         console.error("Paste upload failed", err);
         setPasting(false);
-        setPasteProgress(null);
         setPasteError(String(err));
       }
     };
@@ -245,45 +257,12 @@ function EditorPage() {
   async function onImageImport(files: FileList | null) {
     if (!files || files.length === 0) return;
     const arr = Array.from(files);
-    const ids = arr.map((f, i) => ({ id: (crypto as any).randomUUID?.() || `${Date.now()}-${i}`, name: f.name }));
-    // initialize UI entries
-    setImports((prev) => [...prev, ...ids.map((x) => ({ id: x.id, name: x.name, pct: 0 }))]);
-
-    const results = [] as { key: string; url: string }[];
-    for (let i = 0; i < arr.length; i++) {
-      const f = arr[i];
-      const id = ids[i].id;
+    for (const f of arr) {
       try {
-        const res = await uploadToR2(f, "image", (pct) => {
-          setImports((prev) => prev.map((p) => (p.id === id ? { ...p, pct } : p)));
-        });
-        setImports((prev) => prev.map((p) => (p.id === id ? { ...p, pct: 100, url: res.url, key: res.key } : p)));
-        results.push({ key: res.key, url: res.url });
-        try {
-          // Immediately add the uploaded image to the composition so users
-          // on remote VPS deployments see the clip appear without waiting
-          // for the batch to finish (addresses missing-add behavior).
-          addImageClips([{ key: res.key, url: res.url } as any]);
-        } catch (e) {
-          // Non-fatal: keep proceeding with remaining uploads
-          console.warn('addImageClips failed for immediate add', e);
-        }
+        const res = await uploadToR2(f, "image");
+        addImageClips([{ key: res.key, url: res.url }]);
       } catch (err) {
-        const msg = String(err?.message ?? err ?? "Upload failed");
-        setImports((prev) => prev.map((p) => (p.id === id ? { ...p, error: msg, pct: 0 } : p)));
-      }
-    }
-
-    // NOTE: we already added each successful upload above. Keep this as a
-    // fallback in case some clients expect batch-add semantics.
-    if (results.length > 0) {
-      try {
-        // Avoid duplicate additions by not double-appending when immediate add succeeded.
-        // Our `addImageClips` will simply append; duplicates are unlikely but acceptable.
-        // If you prefer strict de-duping, we can implement that here.
-        // addImageClips(results as any);
-      } catch (e) {
-        console.warn('batch addImageClips failed', e);
+        console.error("Image import failed", err);
       }
     }
   }
@@ -351,8 +330,6 @@ function EditorPage() {
           <span className="text-[10px] text-muted-foreground">
             {pasteError ? (
               <span className="text-destructive" title={pasteError}>Paste failed: {pasteError}</span>
-            ) : pasteProgress != null ? (
-              `Pasting… ${pasteProgress}%`
             ) : pasting ? (
               "Pasting…"
             ) : saving === "saving" ? (
@@ -363,14 +340,6 @@ function EditorPage() {
               ""
             )}
           </span>
-              <div>
-                {imports.length > 0 ? (
-                  <UploadsToast
-                    uploads={imports}
-                    onDismiss={(id) => setImports((prev) => prev.filter((p) => p.id !== id))}
-                  />
-                ) : null}
-              </div>
           <GlobalLabelPresetSelect />
           <div className="h-4 w-px bg-border" />
           <button onClick={() => undo()} title="Undo (Ctrl+Z)" className="rounded p-1 hover:bg-accent">
@@ -406,17 +375,15 @@ function EditorPage() {
             </aside>
 
             {/* Center preview */}
-            <main className="flex flex-1 min-w-0 flex-col items-center justify-center gap-3 bg-track p-4">
-              <div className="flex w-full justify-end">
-                <button
-                  onClick={() => fileImportRef.current?.click()}
-                  className="flex items-center gap-1.5 rounded border border-border bg-panel px-2.5 py-1 text-[11px] hover:bg-accent"
-                  title="Import images (Ctrl+I)"
-                >
-                  <ImageIcon className="h-3 w-3" /> Import images
-                </button>
-              </div>
-              <div className="relative" style={{ aspectRatio: "9 / 16", height: "min(100%, 70vh)" }}>
+            <main className="relative flex flex-1 min-w-0 flex-col items-center justify-center gap-2 bg-track p-2">
+              <button
+                onClick={() => fileImportRef.current?.click()}
+                className="absolute right-2 top-2 z-10 flex items-center gap-1.5 rounded border border-border bg-panel/90 px-2.5 py-1 text-[11px] backdrop-blur hover:bg-accent"
+                title="Import images (Ctrl+I)"
+              >
+                <ImageIcon className="h-3 w-3" /> Import images
+              </button>
+              <div className="relative" style={{ aspectRatio: "9 / 16", height: "min(100%, 88vh)" }}>
                 <Player
                   ref={playerRef}
                   component={VertiCutComposition}
@@ -476,39 +443,6 @@ function EditorPage() {
       {renderJob ? (
         <RenderProgressToast job={renderJob} onDismiss={() => setRenderJob(null)} />
       ) : null}
-    </div>
-  );
-}
-
-function UploadsToast({
-  uploads,
-  onDismiss,
-}: {
-  uploads: Array<{ id: string; name: string; pct: number; error?: string; url?: string }>;
-  onDismiss: (id: string) => void;
-}) {
-  if (!uploads || uploads.length === 0) return null;
-  return (
-    <div className="fixed bottom-20 right-4 z-50 w-80 rounded-lg border border-border bg-panel p-3 shadow-lg">
-      <div className="flex flex-col gap-2">
-        {uploads.map((u) => (
-          <div key={u.id} className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <div className="truncate text-xs font-medium" title={u.name}>{u.name}</div>
-              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-accent">
-                <div className={`h-full ${u.error ? 'bg-destructive' : 'bg-primary'}`} style={{ width: `${Math.max(2, u.pct)}%` }} />
-              </div>
-              {u.error ? <div className="mt-1 text-[10px] text-destructive truncate" title={u.error}>{u.error}</div> : null}
-            </div>
-            <div className="flex flex-col items-end">
-              {u.url ? (
-                <a href={u.url} download className="text-[10px] text-primary hover:underline">Open</a>
-              ) : null}
-              <button onClick={() => onDismiss(u.id)} className="text-[10px] text-muted-foreground hover:text-foreground">Dismiss</button>
-            </div>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
@@ -595,22 +529,44 @@ function GlobalLabelPresetSelect() {
     );
   }
 
+  // The "Custom" preset is meant to be edited per-project — show its text
+  // inline so the user can type their own label without diving into Settings.
+  const isCustom = defaultPresetId === "custom";
+  const customPreset = presets.find((p) => p.id === "custom");
+
   return (
-    <select
-      value={defaultPresetId ?? ""}
-      onChange={(e) => {
-        updateSettings({ defaultPresetId: e.target.value });
-      }}
-      title="Preset applied to future imports only"
-      className="rounded border border-border bg-panel-2 px-2 py-1 text-[11px]"
-    >
-      <option value="">(No preset)</option>
-      {presets.map((p) => (
-        <option key={p.id} value={p.id}>
-          {p.name}
-        </option>
-      ))}
-    </select>
+    <div className="flex items-center gap-1.5">
+      <select
+        value={defaultPresetId ?? ""}
+        onChange={(e) => {
+          updateSettings({ defaultPresetId: e.target.value });
+        }}
+        title="Preset applied to future imports only"
+        className="rounded border border-border bg-panel-2 px-2 py-1 text-[11px]"
+      >
+        <option value="">(No preset)</option>
+        {presets.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+      {isCustom && customPreset ? (
+        <input
+          value={customPreset.text}
+          onChange={(e) => {
+            updateSettings({
+              presets: presets.map((p) =>
+                p.id === "custom" ? { ...p, text: e.target.value } : p,
+              ),
+            });
+          }}
+          placeholder="Custom label text"
+          title="Custom label text used for new imports"
+          className="w-44 rounded border border-border bg-panel-2 px-2 py-1 text-[11px]"
+        />
+      ) : null}
+    </div>
   );
 }
 

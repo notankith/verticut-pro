@@ -16,6 +16,10 @@ export async function uploadToR2(
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", uploadUrl);
     xhr.setRequestHeader("content-type", file.type || "application/octet-stream");
+    // Must match the Cache-Control set on the presigned PutObjectCommand or
+    // R2 rejects the signature. Yields long-lived browser/CDN caching since
+    // R2 keys are content-addressed UUIDs.
+    xhr.setRequestHeader("cache-control", "public, max-age=31536000, immutable");
     xhr.upload.onprogress = (ev) => {
       if (ev.lengthComputable && onProgress) {
         const pct = Math.round((ev.loaded / ev.total) * 100);

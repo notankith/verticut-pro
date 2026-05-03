@@ -31,11 +31,16 @@ export function publicUrl(key: string) {
   return `${base.replace(/\/$/, "")}/${key}`;
 }
 
+// R2 keys are content-addressed (random UUIDs), so the URL is immutable —
+// browsers and CDN can cache for a year without revalidation.
+const IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable";
+
 export async function presignPut(key: string, contentType: string) {
   const cmd = new PutObjectCommand({
     Bucket: getBucket(),
     Key: key,
     ContentType: contentType,
+    CacheControl: IMMUTABLE_CACHE_CONTROL,
   });
   const url = await getSignedUrl(getClient(), cmd, { expiresIn: 600 });
   return url;
@@ -48,6 +53,7 @@ export async function uploadBuffer(key: string, buffer: Buffer | Uint8Array, con
     Key: key,
     Body: buffer,
     ContentType: contentType,
+    CacheControl: IMMUTABLE_CACHE_CONTROL,
   });
   await getClient().send(cmd);
   return publicUrl(key);

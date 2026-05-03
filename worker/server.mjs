@@ -30,8 +30,10 @@ const s3 = new S3Client({
 let bundlePromise = null;
 async function getBundle() {
   if (!bundlePromise) {
+    const publicDir = path.resolve(__dirname, "public");
     bundlePromise = bundle({
       entryPoint: path.resolve(__dirname, "remotion-entry.jsx"),
+      publicDir: fs.existsSync(publicDir) ? publicDir : undefined,
     });
   }
   return bundlePromise;

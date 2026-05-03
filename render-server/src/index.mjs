@@ -128,9 +128,12 @@ async function getOrCreateBundle(entryPathOverride) {
 
   log('BUNDLE', `Creating new Remotion bundle for ${entryPoint}`);
   const safeKey = entryPoint.replace(/[^a-z0-9]/gi, '_').slice(-80);
+  // Resolve publicDir as <render-server>/public, where GradientOverlay.png lives
+  const publicDir = path.resolve(path.dirname(entryPoint), '..', 'public');
   const bundleUrl = await bundle({
     entryPoint,
     outDir: path.join(os.tmpdir(), `remotion-bundle-${safeKey}`),
+    publicDir: fs.existsSync(publicDir) ? publicDir : undefined,
   });
   bundleCache.set(entryPoint, bundleUrl);
   log('BUNDLE', `Bundle ready: ${bundleUrl}`);

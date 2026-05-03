@@ -74,6 +74,11 @@ function KenBurns({
   );
 }
 
+// Reference clip length: animations look natural when clip ≥ this many seconds.
+// Shorter clips compress the same range into less time, which feels jittery,
+// so we scale intensity down proportionally.
+const REF_DURATION_SEC = 3.5;
+
 function ClipLayer({ clip, intensity, defaultLabelText, fontSize }: { clip: ClipDoc; intensity: number; defaultLabelText: string; fontSize: number }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -81,9 +86,11 @@ function ClipLayer({ clip, intensity, defaultLabelText, fontSize }: { clip: Clip
   const anchorX = clip.anchorX ?? 50;
   const anchorY = clip.anchorY ?? 50;
   const appliedIntensity = clip.intensity ?? intensity;
+  const durationFactor = Math.min(1, clip.duration / REF_DURATION_SEC);
+  const scaledIntensity = appliedIntensity * durationFactor;
   return (
     <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
-      <KenBurns frame={frame} duration={dur} animation={clip.animation} intensity={appliedIntensity} imageUrl={clip.imageUrl} anchorX={anchorX} anchorY={anchorY} />
+      <KenBurns frame={frame} duration={dur} animation={clip.animation} intensity={scaledIntensity} imageUrl={clip.imageUrl} anchorX={anchorX} anchorY={anchorY} />
       <div
         style={{
           position: "absolute",

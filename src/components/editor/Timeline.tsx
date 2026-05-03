@@ -29,10 +29,27 @@ export function Timeline({
     return settings.presets.find((p) => p.id === id)?.tint ?? "#71717a";
   }
 
-  function handleRulerClick(e: React.MouseEvent) {
-    const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-    const x = e.clientX - rect.left + (containerRef.current?.scrollLeft ?? 0);
-    onSeek(x / zoom);
+  function startScrubFromEvent(e: React.PointerEvent<HTMLDivElement>) {
+    const targetEl = e.currentTarget as HTMLDivElement;
+    e.preventDefault();
+    try { targetEl.setPointerCapture(e.pointerId); } catch {}
+    try { playerRef.current?.pause(); } catch {}
+    const rect = targetEl.getBoundingClientRect();
+    const seekFromClientX = (cx: number) => {
+      const x = cx - rect.left + (containerRef.current?.scrollLeft ?? 0);
+      onSeek(Math.max(0, x / zoom));
+    };
+    seekFromClientX(e.clientX);
+    const move = (ev: PointerEvent) => seekFromClientX(ev.clientX);
+    const end = (ev: PointerEvent) => {
+      try { targetEl.releasePointerCapture(ev.pointerId); } catch {}
+      targetEl.removeEventListener("pointermove", move);
+      targetEl.removeEventListener("pointerup", end);
+      targetEl.removeEventListener("pointercancel", end);
+    };
+    targetEl.addEventListener("pointermove", move);
+    targetEl.addEventListener("pointerup", end);
+    targetEl.addEventListener("pointercancel", end);
   }
 
   return (
@@ -55,9 +72,9 @@ export function Timeline({
         <div style={{ width: totalWidth }} className="relative">
           {/* Ruler */}
           <div
-            onClick={handleRulerClick}
-            className="sticky top-0 z-10 h-6 cursor-pointer border-b border-border bg-panel"
-            style={{ width: totalWidth }}
+            onPointerDown={startScrubFromEvent}
+            className="sticky top-0 z-10 h-6 cursor-ew-resize select-none border-b border-border bg-panel"
+            style={{ width: totalWidth, touchAction: "none" }}
           >
             <Ruler totalWidth={totalWidth} zoom={zoom} duration={audioDuration || 30} />
           </div>
@@ -65,23 +82,9 @@ export function Timeline({
           <div
             className="relative h-24"
             style={{ width: totalWidth }}
-            onMouseDown={(e) => {
-              // Start scrub if clicking on empty track (not on a clip handle)
+            onPointerDown={(e) => {
               if (e.target !== e.currentTarget) return;
-              const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-              const x = e.clientX - rect.left + (containerRef.current?.scrollLeft ?? 0);
-              onSeek(x / zoom);
-              // start listening for mousemove to scrub
-              function move(ev: MouseEvent) {
-                const nx = ev.clientX - rect.left + (containerRef.current?.scrollLeft ?? 0);
-                onSeek(nx / zoom);
-              }
-              function up() {
-                window.removeEventListener("mousemove", move);
-                window.removeEventListener("mouseup", up);
-              }
-              window.addEventListener("mousemove", move);
-              window.addEventListener("mouseup", up);
+              startScrubFromEvent(e);
             }}
           >
             {clips.map((c) => (
@@ -119,53 +122,50 @@ function Playhead({
 }) {
   const frame = usePlayerFrame(playerRef);
   const currentTime = frame / fps;
-  // Dragging / scrub local state
-  const [scrubbing, setScrubbing] = useState(false);
   const [scrubTime, setScrubTime] = useState<number | null>(null);
 
-  function calcTimeFromEvent(ev: MouseEvent | React.MouseEvent) {
-    const container = containerRef?.current;
-    if (!container) return 0;
-    const trackEl = container.querySelector(".relative.h-24") as HTMLElement | null;
-    const rect = trackEl?.getBoundingClientRect() ?? container.getBoundingClientRect();
-    const x = (ev as MouseEvent).clientX - rect.left + container.scrollLeft;
-    return Math.max(0, x / zoom);
-  }
-
-  function onMouseDown(e: React.MouseEvent) {
+  function onBadgePointerDown(e: React.PointerEvent<HTMLDivElement>) {
     e.preventDefault();
-    const t = calcTimeFromEvent(e);
-    setScrubTime(t);
-    setScrubbing(true);
-    // Pause player while scrubbing (preview only)
-    try {
-      playerRef?.current?.pause();
-    } catch {}
-    onSeek(t);
-    const move = (ev: MouseEvent) => {
-      const nt = calcTimeFromEvent(ev);
-      setScrubTime(nt);
-      onSeek(nt);
+    e.stopPropagation();
+    const target = e.currentTarget;
+    try { target.setPointerCapture(e.pointerId); } catch {}
+    try { playerRef?.current?.pause(); } catch {}
+    const container = containerRef?.current;
+    const trackEl = container?.querySelector(".relative.h-24") as HTMLElement | null;
+    const rect = trackEl?.getBoundingClientRect() ?? container?.getBoundingClientRect();
+    if (!rect) return;
+    const seekFromClientX = (cx: number) => {
+      const x = cx - rect.left + (container?.scrollLeft ?? 0);
+      const t = Math.max(0, x / zoom);
+      setScrubTime(t);
+      onSeek(t);
     };
-    const up = () => {
-      setScrubbing(false);
+    seekFromClientX(e.clientX);
+    const move = (ev: PointerEvent) => seekFromClientX(ev.clientX);
+    const up = (ev: PointerEvent) => {
+      try { target.releasePointerCapture(ev.pointerId); } catch {}
       setScrubTime(null);
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      target.removeEventListener("pointercancel", up);
     };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+    target.addEventListener("pointercancel", up);
   }
 
-  const displayTime = scrubbing && scrubTime != null ? scrubTime : currentTime;
+  const displayTime = scrubTime != null ? scrubTime : currentTime;
 
   return (
     <div
-      onMouseDown={onMouseDown}
-      className="absolute top-0 bottom-0 w-px bg-primary cursor-grab"
+      className="pointer-events-none absolute top-0 bottom-0 w-px bg-primary"
       style={{ left: displayTime * zoom }}
     >
-      <div className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-sm bg-primary px-1 text-[9px] font-mono text-primary-foreground">
+      <div
+        onPointerDown={onBadgePointerDown}
+        className="pointer-events-auto absolute -top-6 left-1/2 -translate-x-1/2 cursor-grab rounded-sm bg-primary px-1 text-[9px] font-mono text-primary-foreground select-none"
+        style={{ touchAction: "none" }}
+      >
         {fmtTC(displayTime)}
       </div>
     </div>

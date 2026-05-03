@@ -1,6 +1,6 @@
 // Mirror of src/remotion/composition.tsx in plain JSX so the worker can bundle without TS.
 import React from "react";
-import { AbsoluteFill, Audio, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate } from "remotion";
+import { AbsoluteFill, Audio, Img, Sequence, staticFile, useCurrentFrame, useVideoConfig, interpolate } from "remotion";
 
 const ANIM_SHIFT = 0.6;
 
@@ -38,6 +38,8 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, anchorX, an
   );
 }
 
+const REF_DURATION_SEC = 3.5;
+
 function ClipLayer({ clip, intensity, defaultLabelText, fontSize }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -45,9 +47,11 @@ function ClipLayer({ clip, intensity, defaultLabelText, fontSize }) {
   const anchorX = clip.anchorX ?? 50;
   const anchorY = clip.anchorY ?? 50;
   const appliedIntensity = clip.intensity ?? intensity;
+  const durationFactor = Math.min(1, clip.duration / REF_DURATION_SEC);
+  const scaledIntensity = appliedIntensity * durationFactor;
   return (
     <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
-      <KenBurns frame={frame} duration={dur} animation={clip.animation} intensity={appliedIntensity} imageUrl={clip.imageUrl} anchorX={anchorX} anchorY={anchorY} />
+      <KenBurns frame={frame} duration={dur} animation={clip.animation} intensity={scaledIntensity} imageUrl={clip.imageUrl} anchorX={anchorX} anchorY={anchorY} />
       <div
         style={{
           position: "absolute",
@@ -99,21 +103,19 @@ export const VertiCutComposition = ({
           </Sequence>
         );
       })}
-      {overlayUrl ? (
-        <Img
-          src={overlayUrl}
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            width: "100%",
-            height: "auto",
-            pointerEvents: "none",
-            display: "block",
-          }}
-        />
-      ) : null}
+      <Img
+        src={overlayUrl || staticFile("GradientOverlay.png")}
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: "100%",
+          height: "auto",
+          pointerEvents: "none",
+          display: "block",
+        }}
+      />
     </AbsoluteFill>
   );
 };
