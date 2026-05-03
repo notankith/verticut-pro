@@ -39,6 +39,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     animationIntensity: 1,
     musicUrl: "",
     musicVolume: 30,
+    defaultPresetId: "",
     presets: [],
   },
   selectedClipId: null,

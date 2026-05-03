@@ -41,6 +41,12 @@ export type ClipDoc = {
   animation: "zoom-in" | "zoom-out" | "pan-left" | "pan-right";
   labelText: string;
   labelPresetId: string;
+  // Per-clip animation intensity multiplier (overrides project/global intensity)
+  intensity?: number;
+  // Anchor point for the Ken Burns transform, expressed as a percentage of
+  // the layer's box (0–100). 50/50 = center. Optional for back-compat.
+  anchorX?: number;
+  anchorY?: number;
 };
 
 export type SettingsDoc = {
@@ -50,6 +56,8 @@ export type SettingsDoc = {
   animationIntensity: number;
   musicUrl: string;
   musicVolume: number;
+  // The preset to apply to future imports. Optional for back-compat.
+  defaultPresetId?: string;
   presets: { id: string; name: string; text: string; tint: string }[];
 };
 

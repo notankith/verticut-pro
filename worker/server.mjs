@@ -88,6 +88,7 @@ app.post("/render", async (req, res) => {
         intensity: settings.animationIntensity,
         durationInFrames,
         fps,
+        overlayUrl: APP_URL ? `${APP_URL.replace(/\/$/, "")}/GradientOverlay.png` : undefined,
       },
       onProgress: ({ progress }) => {
         postBack(jobId, { status: "rendering", progress });

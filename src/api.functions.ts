@@ -1,8 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { randomUUID } from "crypto";
-import { getDb, type ProjectDoc, type SettingsDoc, type ClipDoc, type RenderDoc } from "./mongo.server";
-import { presignPut, publicUrl } from "./r2.server";
-import { submitTranscript, getTranscript } from "./assemblyai.server";
+import { getDb, type ProjectDoc, type SettingsDoc, type ClipDoc, type RenderDoc } from "./server/mongo.server";
+import { presignPut, publicUrl } from "./server/r2.server";
+import { submitTranscript, getTranscript } from "./server/assemblyai.server";
 
 // Untyped collection helper to avoid Mongo's ObjectId _id constraint (we use string ids)
 async function C<T = unknown>(name: string) {
@@ -182,6 +182,18 @@ function slugFilename(name: string) {
   );
 }
 
+function getRenderServerConfig() {
+  const url = process.env.RENDER_SERVER_URL || process.env.RENDER_WORKER_URL;
+  const secret = process.env.RENDER_SERVER_SECRET || process.env.RENDER_WORKER_SECRET;
+  return { url: url?.replace(/\/$/, ""), secret };
+}
+
+function publicAppOrigin() {
+  // Best-effort: where R2/CDN-hosted overlay can be referenced. The overlay
+  // ships with Verticut's static assets, so we prefer an explicit env var.
+  return (process.env.APP_URL || process.env.PUBLIC_APP_URL || "").replace(/\/$/, "");
+}
+
 export const enqueueRender = createServerFn({ method: "POST" })
   .inputValidator((d: { projectId: string }) => d)
   .handler(async ({ data }) => {
@@ -204,16 +216,18 @@ export const enqueueRender = createServerFn({ method: "POST" })
     };
     await renders.insertOne(render);
 
-    const workerUrl = process.env.RENDER_WORKER_URL;
-    const secret = process.env.RENDER_WORKER_SECRET;
-    if (workerUrl && secret) {
+    const { url, secret } = getRenderServerConfig();
+    if (url && secret) {
       try {
-        const r = await fetch(workerUrl.replace(/\/$/, "") + "/render", {
+        const appOrigin = publicAppOrigin();
+        const overlayUrl = appOrigin ? `${appOrigin}/GradientOverlay.png` : undefined;
+        const r = await fetch(url + "/render/verticut", {
           method: "POST",
-          headers: { "content-type": "application/json", "x-worker-secret": secret },
+          headers: { "content-type": "application/json", "x-render-secret": secret },
           body: JSON.stringify({
             jobId: id,
             filename,
+            overlayUrl,
             project: {
               id: project._id,
               name: project.name,
@@ -225,7 +239,11 @@ export const enqueueRender = createServerFn({ method: "POST" })
           }),
         });
         if (!r.ok) {
-          await renders.updateOne({ _id: id }, { $set: { status: "error", error: `Worker returned ${r.status}` } });
+          const text = await r.text().catch(() => "");
+          await renders.updateOne(
+            { _id: id },
+            { $set: { status: "error", error: `Render server returned ${r.status}: ${text.slice(0, 200)}` } },
+          );
         }
       } catch (e) {
         await renders.updateOne({ _id: id }, { $set: { status: "error", error: String(e) } });
@@ -233,10 +251,100 @@ export const enqueueRender = createServerFn({ method: "POST" })
     } else {
       await renders.updateOne(
         { _id: id },
-        { $set: { status: "error", error: "Render worker not configured (set RENDER_WORKER_URL & RENDER_WORKER_SECRET)" } },
+        { $set: { status: "error", error: "Render server not configured (set RENDER_SERVER_URL/RENDER_WORKER_URL & matching secret)" } },
       );
     }
     return { id, filename };
+  });
+
+// Polls the render-server for the latest status of a job and mirrors it into
+// our `renders` collection. Returns the freshest snapshot to the client.
+export const getRenderProgress = createServerFn({ method: "POST" })
+  .inputValidator((d: { renderId: string }) => d)
+  .handler(async ({ data }) => {
+    const renders = await C<RenderDoc>("renders");
+    const local = await renders.findOne({ _id: data.renderId });
+    if (!local) throw new Error("Render not found");
+
+    // Already terminal — no need to call out
+    if (local.status === "done" || local.status === "error") {
+      return {
+        id: local._id,
+        status: local.status,
+        progress: local.progress ?? 0,
+        url: local.url,
+        error: local.error,
+      };
+    }
+
+    const { url, secret } = getRenderServerConfig();
+    if (!url || !secret) {
+      return {
+        id: local._id,
+        status: local.status,
+        progress: local.progress ?? 0,
+        url: local.url,
+        error: local.error,
+      };
+    }
+
+    try {
+      const r = await fetch(`${url}/render/status/${encodeURIComponent(local._id)}`, {
+        headers: { "x-render-secret": secret },
+      });
+      if (!r.ok) {
+        // 404 right after enqueue is normal — the job hasn't been registered yet.
+        return {
+          id: local._id,
+          status: local.status,
+          progress: local.progress ?? 0,
+          url: local.url,
+          error: local.error,
+        };
+      }
+      const remote = (await r.json()) as {
+        jobId: string;
+        status: "queued" | "rendering" | "completed" | "failed";
+        progress: number;
+        finalUrl: string | null;
+        error: string | null;
+      };
+
+      // Map remote status → local schema
+      const statusMap: Record<typeof remote.status, RenderDoc["status"]> = {
+        queued: "queued",
+        rendering: "rendering",
+        completed: "done",
+        failed: "error",
+      };
+      const mappedStatus = statusMap[remote.status] ?? local.status;
+      const progress = Math.max(0, Math.min(100, Math.round(remote.progress ?? 0)));
+
+      const update: Partial<RenderDoc> = {
+        status: mappedStatus,
+        progress,
+      };
+      if (remote.finalUrl) update.url = remote.finalUrl;
+      if (remote.error) update.error = remote.error;
+
+      await renders.updateOne({ _id: local._id }, { $set: update });
+
+      return {
+        id: local._id,
+        status: mappedStatus,
+        progress,
+        url: remote.finalUrl ?? local.url,
+        error: remote.error ?? local.error,
+      };
+    } catch (e) {
+      return {
+        id: local._id,
+        status: local.status,
+        progress: local.progress ?? 0,
+        url: local.url,
+        error: String(e),
+      };
+    }
   });
 
 export type RenderItem = {

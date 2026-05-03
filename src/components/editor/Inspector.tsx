@@ -1,7 +1,7 @@
 import { useEditor } from "@/store/editor";
 import { useTimelineActions } from "./hooks";
 import { uploadToR2 } from "@/lib/upload";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ClipDoc } from "@/server/mongo.server";
 import { Trash2, RefreshCw } from "lucide-react";
 
@@ -12,6 +12,27 @@ export function Inspector() {
   const { updateClip, deleteClip } = useTimelineActions();
   const replaceRef = useRef<HTMLInputElement>(null);
   const clip = clips.find((c) => c.id === selectedClipId);
+
+  // Probe the selected image's intrinsic pixel dimensions so the anchor inputs
+  // can range 0..naturalWidth / 0..naturalHeight instead of a fixed 0–100.
+  const [imgDims, setImgDims] = useState<{ w: number; h: number } | null>(null);
+  const imageUrl = clip?.imageUrl;
+  useEffect(() => {
+    setImgDims(null);
+    if (!imageUrl) return;
+    const img = new Image();
+    let cancelled = false;
+    img.onload = () => {
+      if (cancelled) return;
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        setImgDims({ w: img.naturalWidth, h: img.naturalHeight });
+      }
+    };
+    img.src = imageUrl;
+    return () => {
+      cancelled = true;
+    };
+  }, [imageUrl]);
 
   if (!clip) {
     return (
@@ -64,16 +85,40 @@ export function Inspector() {
       </div>
 
       <div>
-        <label className="mb-1 block text-muted-foreground">Duration ({clip.duration.toFixed(2)}s)</label>
-        <input
-          type="range"
-          min={0.5}
-          max={20}
-          step={0.1}
-          value={clip.duration}
-          onChange={(e) => updateClip(clip.id, { duration: Number(e.target.value) })}
-          className="w-full"
-        />
+        <label className="mb-1 block text-muted-foreground">
+          Anchor point <span className="text-[10px]">(animation origin within layer)</span>
+        </label>
+        <div className="grid grid-cols-1 gap-2">
+          <AnchorInput
+            axis="X"
+            value={clip.anchorX ?? 50}
+            maxPx={imgDims?.w}
+            onChange={(v) => updateClip(clip.id, { anchorX: v })}
+          />
+        </div>
+          <div className="mt-2">
+            <label className="mb-1 block text-muted-foreground">Animation intensity ({(clip.intensity ?? 1).toFixed(1)}×)</label>
+            <input
+              type="range"
+              min={0.5}
+              max={3}
+              step={0.1}
+              value={clip.intensity ?? 1}
+              onChange={(e) => updateClip(clip.id, { intensity: Number(e.target.value) })}
+              className="w-full"
+            />
+          </div>
+        <div className="mt-1.5 flex items-center justify-between">
+          <button
+            onClick={() => updateClip(clip.id, { anchorX: 50, anchorY: 50 })}
+            className="text-[10px] text-muted-foreground hover:text-foreground"
+          >
+            Reset to center
+          </button>
+          <span className="text-[10px] text-muted-foreground">
+            {(clip.anchorX ?? 50)}% / {(clip.anchorY ?? 50)}%
+          </span>
+        </div>
       </div>
 
       <div className="flex gap-2">
@@ -103,6 +148,58 @@ export function Inspector() {
           updateClip(clip.id, { imageKey: key, imageUrl: url });
         }}
       />
+    </div>
+  );
+}
+
+function AnchorInput({
+  axis,
+  value,
+  maxPx,
+  onChange,
+}: {
+  axis: "X" | "Y";
+  value: number; // percentage 0..100
+  maxPx?: number | null; // intrinsic pixel size for axis
+  onChange: (v: number) => void;
+}) {
+  // Convert stored percent -> pixel for UI when we have intrinsic size
+  const px = Math.round(((value ?? 0) / 100) * (maxPx ?? 100));
+  const clampPercent = (p: number) => Math.max(0, Math.min(100, Math.round(p)));
+  const onPxChange = (newPx: number) => {
+    if (maxPx && maxPx > 0) {
+      const nextPct = clampPercent((newPx / maxPx) * 100);
+      onChange(nextPct);
+    } else {
+      // fallback: treat incoming value as percent when no intrinsic size
+      onChange(clampPercent(newPx));
+    }
+  };
+
+  return (
+    <div>
+      <label className="mb-1 block text-[10px] uppercase tracking-wider text-muted-foreground">
+        {axis} ({maxPx ? `${px}px / ${value}%` : `${value}%`})
+      </label>
+      <div className="flex items-center gap-1">
+        <input
+          type="range"
+          min={0}
+          max={maxPx ?? 100}
+          step={1}
+          value={px}
+          onChange={(e) => onPxChange(Number(e.target.value))}
+          className="flex-1"
+        />
+        <input
+          type="number"
+          min={0}
+          max={maxPx ?? 100}
+          value={px}
+          onChange={(e) => onPxChange(Number(e.target.value))}
+          className="w-20 rounded border border-border bg-panel-2 px-1 py-0.5 text-right text-[11px]"
+        />
+      </div>
     </div>
   );
 }

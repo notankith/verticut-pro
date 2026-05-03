@@ -101,7 +101,7 @@ export function SettingsPanel({ onSave }: { onSave: () => void }) {
             <input
               type="range"
               min={10}
-              max={32}
+              max={64}
               value={settings.defaultFontSize}
               onChange={(e) => updateSettings({ defaultFontSize: Number(e.target.value) })}
               className="w-full"

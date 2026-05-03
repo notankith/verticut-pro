@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git mv *)",
+      "Bash(npx tsc *)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(npm run *)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(node --check \"D:/VSCode Projects/verticut-pro/render-server/src/index.mjs\")",
+      "Bash(node --check \"D:/VSCode Projects/verticut-pro/render-server/src/remotion-entry.jsx\")",
+      "Bash(node --check \"D:/VSCode Projects/verticut-pro/render-server/src/composition.jsx\")"
+    ]
+  }
+}

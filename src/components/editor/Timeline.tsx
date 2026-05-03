@@ -1,16 +1,26 @@
 import { useEditor } from "@/store/editor";
 import { useTimelineActions } from "./hooks";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type { ClipDoc } from "@/server/mongo.server";
+import type { PlayerRef } from "@remotion/player";
+import { usePlayerFrame } from "./usePlayerFrame";
 
 export function Timeline({
-  currentTime,
+  playerRef,
+  fps,
   onSeek,
 }: {
-  currentTime: number;
+  playerRef: RefObject<PlayerRef | null>;
+  fps: number;
   onSeek: (t: number) => void;
 }) {
-  const { clips, zoom, audioDuration, selectedClipId, settings, select, set } = useEditor();
+  const clips = useEditor((s) => s.clips);
+  const zoom = useEditor((s) => s.zoom);
+  const audioDuration = useEditor((s) => s.audioDuration);
+  const selectedClipId = useEditor((s) => s.selectedClipId);
+  const settings = useEditor((s) => s.settings);
+  const select = useEditor((s) => s.select);
+  const set = useEditor((s) => s.set);
   const { moveClip, trimClip } = useTimelineActions();
   const containerRef = useRef<HTMLDivElement>(null);
   const totalWidth = Math.max((audioDuration || 30) * zoom, 800);
@@ -52,7 +62,28 @@ export function Timeline({
             <Ruler totalWidth={totalWidth} zoom={zoom} duration={audioDuration || 30} />
           </div>
           {/* Track */}
-          <div className="relative h-24" style={{ width: totalWidth }}>
+          <div
+            className="relative h-24"
+            style={{ width: totalWidth }}
+            onMouseDown={(e) => {
+              // Start scrub if clicking on empty track (not on a clip handle)
+              if (e.target !== e.currentTarget) return;
+              const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+              const x = e.clientX - rect.left + (containerRef.current?.scrollLeft ?? 0);
+              onSeek(x / zoom);
+              // start listening for mousemove to scrub
+              function move(ev: MouseEvent) {
+                const nx = ev.clientX - rect.left + (containerRef.current?.scrollLeft ?? 0);
+                onSeek(nx / zoom);
+              }
+              function up() {
+                window.removeEventListener("mousemove", move);
+                window.removeEventListener("mouseup", up);
+              }
+              window.addEventListener("mousemove", move);
+              window.addEventListener("mouseup", up);
+            }}
+          >
             {clips.map((c) => (
               <ClipBlock
                 key={c.id}
@@ -65,17 +96,77 @@ export function Timeline({
                 onTrim={(edge, v) => trimClip(c.id, edge, v)}
               />
             ))}
-            {/* Playhead */}
-            <div
-              className="pointer-events-none absolute top-0 bottom-0 w-px bg-primary"
-              style={{ left: currentTime * zoom }}
-            >
-              <div className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-sm bg-primary px-1 text-[9px] font-mono text-primary-foreground">
-                {fmtTC(currentTime)}
-              </div>
-            </div>
+            <Playhead playerRef={playerRef} fps={fps} zoom={zoom} onSeek={onSeek} containerRef={containerRef} />
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function Playhead({
+  playerRef,
+  fps,
+  zoom,
+  onSeek,
+  containerRef,
+}: {
+  playerRef: RefObject<PlayerRef | null>;
+  fps: number;
+  zoom: number;
+  onSeek: (t: number) => void;
+  containerRef: RefObject<HTMLDivElement | null>;
+}) {
+  const frame = usePlayerFrame(playerRef);
+  const currentTime = frame / fps;
+  // Dragging / scrub local state
+  const [scrubbing, setScrubbing] = useState(false);
+  const [scrubTime, setScrubTime] = useState<number | null>(null);
+
+  function calcTimeFromEvent(ev: MouseEvent | React.MouseEvent) {
+    const container = containerRef?.current;
+    if (!container) return 0;
+    const trackEl = container.querySelector(".relative.h-24") as HTMLElement | null;
+    const rect = trackEl?.getBoundingClientRect() ?? container.getBoundingClientRect();
+    const x = (ev as MouseEvent).clientX - rect.left + container.scrollLeft;
+    return Math.max(0, x / zoom);
+  }
+
+  function onMouseDown(e: React.MouseEvent) {
+    e.preventDefault();
+    const t = calcTimeFromEvent(e);
+    setScrubTime(t);
+    setScrubbing(true);
+    // Pause player while scrubbing (preview only)
+    try {
+      playerRef?.current?.pause();
+    } catch {}
+    onSeek(t);
+    const move = (ev: MouseEvent) => {
+      const nt = calcTimeFromEvent(ev);
+      setScrubTime(nt);
+      onSeek(nt);
+    };
+    const up = () => {
+      setScrubbing(false);
+      setScrubTime(null);
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  }
+
+  const displayTime = scrubbing && scrubTime != null ? scrubTime : currentTime;
+
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      className="absolute top-0 bottom-0 w-px bg-primary cursor-grab"
+      style={{ left: displayTime * zoom }}
+    >
+      <div className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-sm bg-primary px-1 text-[9px] font-mono text-primary-foreground">
+        {fmtTC(displayTime)}
       </div>
     </div>
   );

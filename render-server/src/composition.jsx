@@ -1,4 +1,5 @@
-// Mirror of src/remotion/composition.tsx in plain JSX so the worker can bundle without TS.
+// Mirror of src/remotion/composition.tsx in plain JSX so the render-server can
+// bundle the VertiCut composition without TypeScript.
 import React from "react";
 import { AbsoluteFill, Audio, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate } from "remotion";
 
