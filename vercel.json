@@ -1,5 +1,14 @@
 {
+  "version": 2,
+  "functions": {
+    "dist/server/index.js": {
+      "runtime": "@vercel/node"
+    }
+  },
   "routes": [
-    { "src": "/(.*)", "dest": "/dist/server/index.js" }
+    {
+      "src": "/(.*)",
+      "dest": "dist/server/index.js"
+    }
   ]
 }
