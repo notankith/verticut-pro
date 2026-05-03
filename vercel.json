@@ -1,18 +1,29 @@
 {
-  "version": 2,
-  "builds": [
-    { "src": "package.json", "use": "@vercel/static-build", "config": { "distDir": "dist/client" } },
-    { "src": "api/index.js", "use": "@vercel/node" }
-  ],
-  "routes": [
-    { "handle": "filesystem" },
-    { "src": "^/_serverFn/(.*)$", "dest": "/api/index.js" },
-    { "src": "^/api/(.*)$", "dest": "/api/index.js" },
-    { "src": "^/(.*)$", "dest": "/api/index.js" }
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "vite build",
+  "outputDirectory": "dist/client",
+  "framework": null,
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index.js" }
   ],
   "headers": [
-    { "source": "/assets/(.*)", "headers": [ { "key": "cache-control", "value": "public, max-age=31536000, immutable" } ] },
-    { "source": "/dist/client/assets/(.*)", "headers": [ { "key": "cache-control", "value": "public, max-age=31536000, immutable" } ] },
-    { "source": "^/(.*)\\.(js|css|png|jpg|jpeg|webp|avif|svg|ico)$", "headers": [ { "key": "cache-control", "value": "public, max-age=31536000, immutable" } ] }
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "cache-control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.(js|css|png|jpg|jpeg|webp|avif|svg|ico|woff|woff2)",
+      "headers": [
+        { "key": "cache-control", "value": "public, max-age=31536000, immutable" }
+      ]
+    }
   ]
 }

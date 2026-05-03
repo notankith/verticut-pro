@@ -1,198 +1,93 @@
-import path from 'path';
-import url from 'url';
-import fs from 'fs';
+import path from 'node:path';
+import url from 'node:url';
+import fs from 'node:fs';
+import { Readable } from 'node:stream';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
-let serverModule;
-let lastError = null;
-
-// Try a set of likely locations for the built server bundle (Vercel may
-// place build outputs in slightly different paths depending on the builder).
 const candidates = [
   path.join(__dirname, '../dist/server/index.js'),
-  path.join(__dirname, './dist/server/index.js'),
   path.join(process.cwd(), 'dist/server/index.js'),
-  path.join(process.cwd(), 'dist', 'server', 'index.js'),
-  path.join(__dirname, '../.vercel/output/functions/api/index.func/dist/server/index.js'),
 ];
 
+let bundlePath = null;
 for (const p of candidates) {
-  try {
-    if (fs.existsSync(p)) {
-      serverModule = await import(url.pathToFileURL(p).href);
-      break;
-    }
-    // Try a direct import by specifier as a last resort
-    try {
-      serverModule = await import(p);
-      break;
-    } catch (e) {
-      lastError = e;
-    }
-  } catch (e) {
-    lastError = e;
+  if (fs.existsSync(p)) {
+    bundlePath = p;
+    break;
   }
 }
 
-// Final fallback: try the simple relative import used previously
-if (!serverModule) {
-  try {
-    serverModule = await import('../dist/server/index.js');
-  } catch (e) {
-    lastError = e;
-  }
+if (!bundlePath) {
+  throw new Error(
+    `Server bundle not found. Checked: ${candidates.join(', ')}. cwd=${process.cwd()}`
+  );
 }
 
-if (!serverModule) {
-  try {
-    const dirListing = {
-      __dirname: fs.readdirSync(__dirname).slice(0, 200),
-      processCwd: fs.readdirSync(process.cwd()).slice(0, 200),
-    };
-    console.error('Failed to load server bundle. Directory listing:', dirListing, 'lastError:', lastError);
-  } catch (e) {
-    console.error('Failed to load server bundle and could not list directories', e, 'lastError:', lastError);
-  }
+const mod = await import(url.pathToFileURL(bundlePath).href);
+const worker = mod.default ?? mod;
+
+if (!worker || typeof worker.fetch !== 'function') {
+  throw new Error(
+    `Server bundle does not export a Worker-style { fetch } handler. Got keys: ${Object.keys(worker || {}).join(', ')}`
+  );
 }
 
-const handler = serverModule?.default || serverModule?.createServerEntry || serverModule;
+function toWebRequest(req) {
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+  const fullUrl = `${proto}://${host}${req.url}`;
 
-export default async function (req, res) {
-  if (!handler) {
-    res.statusCode = 500;
-    // Provide a compact diagnostic JSON body to aid debugging in Vercel logs
-    try {
-      const diag = {
-        cwd: process.cwd(),
-        __dirname: __dirname,
-        checkedCandidates: {},
-        lastError: String(lastError ?? ""),
-      };
-      for (const p of candidates) {
-        try {
-          diag.checkedCandidates[p] = fs.existsSync(p) ? fs.readdirSync(path.dirname(p)).slice(0, 200) : null;
-        } catch (e) {
-          diag.checkedCandidates[p] = `err: ${String(e)}`;
-        }
-      }
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({ error: 'Server bundle not found', diag }, null, 2));
-    } catch (e) {
-      res.end('Server bundle not found');
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (value === undefined) continue;
+    if (Array.isArray(value)) {
+      for (const v of value) headers.append(key, v);
+    } else {
+      headers.set(key, value);
     }
+  }
+
+  const init = { method: req.method, headers };
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    init.body = Readable.toWeb(req);
+    init.duplex = 'half';
+  }
+  return new Request(fullUrl, init);
+}
+
+async function sendWebResponse(webRes, res) {
+  res.statusCode = webRes.status;
+  webRes.headers.forEach((value, key) => {
+    res.setHeader(key, value);
+  });
+  if (!webRes.body) {
+    res.end();
     return;
   }
+  const nodeStream = Readable.fromWeb(webRes.body);
+  nodeStream.pipe(res);
+  await new Promise((resolve, reject) => {
+    nodeStream.on('end', resolve);
+    nodeStream.on('error', reject);
+    res.on('error', reject);
+  });
+}
 
+export default async function handler(req, res) {
   try {
-    // If the bundle exports an Express-like handler, call it directly.
-    if (typeof handler === 'function') {
-      // Some bundles export an Express-like handler directly, others export a
-      // factory that returns an app. Try the direct call first, but if it
-      // throws (e.g. "app is not a function"), attempt fallbacks.
-      try {
-        const result = handler(req, res);
-        if (result && typeof result.then === 'function') await result;
-        return;
-      } catch (err) {
-        console.warn('Direct handler(req,res) failed, trying fallback invocation patterns', String(err));
-        // Try calling the handler with no args to get a returned app
-        try {
-          const maybeApp = await handler();
-          if (typeof maybeApp === 'function') {
-            const r = maybeApp(req, res);
-            if (r && typeof r.then === 'function') await r;
-            return;
-          }
-          if (maybeApp && typeof maybeApp.handler === 'function') {
-            const r = maybeApp.handler(req, res);
-            if (r && typeof r.then === 'function') await r;
-            return;
-          }
-          if (maybeApp && typeof maybeApp.handle === 'function') {
-            const r = maybeApp.handle(req, res);
-            if (r && typeof r.then === 'function') await r;
-            return;
-          }
-          if (maybeApp && typeof maybeApp.fetch === 'function') {
-            const out = await maybeApp.fetch(req);
-            if (out && typeof out.text === 'function') {
-              res.statusCode = out.status || 200;
-              for (const [k, v] of Object.entries(out.headers || {})) res.setHeader(k, String(v));
-              const body = await out.text();
-              res.end(body);
-              return;
-            }
-          }
-          if (maybeApp && maybeApp.default && typeof maybeApp.default === 'function') {
-            const r = maybeApp.default(req, res);
-            if (r && typeof r.then === 'function') await r;
-            return;
-          }
-        } catch (e2) {
-          console.error('Fallback invocation after handler() failed', e2);
-        }
-
-        // No fallback worked — rethrow original error to be handled below
-        throw err;
-      }
-    }
-
-    // If the bundle exposes a createServerEntry factory that returns an http handler
-    if (typeof serverModule.createServerEntry === 'function') {
-      const app = serverModule.createServerEntry();
-      // Try multiple invocation patterns for common server bundles
-      try {
-        if (typeof app === 'function') {
-          const r = app(req, res);
-          if (r && typeof r.then === 'function') await r;
-          return;
-        }
-        if (app && typeof app.handler === 'function') {
-          const r = app.handler(req, res);
-          if (r && typeof r.then === 'function') await r;
-          return;
-        }
-        if (app && typeof app.handle === 'function') {
-          const r = app.handle(req, res);
-          if (r && typeof r.then === 'function') await r;
-          return;
-        }
-        if (app && typeof app.fetch === 'function') {
-          // Some frameworks expose a fetch-style handler (Edge-like)
-          const out = await app.fetch(req);
-          if (out && typeof out.text === 'function') {
-            // Try to send back a Response-like object
-            res.statusCode = out.status || 200;
-            for (const [k, v] of Object.entries(out.headers || {})) res.setHeader(k, String(v));
-            const body = await out.text();
-            res.end(body);
-            return;
-          }
-        }
-        if (app && app.default && typeof app.default === 'function') {
-          const r = app.default(req, res);
-          if (r && typeof r.then === 'function') await r;
-          return;
-        }
-      } catch (e) {
-        console.error('Error while invoking createServerEntry result:', e);
-        throw e;
-      }
-
-      // If we get here, `app` wasn't callable in known ways — return diagnostics.
-      console.error('createServerEntry returned non-callable value:', typeof app, Object.keys(app || {}));
-      res.statusCode = 500;
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({ error: 'createServerEntry returned non-callable value', type: typeof app, keys: Object.keys(app || {}) }));
-      return;
-    }
-
-    res.statusCode = 500;
-    res.end('Server bundle did not export a callable handler');
+    const webReq = toWebRequest(req);
+    const webRes = await worker.fetch(webReq, process.env, {
+      waitUntil: () => {},
+      passThroughOnException: () => {},
+    });
+    await sendWebResponse(webRes, res);
   } catch (err) {
     console.error('Error while invoking server bundle:', err);
-    res.statusCode = 500;
+    if (!res.headersSent) {
+      res.statusCode = 500;
+      res.setHeader('content-type', 'text/plain');
+    }
     res.end('Internal Server Error');
   }
 }
