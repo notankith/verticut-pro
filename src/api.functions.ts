@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { randomUUID } from "crypto";
 import { getDb, type ProjectDoc, type SettingsDoc, type ClipDoc, type RenderDoc } from "./server/mongo.server";
 import { presignPut, publicUrl } from "./server/r2.server";
+import { uploadBuffer } from "./server/r2.server";
 import { submitTranscript, getTranscript } from "./server/assemblyai.server";
 
 // Untyped collection helper to avoid Mongo's ObjectId _id constraint (we use string ids)
@@ -357,6 +358,25 @@ export type RenderItem = {
   error?: string;
   createdAt: number;
 };
+
+export const fetchAndUploadImage = createServerFn({ method: "POST" })
+  .inputValidator((d: { url: string }) => d)
+  .handler(async ({ data }) => {
+    const url = data.url;
+    if (!url || !/^https?:\/\//i.test(url)) throw new Error('Invalid URL');
+    // Fetch remote image server-side to avoid CORS issues
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Fetch failed: ${resp.status}`);
+    const contentType = resp.headers.get('content-type') || 'application/octet-stream';
+    if (!contentType.startsWith('image/')) throw new Error(`Not an image: ${contentType}`);
+    const arrayBuffer = await resp.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const id = randomUUID();
+    const ext = (contentType.split('/').pop() || 'bin').replace(/[^a-z0-9]/gi, '');
+    const key = `image/${id}.${ext}`;
+    const publicUrlResult = await uploadBuffer(key, buffer, contentType);
+    return { uploadUrl: null, key, publicUrl: publicUrlResult };
+  });
 
 export const listRenders = createServerFn({ method: "GET" }).handler(async (): Promise<RenderItem[]> => {
   const renders = await C<RenderDoc>("renders");

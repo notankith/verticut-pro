@@ -1,5 +1,5 @@
 // Frontend helper: presign + upload to R2
-import { presignUpload } from "@/api.functions";
+import { presignUpload, fetchAndUploadImage } from "@/api.functions";
 
 export async function uploadToR2(file: File, kind: "audio" | "image" | "music") {
   const ext = (file.name.split(".").pop() || "bin").toLowerCase();
@@ -63,14 +63,15 @@ export async function extractAndUploadPastedImages(
     // 2. Plain-text URL paste
     const text = cd.getData("text/plain")?.trim();
     if (text && IMAGE_URL_RE.test(text)) {
-      uploads.push(urlToImageFile(text).then((f) => uploadToR2(f, "image")));
+      // Use server-side fetch to avoid CORS issues when pulling external images
+      uploads.push(fetchAndUploadImage({ data: { url: text } }).then(({ key, publicUrl }) => ({ key, url: publicUrl })));
     } else if (text) {
       // 3. HTML fragment — try the first <img src> we can find
       const html = cd.getData("text/html");
       if (html) {
         const m = html.match(/<img[^>]+src=["']([^"']+)["']/i);
         if (m && /^https?:\/\//i.test(m[1])) {
-          uploads.push(urlToImageFile(m[1]).then((f) => uploadToR2(f, "image")));
+          uploads.push(fetchAndUploadImage({ data: { url: m[1] } }).then(({ key, publicUrl }) => ({ key, url: publicUrl })));
         }
       }
     }

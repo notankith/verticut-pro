@@ -58,7 +58,27 @@ function RootShell({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         {children}
-        <Scripts />
+            <script
+              dangerouslySetInnerHTML={{
+                __html: `(() => {
+      try {
+        const orig = window.fetch.bind(window);
+        window.fetch = function(input, init) {
+          try {
+            const url = typeof input === 'string' ? input : input && input.url;
+            if (typeof url === 'string' && url.startsWith('http://localhost:8080/_serverFn/')) {
+              const u = new URL(url);
+              const path = u.pathname + u.search;
+              input = path;
+            }
+          } catch (e) {}
+          return orig(input, init);
+        };
+      } catch(e) {}
+    })();`,
+              }}
+            />
+            <Scripts />
       </body>
     </html>
   );

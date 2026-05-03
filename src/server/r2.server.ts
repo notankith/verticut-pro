@@ -40,3 +40,15 @@ export async function presignPut(key: string, contentType: string) {
   const url = await getSignedUrl(getClient(), cmd, { expiresIn: 600 });
   return url;
 }
+
+// Upload a buffer directly to R2 (server-side helper)
+export async function uploadBuffer(key: string, buffer: Buffer | Uint8Array, contentType = 'application/octet-stream') {
+  const cmd = new PutObjectCommand({
+    Bucket: getBucket(),
+    Key: key,
+    Body: buffer,
+    ContentType: contentType,
+  });
+  await getClient().send(cmd);
+  return publicUrl(key);
+}
