@@ -107,6 +107,9 @@ function EditorPage() {
   );
 
   const [pasting, setPasting] = useState(false);
+  const [pasteProgress, setPasteProgress] = useState<number | null>(null);
+  const [pasteError, setPasteError] = useState<string | null>(null);
+  const [imports, setImports] = useState<Array<{ id: string; name: string; pct: number; error?: string; url?: string; key?: string }>>([]);
 
   // Global Ctrl+V image paste — uploads clipboard images (blobs or URLs) and
   // appends them as new clips. Skipped while the user is typing in any input.
@@ -124,7 +127,16 @@ function EditorPage() {
         return;
       }
       try {
-        const uploaded = await extractAndUploadPastedImages(ev);
+        setPasteError(null);
+        setPasteProgress(0);
+        const uploaded = await extractAndUploadPastedImages(ev, {
+          onProgress: (_idx, pct) => {
+            setPasteProgress(pct);
+          },
+          onError: (_idx, err) => {
+            setPasteError(String(err));
+          },
+        });
         if (!uploaded || uploaded.length === 0) return;
         ev.preventDefault();
         if (cancelled) return;
@@ -133,10 +145,13 @@ function EditorPage() {
           addImageClips(uploaded);
         } finally {
           setPasting(false);
+          setPasteProgress(null);
         }
       } catch (err) {
         console.error("Paste upload failed", err);
         setPasting(false);
+        setPasteProgress(null);
+        setPasteError(String(err));
       }
     };
     window.addEventListener("paste", onPaste);
@@ -229,8 +244,28 @@ function EditorPage() {
 
   async function onImageImport(files: FileList | null) {
     if (!files || files.length === 0) return;
-    const uploaded = await Promise.all(Array.from(files).map((f) => uploadToR2(f, "image")));
-    addImageClips(uploaded);
+    const arr = Array.from(files);
+    const ids = arr.map((f, i) => ({ id: (crypto as any).randomUUID?.() || `${Date.now()}-${i}`, name: f.name }));
+    // initialize UI entries
+    setImports((prev) => [...prev, ...ids.map((x) => ({ id: x.id, name: x.name, pct: 0 }))]);
+
+    const results = [] as { key: string; url: string }[];
+    for (let i = 0; i < arr.length; i++) {
+      const f = arr[i];
+      const id = ids[i].id;
+      try {
+        const res = await uploadToR2(f, "image", (pct) => {
+          setImports((prev) => prev.map((p) => (p.id === id ? { ...p, pct } : p)));
+        });
+        setImports((prev) => prev.map((p) => (p.id === id ? { ...p, pct: 100, url: res.url, key: res.key } : p)));
+        results.push({ key: res.key, url: res.url });
+      } catch (err) {
+        const msg = String(err?.message ?? err ?? "Upload failed");
+        setImports((prev) => prev.map((p) => (p.id === id ? { ...p, error: msg, pct: 0 } : p)));
+      }
+    }
+
+    if (results.length > 0) addImageClips(results as any);
   }
 
   const inputProps = useMemo(
@@ -292,10 +327,30 @@ function EditorPage() {
         >
           <Settings className="h-3 w-3" /> Settings
         </button>
-        <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2">
           <span className="text-[10px] text-muted-foreground">
-            {pasting ? "Pasting…" : saving === "saving" ? "Saving…" : saving === "saved" ? "Saved" : ""}
+            {pasteError ? (
+              <span className="text-destructive" title={pasteError}>Paste failed: {pasteError}</span>
+            ) : pasteProgress != null ? (
+              `Pasting… ${pasteProgress}%`
+            ) : pasting ? (
+              "Pasting…"
+            ) : saving === "saving" ? (
+              "Saving…"
+            ) : saving === "saved" ? (
+              "Saved"
+            ) : (
+              ""
+            )}
           </span>
+              <div>
+                {imports.length > 0 ? (
+                  <UploadsToast
+                    uploads={imports}
+                    onDismiss={(id) => setImports((prev) => prev.filter((p) => p.id !== id))}
+                  />
+                ) : null}
+              </div>
           <GlobalLabelPresetSelect />
           <div className="h-4 w-px bg-border" />
           <button onClick={() => undo()} title="Undo (Ctrl+Z)" className="rounded p-1 hover:bg-accent">
@@ -401,6 +456,39 @@ function EditorPage() {
       {renderJob ? (
         <RenderProgressToast job={renderJob} onDismiss={() => setRenderJob(null)} />
       ) : null}
+    </div>
+  );
+}
+
+function UploadsToast({
+  uploads,
+  onDismiss,
+}: {
+  uploads: Array<{ id: string; name: string; pct: number; error?: string; url?: string }>;
+  onDismiss: (id: string) => void;
+}) {
+  if (!uploads || uploads.length === 0) return null;
+  return (
+    <div className="fixed bottom-20 right-4 z-50 w-80 rounded-lg border border-border bg-panel p-3 shadow-lg">
+      <div className="flex flex-col gap-2">
+        {uploads.map((u) => (
+          <div key={u.id} className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="truncate text-xs font-medium" title={u.name}>{u.name}</div>
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-accent">
+                <div className={`h-full ${u.error ? 'bg-destructive' : 'bg-primary'}`} style={{ width: `${Math.max(2, u.pct)}%` }} />
+              </div>
+              {u.error ? <div className="mt-1 text-[10px] text-destructive truncate" title={u.error}>{u.error}</div> : null}
+            </div>
+            <div className="flex flex-col items-end">
+              {u.url ? (
+                <a href={u.url} download className="text-[10px] text-primary hover:underline">Open</a>
+              ) : null}
+              <button onClick={() => onDismiss(u.id)} className="text-[10px] text-muted-foreground hover:text-foreground">Dismiss</button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

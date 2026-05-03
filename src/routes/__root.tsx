@@ -61,21 +61,29 @@ function RootShell({ children }: { children: React.ReactNode }) {
             <script
               dangerouslySetInnerHTML={{
                 __html: `(() => {
+  try {
+    const orig = window.fetch.bind(window);
+    window.fetch = function(input, init) {
       try {
-        const orig = window.fetch.bind(window);
-        window.fetch = function(input, init) {
+        const urlStr = typeof input === 'string' ? input : input && input.url;
+        if (typeof urlStr === 'string') {
           try {
-            const url = typeof input === 'string' ? input : input && input.url;
-            if (typeof url === 'string' && url.startsWith('http://localhost:8080/_serverFn/')) {
-              const u = new URL(url);
-              const path = u.pathname + u.search;
-              input = path;
+            const u = new URL(urlStr, window.location.href);
+            const isLocalhost = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+            if (isLocalhost && u.pathname.startsWith('/_serverFn')) {
+              // Rewrite to current origin so clients on remote machines call the server, not their own localhost
+              const newUrl = window.location.origin + u.pathname + u.search;
+              input = newUrl;
             }
-          } catch (e) {}
-          return orig(input, init);
-        };
-      } catch(e) {}
-    })();`,
+          } catch (e) {
+            // ignore parse errors
+          }
+        }
+      } catch (e) {}
+      return orig(input, init);
+    };
+  } catch(e) {}
+})();`,
               }}
             />
             <Scripts />
