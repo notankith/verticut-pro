@@ -33,7 +33,15 @@ if (!worker || typeof worker.fetch !== 'function') {
   );
 }
 
-function toWebRequest(req) {
+async function readBody(req) {
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+async function toWebRequest(req) {
   const proto = req.headers['x-forwarded-proto'] || 'https';
   const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
   const fullUrl = `${proto}://${host}${req.url}`;
@@ -50,8 +58,8 @@ function toWebRequest(req) {
 
   const init = { method: req.method, headers };
   if (req.method !== 'GET' && req.method !== 'HEAD') {
-    init.body = Readable.toWeb(req);
-    init.duplex = 'half';
+    const buf = await readBody(req);
+    if (buf.length > 0) init.body = buf;
   }
   return new Request(fullUrl, init);
 }
@@ -76,7 +84,7 @@ async function sendWebResponse(webRes, res) {
 
 export default async function handler(req, res) {
   try {
-    const webReq = toWebRequest(req);
+    const webReq = await toWebRequest(req);
     const webRes = await worker.fetch(webReq, process.env, {
       waitUntil: () => {},
       passThroughOnException: () => {},
