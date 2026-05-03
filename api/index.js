@@ -61,7 +61,26 @@ const handler = serverModule?.default || serverModule?.createServerEntry || serv
 export default async function (req, res) {
   if (!handler) {
     res.statusCode = 500;
-    res.end('Server bundle not found');
+    // Provide a compact diagnostic JSON body to aid debugging in Vercel logs
+    try {
+      const diag = {
+        cwd: process.cwd(),
+        __dirname: __dirname,
+        checkedCandidates: {},
+        lastError: String(lastError ?? ""),
+      };
+      for (const p of candidates) {
+        try {
+          diag.checkedCandidates[p] = fs.existsSync(p) ? fs.readdirSync(path.dirname(p)).slice(0, 200) : null;
+        } catch (e) {
+          diag.checkedCandidates[p] = `err: ${String(e)}`;
+        }
+      }
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ error: 'Server bundle not found', diag }, null, 2));
+    } catch (e) {
+      res.end('Server bundle not found');
+    }
     return;
   }
 
