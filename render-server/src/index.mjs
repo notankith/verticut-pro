@@ -14,7 +14,7 @@
  * Env vars (required):
  *   MONGODB_URI, MONGODB_DB
  *   R2_BUCKET, R2_ACCESS_KEY, R2_SECRET_KEY, R2_ENDPOINT, R2_ACCOUNT_ID
- *   RENDER_SERVER_PORT (optional, default 4100)
+ *   RENDER_SERVER_PORT (optional, default 5050)
  *   RENDER_SERVER_SECRET (shared secret for auth)
  *   CDN_BASE_URL (public CDN url prefix, e.g. https://cdn.ankith.studio/)
  *   REMOTION_ENTRY (path to remotion entry relative to project root)
@@ -33,7 +33,7 @@ import * as os from 'os';
 import { randomUUID } from 'crypto';
 
 // ─── Config ───
-const PORT = parseInt(process.env.RENDER_SERVER_PORT || '4100', 10);
+const PORT = parseInt(process.env.RENDER_SERVER_PORT || '5050', 10);
 const SHARED_SECRET = process.env.RENDER_SERVER_SECRET || '';
 const CDN_BASE = (process.env.CDN_BASE_URL || 'https://cdn.ankith.studio/').replace(/\/$/, '');
 

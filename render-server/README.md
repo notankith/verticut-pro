@@ -23,7 +23,7 @@ R2_SECRET_KEY=...
 R2_ENDPOINT=https://....r2.cloudflarestorage.com
 R2_ACCOUNT_ID=...
 CDN_BASE_URL=https://cdn.ankith.studio
-RENDER_SERVER_PORT=4100
+RENDER_SERVER_PORT=5050
 RENDER_SERVER_SECRET=your-shared-secret
 ```
 
