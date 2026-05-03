@@ -6,16 +6,16 @@
       "use": "@vercel/static-build",
       "config": { "distDir": "dist/client" }
     },
-    { "src": "api/index.js", "use": "@vercel/node" }
+    {
+      "src": "api/index.js",
+      "use": "@vercel/node"
+    }
   ],
   "routes": [
     { "handle": "filesystem" },
-
-    { "src": "^/_serverFn/(.*)$", "dest": "/api/index.js" },
-    { "src": "^/api/(.*)$", "dest": "/api/index.js" },
-
-    // Fallback: let the SSR adapter handle everything else (client-side routes)
-    { "src": "^/(.*)$", "dest": "/api/index.js" }
+    { "src": "/_serverFn/(.*)", "dest": "/api/index.js" },
+    { "src": "/api/(.*)", "dest": "/api/index.js" },
+    { "src": "/(.*)", "dest": "/api/index.js" }
   ],
   "headers": [
     {
@@ -31,7 +31,7 @@
       ]
     },
     {
-      "source": "^/(.*)\\.(js|css|png|jpg|jpeg|webp|avif|svg|ico)$",
+      "source": "/(.*).(js|css|png|jpg|jpeg|webp|avif|svg|ico)",
       "headers": [
         { "key": "cache-control", "value": "public, max-age=31536000, immutable" }
       ]
@@ -43,13 +43,4 @@
       "maxDuration": 30
     }
   }
-}
-{
-  "version": 2,
-  "builds": [
-    { "src": "api/index.js", "use": "@vercel/node" }
-  ],
-  "routes": [
-    { "src": "^/(.*)", "dest": "/api/index.js" }
-  ]
 }
