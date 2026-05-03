@@ -97,8 +97,51 @@ export default async function (req, res) {
     // If the bundle exposes a createServerEntry factory that returns an http handler
     if (typeof serverModule.createServerEntry === 'function') {
       const app = serverModule.createServerEntry();
-      // Express app can be invoked as a function
-      return app(req, res);
+      // Try multiple invocation patterns for common server bundles
+      try {
+        if (typeof app === 'function') {
+          const r = app(req, res);
+          if (r && typeof r.then === 'function') await r;
+          return;
+        }
+        if (app && typeof app.handler === 'function') {
+          const r = app.handler(req, res);
+          if (r && typeof r.then === 'function') await r;
+          return;
+        }
+        if (app && typeof app.handle === 'function') {
+          const r = app.handle(req, res);
+          if (r && typeof r.then === 'function') await r;
+          return;
+        }
+        if (app && typeof app.fetch === 'function') {
+          // Some frameworks expose a fetch-style handler (Edge-like)
+          const out = await app.fetch(req);
+          if (out && typeof out.text === 'function') {
+            // Try to send back a Response-like object
+            res.statusCode = out.status || 200;
+            for (const [k, v] of Object.entries(out.headers || {})) res.setHeader(k, String(v));
+            const body = await out.text();
+            res.end(body);
+            return;
+          }
+        }
+        if (app && app.default && typeof app.default === 'function') {
+          const r = app.default(req, res);
+          if (r && typeof r.then === 'function') await r;
+          return;
+        }
+      } catch (e) {
+        console.error('Error while invoking createServerEntry result:', e);
+        throw e;
+      }
+
+      // If we get here, `app` wasn't callable in known ways — return diagnostics.
+      console.error('createServerEntry returned non-callable value:', typeof app, Object.keys(app || {}));
+      res.statusCode = 500;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ error: 'createServerEntry returned non-callable value', type: typeof app, keys: Object.keys(app || {}) }));
+      return;
     }
 
     res.statusCode = 500;
