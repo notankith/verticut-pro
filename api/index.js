@@ -87,11 +87,55 @@ export default async function (req, res) {
   try {
     // If the bundle exports an Express-like handler, call it directly.
     if (typeof handler === 'function') {
-      // Some bundles export an Express app factory; attempt common invocation patterns.
-      const result = handler(req, res);
-      // If handler returned a Promise, await it to ensure completion.
-      if (result && typeof result.then === 'function') await result;
-      return;
+      // Some bundles export an Express-like handler directly, others export a
+      // factory that returns an app. Try the direct call first, but if it
+      // throws (e.g. "app is not a function"), attempt fallbacks.
+      try {
+        const result = handler(req, res);
+        if (result && typeof result.then === 'function') await result;
+        return;
+      } catch (err) {
+        console.warn('Direct handler(req,res) failed, trying fallback invocation patterns', String(err));
+        // Try calling the handler with no args to get a returned app
+        try {
+          const maybeApp = await handler();
+          if (typeof maybeApp === 'function') {
+            const r = maybeApp(req, res);
+            if (r && typeof r.then === 'function') await r;
+            return;
+          }
+          if (maybeApp && typeof maybeApp.handler === 'function') {
+            const r = maybeApp.handler(req, res);
+            if (r && typeof r.then === 'function') await r;
+            return;
+          }
+          if (maybeApp && typeof maybeApp.handle === 'function') {
+            const r = maybeApp.handle(req, res);
+            if (r && typeof r.then === 'function') await r;
+            return;
+          }
+          if (maybeApp && typeof maybeApp.fetch === 'function') {
+            const out = await maybeApp.fetch(req);
+            if (out && typeof out.text === 'function') {
+              res.statusCode = out.status || 200;
+              for (const [k, v] of Object.entries(out.headers || {})) res.setHeader(k, String(v));
+              const body = await out.text();
+              res.end(body);
+              return;
+            }
+          }
+          if (maybeApp && maybeApp.default && typeof maybeApp.default === 'function') {
+            const r = maybeApp.default(req, res);
+            if (r && typeof r.then === 'function') await r;
+            return;
+          }
+        } catch (e2) {
+          console.error('Fallback invocation after handler() failed', e2);
+        }
+
+        // No fallback worked — rethrow original error to be handled below
+        throw err;
+      }
     }
 
     // If the bundle exposes a createServerEntry factory that returns an http handler
