@@ -2,8 +2,13 @@ import path from 'node:path';
 import url from 'node:url';
 import fs from 'node:fs';
 import { Readable } from 'node:stream';
+import { createRequire } from 'node:module';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
+
+if (typeof globalThis.require !== 'function') {
+  globalThis.require = createRequire(import.meta.url);
+}
 
 const candidates = [
   path.join(__dirname, '../dist/server/index.js'),
