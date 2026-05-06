@@ -7,8 +7,8 @@ import {
   enqueueRender,
   getProject,
   getRenderProgress,
+  saveGlobalSettings,
   saveProject,
-  saveSettings,
   type ProjectFull,
 } from "@/api.functions";
 import { VertiCutComposition } from "@/remotion/composition";
@@ -207,7 +207,7 @@ function EditorPage() {
     setEnqueuing(true);
     try {
       await saveProject({ data: { id, clips } });
-      await saveSettings({ data: { id, settings } });
+      await saveGlobalSettings({ data: { settings } });
       const job = await enqueueRender({ data: { projectId: id } });
       setRenderJob({
         id: job.id,
@@ -361,9 +361,12 @@ function EditorPage() {
       {tab === "settings" ? (
         <div className="flex-1 overflow-auto bg-background">
           <SettingsPanel
+            settings={settings}
+            onChange={(patch) => useEditor.getState().updateSettings(patch)}
             onSave={async () => {
-              await saveSettings({ data: { id, settings } });
+              await saveGlobalSettings({ data: { settings: useEditor.getState().settings } });
             }}
+            subtitle="Saved globally — applies to every project."
           />
         </div>
       ) : (

@@ -1,19 +1,27 @@
-import { useEditor } from "@/store/editor";
 import { uploadToR2 } from "@/lib/upload";
 import { useState } from "react";
+import type { SettingsDoc } from "@/server/mongo.server";
 
-export function SettingsPanel({ onSave }: { onSave: () => void }) {
-  const { settings, updateSettings } = useEditor();
+type Props = {
+  settings: SettingsDoc;
+  onChange: (patch: Partial<SettingsDoc>) => void;
+  onSave?: () => void;
+  saving?: "idle" | "saving" | "saved";
+  title?: string;
+  subtitle?: string;
+};
+
+export function SettingsPanel({ settings, onChange, onSave, saving, title, subtitle }: Props) {
   const [newPreset, setNewPreset] = useState({ name: "", text: "" });
   const [musicTesting, setMusicTesting] = useState<HTMLAudioElement | null>(null);
 
   function deletePreset(id: string) {
-    updateSettings({ presets: settings.presets.filter((p) => p.id !== id) });
+    onChange({ presets: settings.presets.filter((p) => p.id !== id) });
   }
   function addPreset() {
     if (!newPreset.name.trim()) return;
     const tints = ["#ef4444", "#eab308", "#a855f7", "#22c55e", "#3b82f6", "#ec4899"];
-    updateSettings({
+    onChange({
       presets: [
         ...settings.presets,
         {
@@ -30,10 +38,25 @@ export function SettingsPanel({ onSave }: { onSave: () => void }) {
   return (
     <div className="mx-auto max-w-3xl space-y-8 p-6 text-sm">
       <header className="flex items-center justify-between">
-        <h2 className="text-base font-semibold">Project Settings</h2>
-        <button onClick={onSave} className="rounded bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90">
-          Save settings
-        </button>
+        <div>
+          <h2 className="text-base font-semibold">{title ?? "Settings"}</h2>
+          {subtitle ? <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p> : null}
+        </div>
+        {onSave ? (
+          <div className="flex items-center gap-2">
+            {saving === "saving" ? (
+              <span className="text-[10px] text-muted-foreground">Saving…</span>
+            ) : saving === "saved" ? (
+              <span className="text-[10px] text-muted-foreground">Saved</span>
+            ) : null}
+            <button
+              onClick={onSave}
+              className="rounded bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
+            >
+              Save settings
+            </button>
+          </div>
+        ) : null}
       </header>
 
       <section className="space-y-3">
@@ -47,7 +70,7 @@ export function SettingsPanel({ onSave }: { onSave: () => void }) {
                 onChange={(e) => {
                   const next = [...settings.presets];
                   next[i] = { ...p, name: e.target.value };
-                  updateSettings({ presets: next });
+                  onChange({ presets: next });
                 }}
                 className="w-32 rounded bg-panel-2 px-2 py-1 text-xs"
               />
@@ -56,7 +79,7 @@ export function SettingsPanel({ onSave }: { onSave: () => void }) {
                 onChange={(e) => {
                   const next = [...settings.presets];
                   next[i] = { ...p, text: e.target.value };
-                  updateSettings({ presets: next });
+                  onChange({ presets: next });
                 }}
                 className="flex-1 rounded bg-panel-2 px-2 py-1 text-xs"
               />
@@ -92,7 +115,7 @@ export function SettingsPanel({ onSave }: { onSave: () => void }) {
             <label className="mb-1 block text-xs text-muted-foreground">Default label text</label>
             <input
               value={settings.defaultLabelText}
-              onChange={(e) => updateSettings({ defaultLabelText: e.target.value })}
+              onChange={(e) => onChange({ defaultLabelText: e.target.value })}
               className="w-full rounded border border-border bg-panel-2 px-2 py-1.5 text-xs"
             />
           </div>
@@ -103,7 +126,7 @@ export function SettingsPanel({ onSave }: { onSave: () => void }) {
               min={10}
               max={64}
               value={settings.defaultFontSize}
-              onChange={(e) => updateSettings({ defaultFontSize: Number(e.target.value) })}
+              onChange={(e) => onChange({ defaultFontSize: Number(e.target.value) })}
               className="w-full"
             />
           </div>
@@ -120,7 +143,7 @@ export function SettingsPanel({ onSave }: { onSave: () => void }) {
             max={3}
             step={0.1}
             value={settings.animationIntensity}
-            onChange={(e) => updateSettings({ animationIntensity: Number(e.target.value) })}
+            onChange={(e) => onChange({ animationIntensity: Number(e.target.value) })}
             className="w-full"
           />
           <p className="mt-1 text-[10px] text-muted-foreground">Higher = faster movement.</p>
@@ -133,7 +156,7 @@ export function SettingsPanel({ onSave }: { onSave: () => void }) {
           <input
             placeholder="MP3 URL"
             value={settings.musicUrl}
-            onChange={(e) => updateSettings({ musicUrl: e.target.value })}
+            onChange={(e) => onChange({ musicUrl: e.target.value })}
             className="flex-1 rounded border border-border bg-panel-2 px-2 py-1.5 text-xs"
           />
           <label className="cursor-pointer rounded border border-border bg-panel-2 px-3 py-1.5 text-xs hover:bg-accent">
@@ -146,7 +169,7 @@ export function SettingsPanel({ onSave }: { onSave: () => void }) {
                 const f = e.target.files?.[0];
                 if (!f) return;
                 const { url } = await uploadToR2(f, "music");
-                updateSettings({ musicUrl: url });
+                onChange({ musicUrl: url });
               }}
             />
           </label>
@@ -158,7 +181,7 @@ export function SettingsPanel({ onSave }: { onSave: () => void }) {
             min={0}
             max={100}
             value={settings.musicVolume}
-            onChange={(e) => updateSettings({ musicVolume: Number(e.target.value) })}
+            onChange={(e) => onChange({ musicVolume: Number(e.target.value) })}
             className="flex-1"
           />
           <button

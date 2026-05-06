@@ -1,37 +1,18 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { Upload, Film, Loader2, Download, Settings as SettingsIcon } from "lucide-react";
-import { createProjectFromAudio, listProjects, listRenders, type ProjectListItem, type RenderItem } from "@/api.functions";
+import {
+  createProjectFromAudio,
+  getGlobalSettings,
+  listProjects,
+  listRenders,
+  saveGlobalSettings,
+  type ProjectListItem,
+  type RenderItem,
+} from "@/api.functions";
 import { uploadToR2 } from "@/lib/upload";
-
-type AppPrefs = {
-  defaultFontSize: number;
-  defaultLabelText: string;
-  animationIntensity: number;
-};
-const PREFS_KEY = "verticut.appPrefs";
-const DEFAULT_PREFS: AppPrefs = {
-  defaultFontSize: 18,
-  defaultLabelText: "© Source",
-  animationIntensity: 1,
-};
-function loadPrefs(): AppPrefs {
-  if (typeof window === "undefined") return DEFAULT_PREFS;
-  try {
-    const raw = window.localStorage.getItem(PREFS_KEY);
-    if (!raw) return DEFAULT_PREFS;
-    return { ...DEFAULT_PREFS, ...JSON.parse(raw) };
-  } catch {
-    return DEFAULT_PREFS;
-  }
-}
-function savePrefs(p: AppPrefs) {
-  try {
-    window.localStorage.setItem(PREFS_KEY, JSON.stringify(p));
-  } catch {
-    // ignore
-  }
-}
+import { SettingsPanel } from "@/components/editor/SettingsPanel";
+import type { SettingsDoc } from "@/server/mongo.server";
 
 export const Route = createFileRoute("/")({
   head: () => ({ meta: [{ title: "VertiCut — Vertical video editor" }] }),
@@ -53,24 +34,33 @@ function Home() {
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [renders, setRenders] = useState<RenderItem[]>([]);
   const [tab, setTab] = useState<"projects" | "settings">("projects");
-  const [prefs, setPrefs] = useState<AppPrefs>(() => loadPrefs());
-
-  function updatePrefs(patch: Partial<AppPrefs>) {
-    setPrefs((p) => {
-      const next = { ...p, ...patch };
-      savePrefs(next);
-      return next;
-    });
-  }
+  const [settings, setSettings] = useState<SettingsDoc | null>(null);
+  const [savingState, setSavingState] = useState<"idle" | "saving" | "saved">("idle");
 
   useEffect(() => {
     listProjects().then(setProjects).catch(() => {});
     listRenders().then(setRenders).catch(() => {});
+    getGlobalSettings().then(setSettings).catch(() => {});
     const t = setInterval(() => {
       listRenders().then(setRenders).catch(() => {});
     }, 4000);
     return () => clearInterval(t);
   }, []);
+
+  function applySettingsPatch(patch: Partial<SettingsDoc>) {
+    setSettings((prev) => (prev ? { ...prev, ...patch } : prev));
+  }
+
+  async function saveSettingsNow() {
+    if (!settings) return;
+    setSavingState("saving");
+    try {
+      await saveGlobalSettings({ data: { settings } });
+      setSavingState("saved");
+    } catch {
+      setSavingState("idle");
+    }
+  }
 
   async function handleFiles(files: FileList | null) {
     if (!files || !files[0]) return;
@@ -114,8 +104,20 @@ function Home() {
       </header>
 
       {tab === "settings" ? (
-        <main className="mx-auto max-w-3xl px-6 py-10">
-          <AppSettings prefs={prefs} onChange={updatePrefs} />
+        <main className="bg-background">
+          {settings ? (
+            <SettingsPanel
+              settings={settings}
+              onChange={applySettingsPatch}
+              onSave={saveSettingsNow}
+              saving={savingState}
+              subtitle="Saved globally — applies to every project."
+            />
+          ) : (
+            <div className="flex h-64 items-center justify-center">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            </div>
+          )}
         </main>
       ) : (
         <main className="mx-auto max-w-6xl px-6 py-10 space-y-10">
@@ -192,62 +194,6 @@ function Home() {
           </section>
         </main>
       )}
-    </div>
-  );
-}
-
-function AppSettings({ prefs, onChange }: { prefs: AppPrefs; onChange: (p: Partial<AppPrefs>) => void }) {
-  return (
-    <div className="space-y-8 text-sm">
-      <header>
-        <h2 className="text-base font-semibold">Settings</h2>
-        <p className="mt-1 text-xs text-muted-foreground">Defaults applied to UI controls. Saved locally.</p>
-      </header>
-
-      <section className="space-y-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Default Label</h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">Default label text</label>
-            <input
-              value={prefs.defaultLabelText}
-              onChange={(e) => onChange({ defaultLabelText: e.target.value })}
-              className="w-full rounded border border-border bg-panel-2 px-2 py-1.5 text-xs"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">
-              Font size ({prefs.defaultFontSize}px)
-            </label>
-            <input
-              type="range"
-              min={10}
-              max={64}
-              value={prefs.defaultFontSize}
-              onChange={(e) => onChange({ defaultFontSize: Number(e.target.value) })}
-              className="w-full"
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Animation</h3>
-        <div>
-          <label className="mb-1 block text-xs text-muted-foreground">
-            Default intensity ({prefs.animationIntensity.toFixed(1)}×)
-          </label>
-          <input
-            type="range"
-            min={0.5}
-            max={3}
-            step={0.1}
-            value={prefs.animationIntensity}
-            onChange={(e) => onChange({ animationIntensity: Number(e.target.value) })}
-            className="w-full"
-          />
-        </div>
-      </section>
     </div>
   );
 }

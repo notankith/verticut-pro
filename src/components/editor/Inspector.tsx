@@ -60,21 +60,16 @@ export function Inspector() {
       </div>
 
       <div>
-        <label className="mb-1 block text-muted-foreground">Label text</label>
-        <input
-          value={clip.labelText}
-          onChange={(e) => updateClip(clip.id, { labelText: e.target.value })}
-          className="w-full rounded border border-border bg-panel-2 px-2 py-1.5"
-        />
-      </div>
-
-      <div>
         <label className="mb-1 block text-muted-foreground">Label preset</label>
         <select
           value={clip.labelPresetId}
           onChange={(e) => {
-            const p = settings.presets.find((x) => x.id === e.target.value);
-            updateClip(clip.id, { labelPresetId: e.target.value, labelText: p?.text ?? clip.labelText });
+            const nextId = e.target.value;
+            const p = settings.presets.find((x) => x.id === nextId);
+            // Pulling preset text into labelText keeps the rendered overlay in
+            // sync. For "custom", default to the preset's text but the inline
+            // input below lets the user override per-clip.
+            updateClip(clip.id, { labelPresetId: nextId, labelText: p?.text ?? clip.labelText });
           }}
           className="w-full rounded border border-border bg-panel-2 px-2 py-1.5"
         >
@@ -82,6 +77,18 @@ export function Inspector() {
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
+        {clip.labelPresetId === "custom" ? (
+          <div className="mt-2">
+            <label className="mb-1 block text-muted-foreground">Custom credits</label>
+            <input
+              autoFocus
+              value={clip.labelText}
+              placeholder="e.g. © Source"
+              onChange={(e) => updateClip(clip.id, { labelText: e.target.value })}
+              className="w-full rounded border border-border bg-panel-2 px-2 py-1.5"
+            />
+          </div>
+        ) : null}
       </div>
 
       <div>

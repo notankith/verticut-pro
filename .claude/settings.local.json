@@ -9,7 +9,8 @@
       "Bash(node --check \"D:/VSCode Projects/verticut-pro/render-server/src/index.mjs\")",
       "Bash(node --check \"D:/VSCode Projects/verticut-pro/render-server/src/remotion-entry.jsx\")",
       "Bash(node --check \"D:/VSCode Projects/verticut-pro/render-server/src/composition.jsx\")",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(npx eslint *)"
     ]
   }
 }

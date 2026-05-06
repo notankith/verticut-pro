@@ -27,9 +27,14 @@ export const presignUpload = createServerFn({ method: "POST" })
     return { uploadUrl: url, key, publicUrl: publicUrl(key) };
   });
 
-function defaultSettings(projectId: string): SettingsDoc {
+// Settings live in a single shared document so changes apply to every
+// project. The id is fixed; the per-project rows that older builds may have
+// written are ignored.
+const GLOBAL_SETTINGS_ID = "global";
+
+function defaultSettings(id: string = GLOBAL_SETTINGS_ID): SettingsDoc {
   return {
-    _id: projectId,
+    _id: id,
     defaultLabelText: "© WWE | © Getty Images",
     defaultFontSize: 18,
     animationIntensity: 1,
@@ -43,11 +48,16 @@ function defaultSettings(projectId: string): SettingsDoc {
   };
 }
 
+async function readGlobalSettings(): Promise<SettingsDoc> {
+  const settingsC = await C<SettingsDoc>("settings");
+  const doc = await settingsC.findOne({ _id: GLOBAL_SETTINGS_ID });
+  return doc ?? defaultSettings();
+}
+
 export const createProjectFromAudio = createServerFn({ method: "POST" })
   .inputValidator((d: { audioKey: string; audioUrl: string }) => d)
   .handler(async ({ data }) => {
     const projects = await C<ProjectDoc>("projects");
-    const settings = await C<SettingsDoc>("settings");
     const id = randomUUID();
     const transcriptId = await submitTranscript(data.audioUrl);
     const now = Date.now();
@@ -64,7 +74,6 @@ export const createProjectFromAudio = createServerFn({ method: "POST" })
       createdAt: now,
       updatedAt: now,
     });
-    await settings.insertOne(defaultSettings(id));
     return { id };
   });
 
@@ -105,7 +114,6 @@ export const getProject = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => d)
   .handler(async ({ data }): Promise<ProjectFull> => {
     const projects = await C<ProjectDoc>("projects");
-    const settingsC = await C<SettingsDoc>("settings");
     const p = await projects.findOne({ _id: data.id });
     if (!p) throw new Error("Project not found");
 
@@ -137,7 +145,7 @@ export const getProject = createServerFn({ method: "POST" })
       }
     }
 
-    const settings = await settingsC.findOne({ _id: data.id });
+    const settings = await readGlobalSettings();
     return {
       id: p._id,
       name: p.name,
@@ -146,7 +154,7 @@ export const getProject = createServerFn({ method: "POST" })
       transcript: p.transcript,
       transcriptStatus: p.transcriptStatus,
       clips: p.clips ?? [],
-      settings: settings ?? defaultSettings(data.id),
+      settings,
     };
   });
 
@@ -161,13 +169,34 @@ export const saveProject = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// Settings are global. The `id` arg is accepted but ignored — every save goes
+// to the single shared `_id: "global"` document so changes apply across every
+// project.
 export const saveSettings = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string; settings: SettingsDoc }) => d)
   .handler(async ({ data }) => {
     const settingsC = await C<SettingsDoc>("settings");
     await settingsC.updateOne(
-      { _id: data.id },
-      { $set: { ...data.settings, _id: data.id } },
+      { _id: GLOBAL_SETTINGS_ID },
+      { $set: { ...data.settings, _id: GLOBAL_SETTINGS_ID } },
+      { upsert: true },
+    );
+    return { ok: true };
+  });
+
+export const getGlobalSettings = createServerFn({ method: "GET" }).handler(
+  async (): Promise<SettingsDoc> => {
+    return readGlobalSettings();
+  },
+);
+
+export const saveGlobalSettings = createServerFn({ method: "POST" })
+  .inputValidator((d: { settings: SettingsDoc }) => d)
+  .handler(async ({ data }) => {
+    const settingsC = await C<SettingsDoc>("settings");
+    await settingsC.updateOne(
+      { _id: GLOBAL_SETTINGS_ID },
+      { $set: { ...data.settings, _id: GLOBAL_SETTINGS_ID } },
       { upsert: true },
     );
     return { ok: true };
@@ -199,12 +228,11 @@ export const enqueueRender = createServerFn({ method: "POST" })
   .inputValidator((d: { projectId: string }) => d)
   .handler(async ({ data }) => {
     const projects = await C<ProjectDoc>("projects");
-    const settingsC = await C<SettingsDoc>("settings");
     const renders = await C<RenderDoc>("renders");
 
     const project = await projects.findOne({ _id: data.projectId });
     if (!project) throw new Error("Project not found");
-    const settings = await settingsC.findOne({ _id: data.projectId });
+    const settings = await readGlobalSettings();
     const id = randomUUID();
     const filename = slugFilename(project.name);
     const render: RenderDoc = {
@@ -236,7 +264,7 @@ export const enqueueRender = createServerFn({ method: "POST" })
               audioDuration: project.audioDuration,
             },
             clips: project.clips ?? [],
-            settings: settings ?? defaultSettings(data.projectId),
+            settings,
           }),
         });
         if (!r.ok) {

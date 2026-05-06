@@ -39,34 +39,32 @@ export async function uploadToR2(
 }
 
 const IMAGE_MIME_RE = /^image\/(png|jpe?g|webp|avif|gif|bmp|svg\+xml|heic|heif)$/i;
-const IMAGE_URL_RE = /^https?:\/\/\S+\.(png|jpe?g|webp|avif|gif|bmp|svg|heic|heif)(\?\S*)?$/i;
+// Loose URL → image hint. Used only for *priority ordering* of fallback
+// candidates — the server validates content-type, so non-matching URLs are
+// still attempted (many real CDN URLs lack a file extension).
+const IMAGE_URL_RE = /\.(png|jpe?g|webp|avif|gif|bmp|svg|heic|heif)(\?|$)/i;
 
-function extFromBlob(blob: Blob, fallback = "bin") {
-  const m = blob.type.match(/^image\/([a-z0-9+-]+)$/i);
-  if (!m) return fallback;
-  return m[1].replace("jpeg", "jpg").replace("svg+xml", "svg");
-}
-
-// Pulls an image URL down through a CORS-friendly path so we can re-upload it
-// to our own bucket. Falls back to a direct fetch — works for most CDNs that
-// allow cross-origin reads (sportskeeda, getty CDNs, etc.).
-async function urlToImageFile(url: string): Promise<File> {
-  const res = await fetch(url, { mode: "cors" });
-  if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
-  const blob = await res.blob();
-  if (!blob.type.startsWith("image/")) throw new Error(`Not an image: ${blob.type}`);
-  const ext = extFromBlob(blob, "jpg");
-  const filename = (url.split("/").pop()?.split("?")[0] || `pasted.${ext}`).slice(0, 80);
-  return new File([blob], filename, { type: blob.type });
+async function withRetry<T>(fn: () => Promise<T>, attempts = 3, baseDelayMs = 300): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, baseDelayMs * Math.pow(2, i)));
+      }
+    }
+  }
+  throw lastErr;
 }
 
 export type PastedImage = { key: string; url: string };
 
-// Inspects a ClipboardEvent for image content. Handles three cases:
-//  • A direct image blob (e.g. screenshot copy)
-//  • A pasted image URL pointing at a remote file
-//  • An <img>-rich HTML fragment with an https src
-// Returns the uploaded R2 references, or null if nothing image-like was found.
+// Inspects a ClipboardEvent for image content. Tries multiple sources in
+// priority order (file blob → text URL → text/uri-list → HTML <img>) with
+// retries, and falls back to URL sources if a blob upload fails. Returns the
+// uploaded R2 references, or null if nothing image-like was found.
 export async function extractAndUploadPastedImages(
   e: ClipboardEvent,
   opts?: {
@@ -76,66 +74,101 @@ export async function extractAndUploadPastedImages(
 ): Promise<PastedImage[] | null> {
   const cd = e.clipboardData;
   if (!cd) return null;
-  const uploads: Promise<PastedImage>[] = [];
 
-  // 1. Direct image blob (screenshots, "copy image" from browser)
+  // Collect blob candidates (screenshots, "copy image")
+  const blobs: File[] = [];
   for (const item of Array.from(cd.items)) {
     if (item.kind === "file" && IMAGE_MIME_RE.test(item.type)) {
       const file = item.getAsFile();
-      if (file) {
-        const idx = uploads.length;
-        uploads.push(
-          uploadToR2(file, "image", (pct) => opts?.onProgress?.(idx, pct)).catch((err) => {
-            opts?.onError?.(idx, err);
-            throw err;
-          }),
-        );
-      }
+      if (file) blobs.push(file);
     }
   }
 
-  if (uploads.length === 0) {
-    // 2. Plain-text URL paste
-    const text = cd.getData("text/plain")?.trim();
-    if (text && IMAGE_URL_RE.test(text)) {
-      // Use server-side fetch to avoid CORS issues when pulling external images
-      const idx = uploads.length;
-      uploads.push(
-        fetchAndUploadImage({ data: { url: text } })
-          .then(({ key, publicUrl }) => ({ key, url: publicUrl }))
-          .then((res) => {
-            opts?.onProgress?.(idx, 100);
-            return res;
-          })
-          .catch((err) => {
-            opts?.onError?.(idx, err);
-            throw err;
-          }),
-      );
-    } else if (text) {
-      // 3. HTML fragment — try the first <img src> we can find
-      const html = cd.getData("text/html");
-      if (html) {
-        const m = html.match(/<img[^>]+src=["']([^"']+)["']/i);
-        if (m && /^https?:\/\//i.test(m[1])) {
-          const idx = uploads.length;
-          uploads.push(
-            fetchAndUploadImage({ data: { url: m[1] } })
-              .then(({ key, publicUrl }) => ({ key, url: publicUrl }))
-              .then((res) => {
-                opts?.onProgress?.(idx, 100);
-                return res;
-              })
-              .catch((err) => {
-                opts?.onError?.(idx, err);
-                throw err;
-              }),
-          );
+  // Collect URL fallback candidates from every available clipboard format.
+  // We don't filter strictly by extension here — many CDN URLs (Getty, S3,
+  // signed URLs) lack one. The server validates content-type at fetch time.
+  const urlSet = new Set<string>();
+  const text = cd.getData("text/plain")?.trim();
+  if (text && /^https?:\/\/\S+$/i.test(text)) urlSet.add(text);
+
+  const uriList = cd.getData("text/uri-list");
+  if (uriList) {
+    for (const line of uriList.split(/\r?\n/)) {
+      const t = line.trim();
+      if (t && !t.startsWith("#") && /^https?:\/\//i.test(t)) urlSet.add(t);
+    }
+  }
+
+  const html = cd.getData("text/html");
+  if (html) {
+    const re = /<img[^>]+src=["']([^"']+)["']/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(html))) {
+      if (/^https?:\/\//i.test(m[1])) urlSet.add(m[1]);
+    }
+  }
+
+  // Prefer URLs that look like images; non-matching URLs still get tried.
+  const fallbackUrls = Array.from(urlSet).sort(
+    (a, b) => Number(IMAGE_URL_RE.test(b)) - Number(IMAGE_URL_RE.test(a)),
+  );
+
+  if (blobs.length === 0 && fallbackUrls.length === 0) return null;
+
+  const tryBlob = (file: File, idx: number) =>
+    withRetry(() =>
+      uploadToR2(file, "image", (pct) => opts?.onProgress?.(idx, pct)),
+    );
+
+  const tryUrl = async (url: string, idx: number): Promise<PastedImage> => {
+    const res = await withRetry(() => fetchAndUploadImage({ data: { url } }));
+    opts?.onProgress?.(idx, 100);
+    return { key: res.key, url: res.publicUrl };
+  };
+
+  const tryUrlChain = async (idx: number): Promise<PastedImage | null> => {
+    let lastErr: unknown = null;
+    for (const u of fallbackUrls) {
+      try {
+        return await tryUrl(u, idx);
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    if (lastErr) throw lastErr;
+    return null;
+  };
+
+  const results: PastedImage[] = [];
+
+  if (blobs.length > 0) {
+    for (let i = 0; i < blobs.length; i++) {
+      try {
+        results.push(await tryBlob(blobs[i], i));
+      } catch (blobErr) {
+        // Blob path failed — fall back to any URL we extracted from the same
+        // paste before reporting an error.
+        try {
+          const fallback = await tryUrlChain(i);
+          if (fallback) {
+            results.push(fallback);
+            continue;
+          }
+          opts?.onError?.(i, blobErr);
+        } catch (urlErr) {
+          opts?.onError?.(i, urlErr ?? blobErr);
         }
       }
     }
+  } else {
+    try {
+      const got = await tryUrlChain(0);
+      if (got) results.push(got);
+    } catch (err) {
+      opts?.onError?.(0, err);
+    }
   }
 
-  if (uploads.length === 0) return null;
-  return Promise.all(uploads);
+  if (results.length === 0) return null;
+  return results;
 }
