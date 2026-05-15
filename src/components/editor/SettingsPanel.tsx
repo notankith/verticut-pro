@@ -1,19 +1,23 @@
 import { uploadToR2 } from "@/lib/upload";
 import { useState } from "react";
 import type { SettingsDoc } from "@/server/mongo.server";
+import { Trash2 } from "lucide-react";
 
 type Props = {
   settings: SettingsDoc;
   onChange: (patch: Partial<SettingsDoc>) => void;
   onSave?: () => void;
+  onReset?: () => Promise<void>;
   saving?: "idle" | "saving" | "saved";
   title?: string;
   subtitle?: string;
 };
 
-export function SettingsPanel({ settings, onChange, onSave, saving, title, subtitle }: Props) {
+export function SettingsPanel({ settings, onChange, onSave, onReset, saving, title, subtitle }: Props) {
   const [newPreset, setNewPreset] = useState({ name: "", text: "" });
   const [musicTesting, setMusicTesting] = useState<HTMLAudioElement | null>(null);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   function deletePreset(id: string) {
     onChange({ presets: settings.presets.filter((p) => p.id !== id) });
@@ -35,6 +39,20 @@ export function SettingsPanel({ settings, onChange, onSave, saving, title, subti
     setNewPreset({ name: "", text: "" });
   }
 
+  async function handleReset() {
+    setIsResetting(true);
+    try {
+      if (onReset) {
+        await onReset();
+      }
+      setShowResetConfirm(false);
+    } catch (err) {
+      alert(`Reset failed: ${err}`);
+    } finally {
+      setIsResetting(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-8 p-6 text-sm">
       <header className="flex items-center justify-between">
@@ -42,21 +60,33 @@ export function SettingsPanel({ settings, onChange, onSave, saving, title, subti
           <h2 className="text-base font-semibold">{title ?? "Settings"}</h2>
           {subtitle ? <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p> : null}
         </div>
-        {onSave ? (
-          <div className="flex items-center gap-2">
-            {saving === "saving" ? (
-              <span className="text-[10px] text-muted-foreground">Saving…</span>
-            ) : saving === "saved" ? (
-              <span className="text-[10px] text-muted-foreground">Saved</span>
-            ) : null}
+        <div className="flex items-center gap-2">
+          {onSave ? (
+            <>
+              {saving === "saving" ? (
+                <span className="text-[10px] text-muted-foreground">Saving…</span>
+              ) : saving === "saved" ? (
+                <span className="text-[10px] text-muted-foreground">Saved</span>
+              ) : null}
+              <button
+                onClick={onSave}
+                className="rounded bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
+              >
+                Save settings
+              </button>
+            </>
+          ) : null}
+          {onReset ? (
             <button
-              onClick={onSave}
-              className="rounded bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
+              onClick={() => setShowResetConfirm(true)}
+              disabled={isResetting}
+              className="flex items-center gap-1.5 rounded bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/20 disabled:opacity-50"
+              title="Delete all projects and downloads (settings will be preserved)"
             >
-              Save settings
+              <Trash2 className="h-3 w-3" /> Reset all
             </button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </header>
 
       <section className="space-y-3">
@@ -203,6 +233,40 @@ export function SettingsPanel({ settings, onChange, onSave, saving, title, subti
           </button>
         </div>
       </section>
+
+      {/* Reset Confirmation Dialog */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="max-w-sm rounded-lg border border-border bg-panel p-6 shadow-lg">
+            <h3 className="text-base font-semibold text-foreground">Reset all data?</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              This will delete all projects and download history. Your settings and presets will be preserved. This action cannot be undone.
+            </p>
+            <div className="mt-6 flex gap-3 justify-end">
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                disabled={isResetting}
+                className="rounded border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReset}
+                disabled={isResetting}
+                className="flex items-center gap-1.5 rounded bg-destructive px-3 py-1.5 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+              >
+                {isResetting ? (
+                  <>Resetting…</>
+                ) : (
+                  <>
+                    <Trash2 className="h-3 w-3" /> Delete all
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

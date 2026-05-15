@@ -254,6 +254,8 @@ function EditorPage() {
     };
   }, [renderJob?.id, renderJob?.status]);
 
+  const [dragOver, setDragOver] = useState(false);
+
   async function onImageImport(files: FileList | null) {
     if (!files || files.length === 0) return;
     const arr = Array.from(files);
@@ -266,6 +268,53 @@ function EditorPage() {
       }
     }
   }
+
+  // Handle drag and drop for images in the main editor area
+  useEffect(() => {
+    const mainArea = document.querySelector('main') || document;
+    
+    function handleDragOver(e: DragEvent) {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragOver(true);
+    }
+
+    function handleDragLeave(e: DragEvent) {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragOver(false);
+    }
+
+    function handleDrop(e: DragEvent) {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragOver(false);
+      
+      const files = e.dataTransfer?.files;
+      if (files) {
+        // Filter for image/media files
+        const imageFiles = Array.from(files).filter(f => 
+          /image|video|media|webm|mp4|mov|png|jpg|jpeg|gif|webp/i.test(f.type + " " + f.name)
+        );
+        if (imageFiles.length > 0) {
+          onImageImport(imageFiles as any);
+        }
+      }
+    }
+
+    // Only attach to the main preview area when in editor tab
+    if (tab === "editor") {
+      mainArea.addEventListener("dragover", handleDragOver);
+      mainArea.addEventListener("dragleave", handleDragLeave);
+      mainArea.addEventListener("drop", handleDrop);
+    }
+
+    return () => {
+      mainArea.removeEventListener("dragover", handleDragOver);
+      mainArea.removeEventListener("dragleave", handleDragLeave);
+      mainArea.removeEventListener("drop", handleDrop);
+    };
+  }, [tab, addImageClips]);
 
   const inputProps = useMemo(
     () => ({
@@ -378,7 +427,15 @@ function EditorPage() {
             </aside>
 
             {/* Center preview */}
-            <main className="relative flex flex-1 min-w-0 flex-col items-center justify-center gap-2 bg-track p-2">
+            <main className={`relative flex flex-1 min-w-0 flex-col items-center justify-center gap-2 bg-track p-2 transition-colors ${dragOver ? "bg-primary/10 ring-2 ring-primary" : ""}`}>
+              {dragOver && (
+                <div className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-primary/5 backdrop-blur-sm">
+                  <div className="text-center">
+                    <ImageIcon className="h-8 w-8 text-primary mx-auto mb-2" />
+                    <p className="text-sm font-medium text-primary">Drop images or media to import</p>
+                  </div>
+                </div>
+              )}
               <button
                 onClick={() => fileImportRef.current?.click()}
                 className="absolute right-2 top-2 z-10 flex items-center gap-1.5 rounded border border-border bg-panel/90 px-2.5 py-1 text-[11px] backdrop-blur hover:bg-accent"

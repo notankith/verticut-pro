@@ -7,6 +7,7 @@ import {
   listProjects,
   listRenders,
   saveGlobalSettings,
+  resetAllData,
   type ProjectListItem,
   type RenderItem,
 } from "@/api.functions";
@@ -82,6 +83,22 @@ function Home() {
     }
   }
 
+  async function handleReset() {
+    try {
+      await resetAllData({ confirmed: true });
+      // Refresh projects and renders lists
+      const [newProjects, newRenders] = await Promise.all([
+        listProjects(),
+        listRenders(),
+      ]);
+      setProjects(newProjects);
+      setRenders(newRenders);
+    } catch (e) {
+      alert(`Reset failed: ${e}`);
+      throw e;
+    }
+  }
+
   return (
     <div className="h-screen overflow-auto bg-background text-foreground">
       <header className="flex items-center gap-3 border-b border-border px-6 py-3 bg-panel">
@@ -110,6 +127,7 @@ function Home() {
               settings={settings}
               onChange={applySettingsPatch}
               onSave={saveSettingsNow}
+              onReset={handleReset}
               saving={savingState}
               subtitle="Saved globally — applies to every project."
             />
