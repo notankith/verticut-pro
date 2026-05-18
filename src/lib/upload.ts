@@ -61,6 +61,24 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3, baseDelayMs = 30
 
 export type PastedImage = { key: string; url: string };
 
+async function uploadClipboardBlob(
+  blob: Blob,
+  idx: number,
+  opts?: {
+    onProgress?: (index: number, pct: number) => void;
+    onError?: (index: number, err: unknown) => void;
+  },
+): Promise<PastedImage> {
+  const extFromType = blob.type.split("/")[1]?.replace(/[^a-z0-9]/gi, "") || "png";
+  const file = new File([blob], `clipboard-${Date.now()}-${idx}.${extFromType}`, {
+    type: blob.type || "image/png",
+  });
+  const up = await withRetry(() =>
+    uploadToR2(file, "image", (pct) => opts?.onProgress?.(idx, pct)),
+  );
+  return { key: up.key, url: up.url };
+}
+
 // Inspects a ClipboardEvent for image content. Tries multiple sources in
 // priority order (file blob → text URL → text/uri-list → HTML <img>) with
 // retries, and falls back to URL sources if a blob upload fails. Returns the
@@ -171,4 +189,35 @@ export async function extractAndUploadPastedImages(
 
   if (results.length === 0) return null;
   return results;
+}
+
+// Fallback path for browsers where paste events occasionally lack clipboard
+// items. This reads from the Async Clipboard API during a user gesture.
+export async function extractAndUploadImagesFromClipboard(
+  opts?: {
+    onProgress?: (index: number, pct: number) => void;
+    onError?: (index: number, err: unknown) => void;
+  },
+): Promise<PastedImage[] | null> {
+  try {
+    if (typeof navigator === "undefined" || !navigator.clipboard?.read) return null;
+    const items = await navigator.clipboard.read();
+    const out: PastedImage[] = [];
+    let idx = 0;
+    for (const item of items) {
+      const imageTypes = item.types.filter((t) => IMAGE_MIME_RE.test(t));
+      for (const t of imageTypes) {
+        try {
+          const blob = await item.getType(t);
+          out.push(await uploadClipboardBlob(blob, idx, opts));
+          idx++;
+        } catch (err) {
+          opts?.onError?.(idx, err);
+        }
+      }
+    }
+    return out.length > 0 ? out : null;
+  } catch {
+    return null;
+  }
 }

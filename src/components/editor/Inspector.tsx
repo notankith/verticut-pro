@@ -48,15 +48,22 @@ export function Inspector() {
 
       <div>
         <label className="mb-1 block text-muted-foreground">Animation</label>
-        <select
-          value={clip.animation}
-          onChange={(e) => updateClip(clip.id, { animation: e.target.value as ClipDoc["animation"] })}
-          className="w-full rounded border border-border bg-panel-2 px-2 py-1.5"
-        >
+        <div className="grid grid-cols-2 gap-1.5">
           {ANIMS.map((a) => (
-            <option key={a} value={a}>{a}</option>
+            <button
+              key={a}
+              type="button"
+              onClick={() => updateClip(clip.id, { animation: a })}
+              className={`rounded border px-2 py-1.5 text-[11px] capitalize transition-colors ${
+                clip.animation === a
+                  ? "border-primary bg-primary/15 text-foreground"
+                  : "border-border bg-panel-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+              }`}
+            >
+              {a.replace("-", " ")}
+            </button>
           ))}
-        </select>
+        </div>
       </div>
 
       <div>

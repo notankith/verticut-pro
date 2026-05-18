@@ -18,7 +18,7 @@ import { Inspector } from "@/components/editor/Inspector";
 import { WordTranscript } from "@/components/editor/WordTranscript";
 import { SettingsPanel } from "@/components/editor/SettingsPanel";
 import { useAutoSave, useTimelineActions } from "@/components/editor/hooks";
-import { extractAndUploadPastedImages, uploadToR2 } from "@/lib/upload";
+import { extractAndUploadImagesFromClipboard, extractAndUploadPastedImages, uploadToR2 } from "@/lib/upload";
 
 const OVERLAY_URL = "/GradientOverlay.png";
 
@@ -47,6 +47,8 @@ function EditorPage() {
     error?: string;
   } | null>(null);
   const fileImportRef = useRef<HTMLInputElement>(null);
+  const previewDropRef = useRef<HTMLElement | null>(null);
+  const dragDepthRef = useRef(0);
 
   const audioUrl = useEditor((s) => s.audioUrl);
   const audioDuration = useEditor((s) => s.audioDuration);
@@ -128,31 +130,53 @@ function EditorPage() {
 
   const [pasting, setPasting] = useState(false);
   const [pasteError, setPasteError] = useState<string | null>(null);
+  const [lastPasteAttemptAt, setLastPasteAttemptAt] = useState(0);
 
   // Global Ctrl+V image paste — uploads clipboard images (blobs or URLs) and
-  // appends them as new clips. Skipped while the user is typing in any input.
+  // appends them as new clips. Uses both paste-event data and Clipboard API
+  // fallback to make image paste resilient across browsers/contexts.
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
+
+    const looksLikeImagePaste = (ev: ClipboardEvent) => {
+      const cd = ev.clipboardData;
+      if (!cd) return false;
+      const hasImageItem = Array.from(cd.items).some(
+        (it) => it.kind === "file" && /^image\//i.test(it.type),
+      );
+      if (hasImageItem) return true;
+      const html = cd.getData("text/html");
+      if (html && /<img[^>]+src=/i.test(html)) return true;
+      return false;
+    };
+
     const onPaste = async (ev: ClipboardEvent) => {
-      const target = ev.target as HTMLElement | null;
-      const tag = target?.tagName;
-      if (
-        tag === "INPUT" ||
-        tag === "TEXTAREA" ||
-        tag === "SELECT" ||
-        target?.isContentEditable
-      ) {
-        return;
-      }
+      if (inFlight) return;
+      inFlight = true;
+
+      const shouldIntercept = looksLikeImagePaste(ev);
+      if (shouldIntercept) ev.preventDefault();
+
       try {
         setPasteError(null);
-        const uploaded = await extractAndUploadPastedImages(ev, {
+
+        let uploaded = await extractAndUploadPastedImages(ev, {
           onError: (_idx, err) => {
             setPasteError(String(err));
           },
         });
+
+        // Some environments fire paste with empty/partial clipboardData.
+        if (!uploaded || uploaded.length === 0) {
+          uploaded = await extractAndUploadImagesFromClipboard({
+            onError: (_idx, err) => {
+              setPasteError(String(err));
+            },
+          });
+        }
+
         if (!uploaded || uploaded.length === 0) return;
-        ev.preventDefault();
         if (cancelled) return;
         setPasting(true);
         try {
@@ -164,17 +188,40 @@ function EditorPage() {
         console.error("Paste upload failed", err);
         setPasting(false);
         setPasteError(String(err));
+      } finally {
+        inFlight = false;
       }
     };
-    window.addEventListener("paste", onPaste);
+
+    document.addEventListener("paste", onPaste, { capture: true });
     return () => {
       cancelled = true;
-      window.removeEventListener("paste", onPaste);
+      document.removeEventListener("paste", onPaste, { capture: true });
     };
   }, [addImageClips]);
 
   // Keyboard shortcuts — read currentFrame from the player ref so we don't need parent state.
   useEffect(() => {
+    async function triggerPasteFallback() {
+      if (Date.now() - lastPasteAttemptAt < 400) return;
+      setLastPasteAttemptAt(Date.now());
+      try {
+        const uploaded = await extractAndUploadImagesFromClipboard({
+          onError: (_idx, err) => setPasteError(String(err)),
+        });
+        if (uploaded && uploaded.length > 0) {
+          setPasting(true);
+          try {
+            addImageClips(uploaded);
+          } finally {
+            setPasting(false);
+          }
+        }
+      } catch {
+        // Ignore fallback errors; normal paste event path may still succeed.
+      }
+    }
+
     function onKey(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
@@ -187,6 +234,8 @@ function EditorPage() {
       } else if (e.ctrlKey && e.key.toLowerCase() === "i") {
         e.preventDefault();
         fileImportRef.current?.click();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+        void triggerPasteFallback();
       } else if (e.key === " ") {
         e.preventDefault();
         playerRef.current?.toggle();
@@ -197,11 +246,18 @@ function EditorPage() {
         playerRef.current?.pause();
       } else if (e.key.toLowerCase() === "l") {
         playerRef.current?.play();
+      } else if (!e.ctrlKey && !e.metaKey && ["1", "2", "3"].includes(e.key)) {
+        const idx = Number(e.key) - 1;
+        const presets = useEditor.getState().settings.presets;
+        const preset = presets[idx];
+        if (!preset) return;
+        e.preventDefault();
+        useEditor.getState().updateSettings({ defaultPresetId: preset.id });
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo]);
+  }, [undo, redo, addImageClips, lastPasteAttemptAt]);
 
   async function onExport() {
     setEnqueuing(true);
@@ -256,9 +312,10 @@ function EditorPage() {
 
   const [dragOver, setDragOver] = useState(false);
 
-  async function onImageImport(files: FileList | null) {
-    if (!files || files.length === 0) return;
+  const onImageImport = useCallback(async (files: FileList | File[] | null) => {
+    if (!files) return;
     const arr = Array.from(files);
+    if (arr.length === 0) return;
     for (const f of arr) {
       try {
         const res = await uploadToR2(f, "image");
@@ -267,54 +324,88 @@ function EditorPage() {
         console.error("Image import failed", err);
       }
     }
-  }
+  }, [addImageClips]);
 
-  // Handle drag and drop for images in the main editor area
+  // Prevent browser navigation when a file is dropped anywhere in the app.
   useEffect(() => {
-    const mainArea = document.querySelector('main') || document;
-    
-    function handleDragOver(e: DragEvent) {
+    if (tab !== "editor") return;
+
+    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
+    const preventWindowNavigation = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
       e.preventDefault();
+      if (e.type !== "drop") return;
+
+      // Import regardless of drop target so users can drop anywhere in editor mode.
+      const files = e.dataTransfer?.files;
+      if (!files) return;
+      const mediaFiles = Array.from(files).filter((f) =>
+        /image|video|media|webm|mp4|mov|png|jpg|jpeg|gif|webp/i.test(`${f.type} ${f.name}`),
+      );
+      if (mediaFiles.length === 0) return;
       e.stopPropagation();
+      onImageImport(mediaFiles);
+    };
+
+    window.addEventListener("dragover", preventWindowNavigation, { capture: true });
+    window.addEventListener("drop", preventWindowNavigation, { capture: true });
+
+    return () => {
+      window.removeEventListener("dragover", preventWindowNavigation, { capture: true });
+      window.removeEventListener("drop", preventWindowNavigation, { capture: true });
+    };
+  }, [tab]);
+
+  // Stable drag/drop handlers scoped to the preview area.
+  useEffect(() => {
+    if (tab !== "editor") return;
+    const el = previewDropRef.current;
+    if (!el) return;
+
+    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
+
+    function handleDragEnter(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepthRef.current += 1;
+      setDragOver(true);
+    }
+
+    function handleDragOver(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
       setDragOver(true);
     }
 
     function handleDragLeave(e: DragEvent) {
+      if (!hasFiles(e)) return;
       e.preventDefault();
-      e.stopPropagation();
-      setDragOver(false);
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      if (dragDepthRef.current === 0) setDragOver(false);
     }
 
     function handleDrop(e: DragEvent) {
+      if (!hasFiles(e)) return;
       e.preventDefault();
-      e.stopPropagation();
+      dragDepthRef.current = 0;
       setDragOver(false);
-      
-      const files = e.dataTransfer?.files;
-      if (files) {
-        // Filter for image/media files
-        const imageFiles = Array.from(files).filter(f => 
-          /image|video|media|webm|mp4|mov|png|jpg|jpeg|gif|webp/i.test(f.type + " " + f.name)
-        );
-        if (imageFiles.length > 0) {
-          onImageImport(imageFiles as any);
-        }
-      }
     }
 
-    // Only attach to the main preview area when in editor tab
-    if (tab === "editor") {
-      mainArea.addEventListener("dragover", handleDragOver);
-      mainArea.addEventListener("dragleave", handleDragLeave);
-      mainArea.addEventListener("drop", handleDrop);
-    }
+    el.addEventListener("dragenter", handleDragEnter);
+    el.addEventListener("dragover", handleDragOver);
+    el.addEventListener("dragleave", handleDragLeave);
+    el.addEventListener("drop", handleDrop);
 
     return () => {
-      mainArea.removeEventListener("dragover", handleDragOver);
-      mainArea.removeEventListener("dragleave", handleDragLeave);
-      mainArea.removeEventListener("drop", handleDrop);
+      dragDepthRef.current = 0;
+      setDragOver(false);
+      el.removeEventListener("dragenter", handleDragEnter);
+      el.removeEventListener("dragover", handleDragOver);
+      el.removeEventListener("dragleave", handleDragLeave);
+      el.removeEventListener("drop", handleDrop);
     };
-  }, [tab, addImageClips]);
+  }, [tab, addImageClips, onImageImport]);
 
   const inputProps = useMemo(
     () => ({
@@ -427,7 +518,10 @@ function EditorPage() {
             </aside>
 
             {/* Center preview */}
-            <main className={`relative flex flex-1 min-w-0 flex-col items-center justify-center gap-2 bg-track p-2 transition-colors ${dragOver ? "bg-primary/10 ring-2 ring-primary" : ""}`}>
+            <main
+              ref={previewDropRef}
+              className={`relative flex flex-1 min-w-0 flex-col items-center justify-center gap-2 bg-track p-2 transition-colors ${dragOver ? "bg-primary/10 ring-2 ring-primary" : ""}`}
+            >
               {dragOver && (
                 <div className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-primary/5 backdrop-blur-sm">
                   <div className="text-center">
@@ -573,9 +667,6 @@ function RenderProgressToast({
   );
 }
 
-// Top-right header dropdown that bulk-applies a label preset to every clip.
-// Per-clip overrides via the Inspector still work, but switching this dropdown
-// re-syncs all clips to the chosen preset's text and presetId.
 function GlobalLabelPresetSelect() {
   const presets = useEditor((s) => s.settings.presets);
   const defaultPresetId = useEditor((s) => s.settings.defaultPresetId);
@@ -589,8 +680,6 @@ function GlobalLabelPresetSelect() {
     );
   }
 
-  // The "Custom" preset is meant to be edited per-project — show its text
-  // inline so the user can type their own label without diving into Settings.
   const isCustom = defaultPresetId === "custom";
   const customPreset = presets.find((p) => p.id === "custom");
 

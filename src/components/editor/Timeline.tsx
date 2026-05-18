@@ -15,6 +15,7 @@ export function Timeline({
   onSeek: (t: number) => void;
 }) {
   const clips = useEditor((s) => s.clips);
+  const projectId = useEditor((s) => s.projectId);
   const zoom = useEditor((s) => s.zoom);
   const audioDuration = useEditor((s) => s.audioDuration);
   const selectedClipId = useEditor((s) => s.selectedClipId);
@@ -23,7 +24,29 @@ export function Timeline({
   const set = useEditor((s) => s.set);
   const { moveClip, trimClip } = useTimelineActions();
   const containerRef = useRef<HTMLDivElement>(null);
-  const totalWidth = Math.max((audioDuration || 30) * zoom, 800);
+  const didAutoFitRef = useRef<string | null>(null);
+  const clipsEnd = clips.reduce((max, c) => Math.max(max, c.start + c.duration), 0);
+  const projectDuration = Math.max(audioDuration || 0, clipsEnd, 1);
+  const totalWidth = Math.max(projectDuration * zoom, 1);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    if (!projectDuration || projectDuration <= 0) return;
+
+    const containerWidth = container.clientWidth;
+    if (containerWidth <= 0) return;
+
+    // Auto-fit per project + duration bucket so it also runs when the
+    // final voiceover duration arrives after initial load.
+    const fitKey = `${projectId}:${Math.ceil(projectDuration)}`;
+    if (didAutoFitRef.current === fitKey) return;
+
+    const nextZoom = Math.max(2, Math.min(200, Math.floor(containerWidth / projectDuration)));
+    set({ zoom: nextZoom });
+    container.scrollLeft = 0;
+    didAutoFitRef.current = fitKey;
+  }, [projectDuration, projectId, set]);
 
   function presetTint(id: string) {
     return settings.presets.find((p) => p.id === id)?.tint ?? "#71717a";
@@ -60,7 +83,7 @@ export function Timeline({
           <span className="text-[10px] text-muted-foreground">Zoom</span>
           <input
             type="range"
-            min={20}
+            min={2}
             max={200}
             value={zoom}
             onChange={(e) => set({ zoom: Number(e.target.value) })}
@@ -76,7 +99,7 @@ export function Timeline({
             className="sticky top-0 z-10 h-6 cursor-ew-resize select-none border-b border-border bg-panel"
             style={{ width: totalWidth, touchAction: "none" }}
           >
-            <Ruler totalWidth={totalWidth} zoom={zoom} duration={audioDuration || 30} />
+            <Ruler totalWidth={totalWidth} zoom={zoom} duration={projectDuration} />
           </div>
           {/* Track */}
           <div
