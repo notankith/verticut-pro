@@ -1,5 +1,16 @@
 // Frontend helper: presign + upload to R2
-import { presignUpload, fetchAndUploadImage } from "@/api.functions";
+
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  return (await res.json()) as T;
+}
 
 export async function uploadToR2(
   file: File,
@@ -7,9 +18,10 @@ export async function uploadToR2(
   onProgress?: (pct: number) => void,
 ) {
   const ext = (file.name.split(".").pop() || "bin").toLowerCase();
-  const { uploadUrl, key, publicUrl } = await presignUpload({
-    data: { kind, ext, contentType: file.type || "application/octet-stream" },
-  });
+  const { uploadUrl, key, publicUrl } = await postJson<{ uploadUrl: string; key: string; publicUrl: string }>(
+    "/api/presign-upload",
+    { kind, ext, contentType: file.type || "application/octet-stream" },
+  );
 
   // Use XHR to provide upload progress events
   await new Promise<void>((resolve, reject) => {
@@ -139,7 +151,7 @@ export async function extractAndUploadPastedImages(
     );
 
   const tryUrl = async (url: string, idx: number): Promise<PastedImage> => {
-    const res = await withRetry(() => fetchAndUploadImage({ data: { url } }));
+    const res = await withRetry(() => postJson<{ key: string; publicUrl: string }>("/api/fetch-and-upload-image", { url }));
     opts?.onProgress?.(idx, 100);
     return { key: res.key, url: res.publicUrl };
   };
