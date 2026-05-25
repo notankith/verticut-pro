@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { randomUUID } from "crypto";
-import { getDb, type ProjectDoc, type SettingsDoc, type ClipDoc, type RenderDoc } from "./server/mongo.server";
+import { getDb, type ProjectDoc, type SettingsDoc, type ClipDoc, type RenderDoc, type MarkerDoc } from "./server/mongo.server";
 import { presignPut, publicUrl } from "./server/r2.server";
 import { uploadBuffer } from "./server/r2.server";
 import { submitTranscript, getTranscript } from "./server/assemblyai.server";
@@ -71,6 +71,7 @@ export const createProjectFromAudio = createServerFn({ method: "POST" })
       transcriptStatus: "pending",
       transcriptJobId: transcriptId,
       clips: [],
+      markers: [],
       createdAt: now,
       updatedAt: now,
     });
@@ -107,8 +108,121 @@ export type ProjectFull = {
   transcript: ProjectDoc["transcript"];
   transcriptStatus: ProjectDoc["transcriptStatus"];
   clips: ClipDoc[];
+  markers: MarkerDoc[];
   settings: SettingsDoc;
 };
+
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+
+const MARKER_SYSTEM_PROMPT = `You are a video editor assistant.
+You receive a spoken script and word-level timestamps.
+Your task is to detect subject/entity/topic shifts and emit accurate timeline markers.
+
+Rules:
+1. Add a marker whenever the subject changes, even mid-sentence.
+2. Prefer named entities and concrete nouns.
+3. Keep marker labels short: 1-4 words.
+4. Use the exact start timestamp of the first word of the new subject.
+5. Return only JSON in the shape:
+{ "markers": [ { "label": "Roman Reigns", "start": 12.34, "kind": "subject" } ] }
+6. Timestamps must be numbers, not strings.
+7. Never return duplicate markers for the same moment. Short sections should still have a marker if the subject changes.`;
+
+function normalizeMarkerLabel(text: string) {
+  return String(text || "")
+    .replace(/["'“”‘’()\[\]{}.,!?;:]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .slice(0, 4)
+    .join(" ");
+}
+
+function repairMarkers(raw: unknown, words: { text: string; start: number; end: number }[], fullText: string) {
+  const source = Array.isArray(raw) ? raw : [];
+  if (!words.length || !source.length) return sentenceFallbackMarkers(fullText, words);
+
+  const firstStart = words[0].start;
+  const lastEnd = words[words.length - 1].end;
+  const markers = source
+    .map((m) => ({
+      label: normalizeMarkerLabel(m?.label || m?.query || m?.name || ""),
+      start: Number(m?.start ?? m?.time ?? m?.timestamp ?? 0),
+      kind: ["subject", "entity", "topic"].includes(String(m?.kind || "")) ? String(m?.kind) as MarkerDoc["kind"] : "subject",
+    }))
+    .filter((m) => m.label && Number.isFinite(m.start))
+    .sort((a, b) => a.start - b.start);
+
+  if (!markers.length) return sentenceFallbackMarkers(fullText, words);
+
+  const deduped = [] as MarkerDoc[];
+  for (const m of markers) {
+    const start = Math.max(firstStart, Math.min(lastEnd, m.start));
+    const prev = deduped[deduped.length - 1];
+    if (prev && Math.abs(prev.start - start) < 0.25 && prev.label.toLowerCase() === m.label.toLowerCase()) continue;
+    deduped.push({ id: randomUUID(), start, label: m.label, kind: m.kind });
+  }
+
+  if (!deduped.length) return sentenceFallbackMarkers(fullText, words);
+  deduped[0].start = firstStart;
+  if (deduped[deduped.length - 1].start > lastEnd) deduped[deduped.length - 1].start = lastEnd;
+  return deduped;
+}
+
+function sentenceFallbackMarkers(fullText: string, words: { text: string; start: number; end: number }[]) {
+  if (!words.length) return [] as MarkerDoc[];
+  const sentences = String(fullText || "").split(/[.!?]/).map((s) => s.trim()).filter(Boolean);
+  if (!sentences.length) {
+    return [{ id: randomUUID(), start: words[0].start, label: normalizeMarkerLabel(words.slice(0, 4).map((w) => w.text).join(" ")) || "Start", kind: "topic" }];
+  }
+  const out: MarkerDoc[] = [];
+  let cursor = 0;
+  for (const s of sentences) {
+    const tokens = s.split(/\s+/).filter(Boolean);
+    const startIdx = Math.min(cursor, words.length - 1);
+    const start = words[startIdx]?.start ?? words[0].start;
+    const label = normalizeMarkerLabel(tokens.slice(0, 4).join(" ")) || "Topic";
+    out.push({ id: randomUUID(), start, label, kind: "topic" });
+    cursor = Math.min(words.length - 1, startIdx + Math.max(1, tokens.length));
+  }
+  return out;
+}
+
+async function generateTranscriptMarkers(fullText: string, words: { text: string; start: number; end: number }[]) {
+  const key = process.env.GROQ_API_KEY;
+  if (!key) throw new Error("GROQ_API_KEY not configured");
+
+  const body = {
+    model: GROQ_MODEL,
+    temperature: 0,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: MARKER_SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: `Full script:\n"${fullText}"\n\nWord-level timestamps with indexes:\n${JSON.stringify(words.map((w, i) => ({ i, ...w })))}\n\nReturn only JSON markers for subject/entity shifts.`,
+      },
+    ],
+  };
+
+  const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${key}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`Groq markers failed: ${r.status} ${await r.text()}`);
+  const j = await r.json();
+  const content = j?.choices?.[0]?.message?.content;
+  try {
+    const parsed = JSON.parse(content);
+    return repairMarkers(parsed?.markers, words, fullText);
+  } catch {
+    return sentenceFallbackMarkers(fullText, words);
+  }
+}
 
 export const getProject = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => d)
@@ -145,6 +259,19 @@ export const getProject = createServerFn({ method: "POST" })
       }
     }
 
+    let markers = Array.isArray((p as ProjectDoc).markers) ? (p as ProjectDoc).markers! : [];
+    if (p.transcriptStatus === "ready" && markers.length === 0 && p.transcript.length > 0) {
+      const fullText = p.transcript.map((w) => w.text).join(" ").replace(/\s+/g, " ").trim();
+      try {
+        markers = await generateTranscriptMarkers(fullText, p.transcript);
+        await projects.updateOne({ _id: data.id }, { $set: { markers, updatedAt: Date.now() } });
+      } catch (err) {
+        console.error("marker generation failed:", err);
+        markers = sentenceFallbackMarkers(fullText, p.transcript);
+        await projects.updateOne({ _id: data.id }, { $set: { markers, updatedAt: Date.now() } });
+      }
+    }
+
     const settings = await readGlobalSettings();
     return {
       id: p._id,
@@ -154,6 +281,7 @@ export const getProject = createServerFn({ method: "POST" })
       transcript: p.transcript,
       transcriptStatus: p.transcriptStatus,
       clips: p.clips ?? [],
+      markers,
       settings,
     };
   });

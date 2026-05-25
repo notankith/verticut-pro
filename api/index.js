@@ -5,6 +5,7 @@ import { Readable } from 'node:stream';
 import { createRequire } from 'node:module';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { MongoClient } from 'mongodb';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
@@ -79,6 +80,285 @@ function publicUrl(key) {
 }
 
 const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+const GROQ_MODEL = 'llama-3.3-70b-versatile';
+const SEGMENTATION_SYSTEM_PROMPT = `You are a video editor assistant. You receive a spoken script and its word-level timestamps.
+Segment the script into image search queries by detecting every subject/entity - including sudden mid-sentence shifts.
+
+INPUT:
+- Full script text (for context)
+- Word-level timestamps: [{ "word": "...", "start": 0.0, "end": 0.4 }, ...]
+
+RULES - NON-NEGOTIABLE:
+
+1. DETECT EVERY SUBJECT SHIFT, EVEN MID-SENTENCE.
+   The moment the subject changes (new person, team, event, brand, place, concept) - cut there.
+   Use the exact "start" timestamp of the first word of the new subject.
+
+2. MAX SEGMENT DURATION = 3.5 SECONDS.
+   Same subject > 3.5s -> split into multiple segments, same query.
+
+3. QUERIES MUST BE SPECIFIC AND IMAGE-SEARCHABLE.
+   Resolve vague pronouns using context.
+
+4. ZERO GAPS ALLOWED.
+   Each segment's "end" = next segment's "start".
+   Final segment's "end" = last word's "end" timestamp.
+
+5. OUTPUT - STRICT JSON ONLY:
+{
+  "segments": [
+    { "query": "Cody Rhodes WWE", "start": 0.0, "end": 3.5 }
+  ]
+}
+
+No markdown. No explanation. Timestamps as numbers, not strings.`;
+
+let mongoClient = null;
+let mongoDbPromise = null;
+
+function hasMongoConfig() {
+  return Boolean(process.env.MONGODB_URI);
+}
+
+async function getDb() {
+  if (mongoDbPromise) return mongoDbPromise;
+  const uri = process.env.MONGODB_URI;
+  if (!uri) throw new Error('MONGODB_URI is not configured');
+  mongoClient = new MongoClient(uri);
+  mongoDbPromise = mongoClient.connect().then((c) => c.db('verticut'));
+  return mongoDbPromise;
+}
+
+function sentenceFallbackSegments(fullText, words) {
+  if (!words.length) return [];
+  const sentences = String(fullText || '')
+    .split('.')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!sentences.length) {
+    return [{ query: 'sports news', start: words[0].start, end: words[words.length - 1].end }];
+  }
+
+  let cursor = 0;
+  const segments = [];
+  for (const s of sentences) {
+    const tokens = s.split(/\s+/).filter(Boolean);
+    const startIdx = Math.min(cursor, words.length - 1);
+    const endIdx = Math.min(words.length - 1, startIdx + Math.max(0, tokens.length - 1));
+    const start = words[startIdx]?.start ?? words[0].start;
+    const end = words[endIdx]?.end ?? words[words.length - 1].end;
+    segments.push({ query: s, start, end });
+    cursor = endIdx + 1;
+    if (cursor >= words.length) break;
+  }
+
+  if (segments.length) {
+    segments[0].start = words[0].start;
+    segments[segments.length - 1].end = words[words.length - 1].end;
+    for (let i = 0; i < segments.length - 1; i++) {
+      segments[i].end = segments[i + 1].start;
+    }
+  }
+  return segments;
+}
+
+function normalizeSegments(raw, words, fullText) {
+  const source = Array.isArray(raw) ? raw : [];
+  if (!words.length || !source.length) return sentenceFallbackSegments(fullText, words);
+
+  const sorted = source
+    .map((s) => ({
+      query: String(s?.query || '').trim(),
+      start: Number(s?.start ?? 0),
+      end: Number(s?.end ?? 0),
+    }))
+    .filter((s) => s.query && Number.isFinite(s.start) && Number.isFinite(s.end))
+    .sort((a, b) => a.start - b.start);
+
+  if (!sorted.length) return sentenceFallbackSegments(fullText, words);
+
+  const chunks = [];
+  const firstStart = words[0].start;
+  const lastEnd = words[words.length - 1].end;
+
+  for (const s of sorted) {
+    const start = Math.max(firstStart, s.start);
+    const end = Math.min(lastEnd, Math.max(start + 0.01, s.end));
+    let cursor = start;
+    while (cursor < end - 0.001) {
+      const next = Math.min(end, cursor + 3.5);
+      chunks.push({ query: s.query, start: cursor, end: next });
+      cursor = next;
+    }
+  }
+
+  if (!chunks.length) return sentenceFallbackSegments(fullText, words);
+  chunks[0].start = firstStart;
+  chunks[chunks.length - 1].end = lastEnd;
+  for (let i = 0; i < chunks.length - 1; i++) {
+    chunks[i].end = chunks[i + 1].start;
+  }
+  return chunks;
+}
+
+async function segmentWithGroq(fullText, words) {
+  const key = process.env.GROQ_API_KEY;
+  if (!key) throw new Error('GROQ_API_KEY not configured');
+
+  const body = {
+    model: GROQ_MODEL,
+    temperature: 0,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: SEGMENTATION_SYSTEM_PROMPT },
+      {
+        role: 'user',
+        content: `Full script:\n"${fullText}"\n\nWord-level timestamps:\n${JSON.stringify(words)}`,
+      },
+    ],
+  };
+
+  let parseErr = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${key}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(`Groq failed: ${r.status} ${await r.text()}`);
+    const j = await r.json();
+    const content = j?.choices?.[0]?.message?.content;
+    try {
+      const parsed = JSON.parse(content);
+      return normalizeSegments(parsed?.segments, words, fullText);
+    } catch (e) {
+      parseErr = e;
+    }
+  }
+
+  if (parseErr) {
+    return sentenceFallbackSegments(fullText, words);
+  }
+  return sentenceFallbackSegments(fullText, words);
+}
+
+function findArrayByKey(obj, keyHints) {
+  if (!obj || typeof obj !== 'object') return null;
+  if (Array.isArray(obj)) return obj;
+  for (const k of Object.keys(obj)) {
+    if (keyHints.some((h) => k.toLowerCase().includes(h))) {
+      const v = obj[k];
+      if (Array.isArray(v)) return v;
+      if (v && typeof v === 'object') {
+        const nested = findArrayByKey(v, keyHints);
+        if (nested) return nested;
+      }
+    }
+  }
+  for (const v of Object.values(obj)) {
+    if (v && typeof v === 'object') {
+      const nested = findArrayByKey(v, keyHints);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+function normalizeImageItem(item, source) {
+  const obj = item || {};
+  const id = String(obj.id || obj.imageId || obj.assetId || obj.mediaId || obj.uuid || crypto.randomUUID());
+  const url =
+    obj.url ||
+    obj.imageUrl ||
+    obj.thumbnailUrl ||
+    obj.previewUrl ||
+    obj.src ||
+    obj.image?.url ||
+    obj.picture?.url ||
+    '';
+  if (!url) return null;
+  const title = String(obj.title || obj.headline || obj.name || '');
+  const caption = String(obj.caption || obj.description || obj.altText || '');
+  const tsRaw = obj.timestamp || obj.createdAt || obj.updatedAt || obj.publishedAt || obj.date;
+  const timestamp = tsRaw ? new Date(tsRaw).getTime() : 0;
+  return { id, url, title, caption, timestamp: Number.isFinite(timestamp) ? timestamp : 0, source };
+}
+
+async function handleRichinSegments(req, res) {
+  try {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    if (!hasMongoConfig()) return sendJson(res, 500, { error: 'MONGODB_URI not configured' });
+    const data = await readJson(req);
+    const projectId = String(data?.projectId || '');
+    if (!projectId) return sendJson(res, 400, { error: 'projectId is required' });
+
+    const db = await getDb();
+    const project = await db.collection('projects').findOne({ _id: projectId });
+    if (!project) return sendJson(res, 404, { error: 'Project not found' });
+
+    const transcript = Array.isArray(project.transcript) ? project.transcript : [];
+    if (!transcript.length) return sendJson(res, 400, { error: 'Transcript is not ready yet' });
+
+    const words = transcript.map((w) => ({
+      word: String(w.text || ''),
+      start: Number(w.start || 0),
+      end: Number(w.end || 0),
+    }));
+    const fullText = words.map((w) => w.word).join(' ').replace(/\s+/g, ' ').trim();
+
+    const segments = await segmentWithGroq(fullText, words);
+    return sendJson(res, 200, { segments });
+  } catch (err) {
+    console.error('richin segments failed:', err);
+    return sendJson(res, 500, { error: String(err?.message || err) });
+  }
+}
+
+async function handleRichinSearch(req, res) {
+  try {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    const data = await readJson(req);
+    const query = String(data?.query || '').trim();
+    const cookie = String(data?.cookie || '').trim();
+    if (!query) return sendJson(res, 400, { error: 'query is required' });
+    if (!cookie) return sendJson(res, 400, { error: 'Sportskeeda cookie is required' });
+
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      Referer: 'https://www.sportskeeda.com/',
+      Accept: 'application/json, text/plain, */*',
+      Origin: 'https://www.sportskeeda.com',
+      Cookie: cookie,
+    };
+
+    const [gettyRes, imagnRes] = await Promise.all([
+      fetch(`https://a-gotham.sportskeeda.com/social-media-bank/search?query=${encodeURIComponent(query)}&page=1&size=12&imageProvider=getty`, { headers }),
+      fetch(`https://a-login.sportskeeda.com/en/media/image/search/imagn?search=${encodeURIComponent(query)}&offset=0&limit=12`, { headers }),
+    ]);
+
+    const gettyJson = gettyRes.ok ? await gettyRes.json() : {};
+    const imagnJson = imagnRes.ok ? await imagnRes.json() : {};
+
+    const gettyRaw = findArrayByKey(gettyJson, ['result', 'items', 'data', 'images']) || [];
+    const imagnRaw = findArrayByKey(imagnJson, ['result', 'items', 'data', 'images']) || [];
+
+    const getty = gettyRaw.map((x) => normalizeImageItem(x, 'getty')).filter(Boolean);
+    const imagn = imagnRaw.map((x) => normalizeImageItem(x, 'imagn')).filter(Boolean);
+
+    return sendJson(res, 200, {
+      getty,
+      imagn,
+      gettyStatus: gettyRes.status,
+      imagnStatus: imagnRes.status,
+    });
+  } catch (err) {
+    console.error('richin search failed:', err);
+    return sendJson(res, 500, { error: String(err?.message || err) });
+  }
+}
 
 async function readJson(req) {
   const buf = await readBody(req);
@@ -209,6 +489,12 @@ export default async function handler(req, res) {
     }
     if (reqUrl.pathname === '/api/fetch-and-upload-image') {
       return await handleFetchAndUploadImage(req, res);
+    }
+    if (reqUrl.pathname === '/api/richin/segments') {
+      return await handleRichinSegments(req, res);
+    }
+    if (reqUrl.pathname === '/api/richin/search') {
+      return await handleRichinSearch(req, res);
     }
 
     const worker = await getWorker();

@@ -10,7 +10,9 @@
       "Bash(node --check \"D:/VSCode Projects/verticut-pro/render-server/src/remotion-entry.jsx\")",
       "Bash(node --check \"D:/VSCode Projects/verticut-pro/render-server/src/composition.jsx\")",
       "Bash(node *)",
-      "Bash(npx eslint *)"
+      "Bash(npx eslint *)",
+      "Bash(Get-ChildItem -Path \"D:\\\\codebases\\\\verticut-pro\" -Force)",
+      "Bash(Select-Object Name, FullName)"
     ]
   }
 }

@@ -1,7 +1,7 @@
 import { useEditor } from "@/store/editor";
 import { useTimelineActions } from "./hooks";
 import { useEffect, useRef, useState, type RefObject } from "react";
-import type { ClipDoc } from "@/server/mongo.server";
+import type { ClipDoc, MarkerDoc } from "@/server/mongo.server";
 import type { PlayerRef } from "@remotion/player";
 import { usePlayerFrame } from "./usePlayerFrame";
 
@@ -15,6 +15,7 @@ export function Timeline({
   onSeek: (t: number) => void;
 }) {
   const clips = useEditor((s) => s.clips);
+  const markers = useEditor((s) => s.markers);
   const projectId = useEditor((s) => s.projectId);
   const zoom = useEditor((s) => s.zoom);
   const audioDuration = useEditor((s) => s.audioDuration);
@@ -122,6 +123,12 @@ export function Timeline({
                 onTrim={(edge, v) => trimClip(c.id, edge, v)}
               />
             ))}
+            {markers
+              .slice()
+              .sort((a, b) => a.start - b.start)
+              .map((marker, index) => (
+                <TimelineMarker key={marker.id} marker={marker} zoom={zoom} onSeek={onSeek} colorIndex={index} />
+              ))}
             <Playhead playerRef={playerRef} fps={fps} zoom={zoom} onSeek={onSeek} containerRef={containerRef} />
           </div>
         </div>
@@ -214,6 +221,38 @@ function Ruler({ totalWidth, zoom, duration }: { totalWidth: number; zoom: numbe
         </div>
       ))}
     </div>
+  );
+}
+
+function TimelineMarker({
+  marker,
+  zoom,
+  onSeek,
+  colorIndex,
+}: {
+  marker: MarkerDoc;
+  zoom: number;
+  onSeek: (t: number) => void;
+  colorIndex: number;
+}) {
+  const colors = ["#38bdf8", "#f97316", "#22c55e", "#e879f9", "#facc15", "#ef4444"];
+  const color = colors[colorIndex % colors.length];
+  return (
+    <button
+      type="button"
+      onClick={() => onSeek(Math.max(0, marker.start))}
+      className="absolute top-0 bottom-0 z-[5] text-left"
+      style={{ left: marker.start * zoom }}
+      title={`${marker.label} @ ${marker.start.toFixed(2)}s`}
+    >
+      <div className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2" style={{ backgroundColor: color, opacity: 0.95 }} />
+      <div
+        className="absolute -top-0.5 left-1/2 -translate-x-1/2 rounded px-1 py-0.5 text-[9px] font-semibold text-white shadow"
+        style={{ backgroundColor: color, whiteSpace: "nowrap", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis" }}
+      >
+        {marker.label}
+      </div>
+    </button>
   );
 }
 

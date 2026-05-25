@@ -28,6 +28,7 @@ export type ProjectDoc = {
   transcriptStatus: "pending" | "ready" | "error";
   transcriptJobId?: string;
   clips?: ClipDoc[];
+  markers?: MarkerDoc[];
   createdAt: number;
   updatedAt: number;
 };
@@ -47,6 +48,13 @@ export type ClipDoc = {
   // the layer's box (0–100). 50/50 = center. Optional for back-compat.
   anchorX?: number;
   anchorY?: number;
+};
+
+export type MarkerDoc = {
+  id: string;
+  start: number;
+  label: string;
+  kind?: "subject" | "entity" | "topic";
 };
 
 export type SettingsDoc = {

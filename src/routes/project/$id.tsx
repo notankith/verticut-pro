@@ -73,6 +73,7 @@ function EditorPage() {
         audioDuration: p.audioDuration,
         transcript: p.transcript,
         clips: p.clips,
+        markers: p.markers,
         settings: p.settings,
       });
     } catch (e) {

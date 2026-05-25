@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ClipDoc, SettingsDoc } from "@/server/mongo.server";
+import type { ClipDoc, MarkerDoc, SettingsDoc } from "@/server/mongo.server";
 
 export type EditorState = {
   projectId: string;
@@ -8,6 +8,7 @@ export type EditorState = {
   audioDuration: number; // seconds
   transcript: { text: string; start: number; end: number }[];
   clips: ClipDoc[];
+  markers: MarkerDoc[];
   settings: SettingsDoc;
   selectedClipId: string | null;
   zoom: number; // pixels per second
@@ -32,6 +33,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   audioDuration: 0,
   transcript: [],
   clips: [],
+  markers: [],
   settings: {
     _id: "",
     defaultLabelText: "",
@@ -52,6 +54,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   init: (p) =>
     set({
       ...p,
+      markers: p.markers ?? [],
       selectedClipId: null,
       zoom: 60,
       saving: "idle",
