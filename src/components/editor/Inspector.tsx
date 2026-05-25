@@ -3,7 +3,7 @@ import { useTimelineActions } from "./hooks";
 import { uploadToR2 } from "@/lib/upload";
 import { useEffect, useRef, useState } from "react";
 import type { ClipDoc } from "@/server/mongo.server";
-import { Trash2, RefreshCw } from "lucide-react";
+import { Trash2, RefreshCw, Image as ImageIcon } from "lucide-react";
 
 const ANIMS: ClipDoc["animation"][] = ["zoom-in", "zoom-out", "pan-left", "pan-right"];
 
@@ -11,6 +11,7 @@ export function Inspector() {
   const { selectedClipId, clips, settings } = useEditor();
   const { updateClip, deleteClip } = useTimelineActions();
   const replaceRef = useRef<HTMLInputElement>(null);
+  const splitBottomRef = useRef<HTMLInputElement>(null);
   const clip = clips.find((c) => c.id === selectedClipId);
 
   // Probe the selected image's intrinsic pixel dimensions so the anchor inputs
@@ -43,7 +44,7 @@ export function Inspector() {
   }
 
   return (
-    <div className="space-y-4 p-3 text-xs">
+    <div className="h-full overflow-y-auto space-y-4 p-3 text-xs">
       <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Clip Inspector</h3>
 
       <div>
@@ -122,6 +123,52 @@ export function Inspector() {
               className="w-full"
             />
           </div>
+
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() =>
+                updateClip(clip.id, {
+                  splitScreen: clip.splitScreen?.enabled
+                    ? { ...clip.splitScreen, enabled: false }
+                    : { ...(clip.splitScreen ?? {}), enabled: true },
+                })
+              }
+              className={`w-full rounded border px-2 py-1.5 text-[11px] transition-colors ${
+                clip.splitScreen?.enabled
+                  ? "border-primary bg-primary/15 text-foreground"
+                  : "border-border bg-panel-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+              }`}
+            >
+              Split Screen {clip.splitScreen?.enabled ? "On" : "Off"}
+            </button>
+
+            {clip.splitScreen?.enabled && (
+              <div className="mt-2 space-y-1.5">
+                <div className="text-[10px] text-muted-foreground">
+                  Top: current image (pan left) · Bottom: {clip.splitScreen.bottomImageUrl ? "imported" : "empty"}
+                </div>
+                {clip.splitScreen.bottomImageUrl && (
+                  <img
+                    src={clip.splitScreen.bottomImageUrl}
+                    alt="bottom half"
+                    className="w-full rounded"
+                    style={{ height: 38, objectFit: "cover" }}
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => splitBottomRef.current?.click()}
+                  className="flex w-full items-center justify-center gap-1.5 rounded border border-border bg-panel-2 py-1.5 text-[11px] hover:bg-accent"
+                >
+                  <ImageIcon className="h-3 w-3" />
+                  {clip.splitScreen.bottomImageUrl ? "Replace bottom" : "Import bottom"}
+                </button>
+                <p className="text-center text-[10px] text-muted-foreground">or Ctrl+V with this clip selected</p>
+              </div>
+            )}
+          </div>
+
         <div className="mt-1.5 flex items-center justify-between">
           <button
             onClick={() => updateClip(clip.id, { anchorX: 50, anchorY: 50 })}
@@ -160,6 +207,27 @@ export function Inspector() {
           if (!f) return;
           const { key, url } = await uploadToR2(f, "image");
           updateClip(clip.id, { imageKey: key, imageUrl: url });
+        }}
+      />
+      <input
+        ref={splitBottomRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (!f) return;
+          const targetEl = e.target;
+          try {
+            const { key, url } = await uploadToR2(f, "image");
+            updateClip(clip.id, {
+              splitScreen: { enabled: true, bottomImageKey: key, bottomImageUrl: url },
+            });
+          } catch (err) {
+            console.error("Split screen bottom import failed:", err);
+          } finally {
+            targetEl.value = "";
+          }
         }}
       />
     </div>

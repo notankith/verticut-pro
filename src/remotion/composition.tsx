@@ -149,6 +149,46 @@ function ClipLayer({
     transitionOpacity = Math.max(0, 1 - p);
   }
 
+  if (clip.splitScreen?.enabled) {
+    return (
+      <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
+        <AbsoluteFill
+          style={{
+            transform: `translate3d(${transitionX}%, ${transitionY}%, 0)`,
+            opacity: transitionOpacity,
+            willChange: "transform, opacity",
+          }}
+        >
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "50%", overflow: "hidden" }}>
+            <KenBurns frame={frame} duration={dur} animation="pan-left" intensity={scaledIntensity} imageUrl={clip.imageUrl} anchorX={anchorX} anchorY={anchorY} />
+          </div>
+          <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 3, backgroundColor: "#000", zIndex: 1 }} />
+          {clip.splitScreen.bottomImageUrl ? (
+            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "50%", overflow: "hidden" }}>
+              <KenBurns frame={frame} duration={dur} animation="pan-right" intensity={scaledIntensity} imageUrl={clip.splitScreen.bottomImageUrl} anchorX={50} anchorY={50} />
+            </div>
+          ) : (
+            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "50%", backgroundColor: "#111" }} />
+          )}
+          <div
+            style={{
+              position: "absolute",
+              top: 40,
+              left: 40,
+              color: "white",
+              fontSize,
+              fontFamily: "Inter, system-ui, sans-serif",
+              fontWeight: 600,
+              textShadow: "0 2px 8px rgba(0,0,0,0.8)",
+            }}
+          >
+            {clip.labelText || defaultLabelText}
+          </div>
+        </AbsoluteFill>
+      </AbsoluteFill>
+    );
+  }
+
   return (
     <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
       <AbsoluteFill

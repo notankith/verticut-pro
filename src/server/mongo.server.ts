@@ -48,6 +48,12 @@ export type ClipDoc = {
   // the layer's box (0–100). 50/50 = center. Optional for back-compat.
   anchorX?: number;
   anchorY?: number;
+  // Split-screen: top half uses existing imageUrl (pan-left), bottom half uses a second image (pan-right)
+  splitScreen?: {
+    enabled: boolean;
+    bottomImageKey?: string;
+    bottomImageUrl?: string;
+  };
 };
 
 export type MarkerDoc = {

@@ -12,7 +12,12 @@
       "Bash(node *)",
       "Bash(npx eslint *)",
       "Bash(Get-ChildItem -Path \"D:\\\\codebases\\\\verticut-pro\" -Force)",
-      "Bash(Select-Object Name, FullName)"
+      "Bash(Select-Object Name, FullName)",
+      "Bash(xargs grep -l \"mode\\\\|preview\\\\|view\\\\|compare\")",
+      "Bash(grep -E '\\(Inspector|composition|mongo\\\\.server|$id\\)')",
+      "Bash(dir D:\\\\codebases\\\\verticut-pro\\\\src\\\\routes\\\\api *)",
+      "Bash(Get-ChildItem \"D:\\\\codebases\\\\verticut-pro\\\\src\\\\routes\\\\api\" -Recurse)",
+      "Bash(Select-Object FullName)"
     ]
   }
 }

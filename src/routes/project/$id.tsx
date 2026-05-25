@@ -105,7 +105,10 @@ function EditorPage() {
   // and switching clips never re-downloads.
   useEffect(() => {
     const urls = new Set<string>();
-    for (const c of clips) if (c.imageUrl) urls.add(c.imageUrl);
+    for (const c of clips) {
+      if (c.imageUrl) urls.add(c.imageUrl);
+      if (c.splitScreen?.bottomImageUrl) urls.add(c.splitScreen.bottomImageUrl);
+    }
     urls.add(OVERLAY_URL);
     const imgs: HTMLImageElement[] = [];
     for (const u of urls) {
@@ -181,7 +184,19 @@ function EditorPage() {
         if (cancelled) return;
         setPasting(true);
         try {
-          addImageClips(uploaded);
+          const { selectedClipId, clips: storeClips } = useEditor.getState();
+          const selClip = storeClips.find((c) => c.id === selectedClipId);
+          if (selClip?.splitScreen?.enabled && !selClip.splitScreen.bottomImageUrl && uploaded[0]) {
+            useEditor.getState().updateClips((prev) =>
+              prev.map((c) =>
+                c.id === selectedClipId
+                  ? { ...c, splitScreen: { ...c.splitScreen!, bottomImageKey: uploaded![0].key, bottomImageUrl: uploaded![0].url } }
+                  : c,
+              ),
+            );
+          } else {
+            addImageClips(uploaded);
+          }
         } finally {
           setPasting(false);
         }
@@ -213,7 +228,19 @@ function EditorPage() {
         if (uploaded && uploaded.length > 0) {
           setPasting(true);
           try {
-            addImageClips(uploaded);
+            const { selectedClipId, clips: storeClips } = useEditor.getState();
+            const selClip = storeClips.find((c) => c.id === selectedClipId);
+            if (selClip?.splitScreen?.enabled && !selClip.splitScreen.bottomImageUrl && uploaded[0]) {
+              useEditor.getState().updateClips((prev) =>
+                prev.map((c) =>
+                  c.id === selectedClipId
+                    ? { ...c, splitScreen: { ...c.splitScreen!, bottomImageKey: uploaded![0].key, bottomImageUrl: uploaded![0].url } }
+                    : c,
+                ),
+              );
+            } else {
+              addImageClips(uploaded);
+            }
           } finally {
             setPasting(false);
           }
@@ -514,7 +541,7 @@ function EditorPage() {
         <>
           <div className="flex flex-1 min-h-0">
             {/* Left: Clip Inspector */}
-            <aside className="w-72 shrink-0 border-r border-border bg-panel">
+            <aside className="w-72 shrink-0 overflow-hidden border-r border-border bg-panel">
               <Inspector />
             </aside>
 
