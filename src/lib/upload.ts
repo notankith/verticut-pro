@@ -1,5 +1,27 @@
 // Frontend helper: presign + upload to R2
-import { presignUpload, fetchAndUploadImage as serverFetchAndUploadImage } from "@/api.functions";
+// Calls the Node.js API endpoints directly to avoid AWS SDK browser-bundle issues
+// (the TanStack Start server bundle resolves @smithy/core/config to its browser stub
+// where loadConfig = Symbol.for("node-only"), not a function).
+
+async function apiPresignUpload(kind: "audio" | "image" | "music", ext: string, contentType: string) {
+  const res = await fetch("/api/presign-upload", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind, ext, contentType }),
+  });
+  if (!res.ok) throw new Error(`Presign failed: ${res.status} ${await res.text()}`);
+  return res.json() as Promise<{ uploadUrl: string; key: string; publicUrl: string }>;
+}
+
+async function apiFetchAndUploadImage(url: string) {
+  const res = await fetch("/api/fetch-and-upload-image", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) throw new Error(`Fetch/upload failed: ${res.status} ${await res.text()}`);
+  return res.json() as Promise<{ key: string; publicUrl: string }>;
+}
 
 export async function uploadToR2(
   file: File,
@@ -7,9 +29,7 @@ export async function uploadToR2(
   onProgress?: (pct: number) => void,
 ) {
   const ext = (file.name.split(".").pop() || "bin").toLowerCase();
-  const { uploadUrl, key, publicUrl } = await presignUpload({
-    data: { kind, ext, contentType: file.type || "application/octet-stream" },
-  });
+  const { uploadUrl, key, publicUrl } = await apiPresignUpload(kind, ext, file.type || "application/octet-stream");
 
   // Use XHR to provide upload progress events
   await new Promise<void>((resolve, reject) => {
@@ -139,7 +159,7 @@ export async function extractAndUploadPastedImages(
     );
 
   const tryUrl = async (url: string, idx: number): Promise<PastedImage> => {
-    const res = await withRetry(() => serverFetchAndUploadImage({ data: { url } }));
+    const res = await withRetry(() => apiFetchAndUploadImage(url));
     opts?.onProgress?.(idx, 100);
     return { key: res.key, url: res.publicUrl };
   };

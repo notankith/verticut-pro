@@ -17,7 +17,8 @@
       "Bash(grep -E '\\(Inspector|composition|mongo\\\\.server|$id\\)')",
       "Bash(dir D:\\\\codebases\\\\verticut-pro\\\\src\\\\routes\\\\api *)",
       "Bash(Get-ChildItem \"D:\\\\codebases\\\\verticut-pro\\\\src\\\\routes\\\\api\" -Recurse)",
-      "Bash(Select-Object FullName)"
+      "Bash(Select-Object FullName)",
+      "Bash(xargs grep -l \"createServerFn\")"
     ]
   }
 }
