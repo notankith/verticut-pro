@@ -60,7 +60,7 @@ function EditorPage() {
   const redo = useEditor((s) => s.redo);
   const initStore = useEditor((s) => s.init);
 
-  const { addImageClips } = useTimelineActions();
+  const { addImageClips, deleteClip } = useTimelineActions();
 
   const loadProject = useCallback(async () => {
     setLoading(true);
@@ -134,7 +134,6 @@ function EditorPage() {
 
   const [pasting, setPasting] = useState(false);
   const [pasteError, setPasteError] = useState<string | null>(null);
-  const [lastPasteAttemptAt, setLastPasteAttemptAt] = useState(0);
 
   // Global Ctrl+V image paste — uploads clipboard images (blobs or URLs) and
   // appends them as new clips. Uses both paste-event data and Clipboard API
@@ -218,41 +217,10 @@ function EditorPage() {
 
   // Keyboard shortcuts — read currentFrame from the player ref so we don't need parent state.
   useEffect(() => {
-    async function triggerPasteFallback() {
-      if (Date.now() - lastPasteAttemptAt < 400) return;
-      setLastPasteAttemptAt(Date.now());
-      try {
-        const uploaded = await extractAndUploadImagesFromClipboard({
-          onError: (_idx, err) => setPasteError(String(err)),
-        });
-        if (uploaded && uploaded.length > 0) {
-          setPasting(true);
-          try {
-            const { selectedClipId, clips: storeClips } = useEditor.getState();
-            const selClip = storeClips.find((c) => c.id === selectedClipId);
-            if (selClip?.splitScreen?.enabled && !selClip.splitScreen.bottomImageUrl && uploaded[0]) {
-              useEditor.getState().updateClips((prev) =>
-                prev.map((c) =>
-                  c.id === selectedClipId
-                    ? { ...c, splitScreen: { ...c.splitScreen!, bottomImageKey: uploaded![0].key, bottomImageUrl: uploaded![0].url } }
-                    : c,
-                ),
-              );
-            } else {
-              addImageClips(uploaded);
-            }
-          } finally {
-            setPasting(false);
-          }
-        }
-      } catch {
-        // Ignore fallback errors; normal paste event path may still succeed.
-      }
-    }
-
     function onKey(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (target?.isContentEditable || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (e.ctrlKey && e.key.toLowerCase() === "z" && !e.shiftKey) {
         e.preventDefault();
         undo();
@@ -262,11 +230,14 @@ function EditorPage() {
       } else if (e.ctrlKey && e.key.toLowerCase() === "i") {
         e.preventDefault();
         fileImportRef.current?.click();
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
-        void triggerPasteFallback();
       } else if (e.key === " ") {
         e.preventDefault();
         playerRef.current?.toggle();
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        const { selectedClipId } = useEditor.getState();
+        if (!selectedClipId) return;
+        e.preventDefault();
+        deleteClip(selectedClipId);
       } else if (e.key.toLowerCase() === "j") {
         const cur = playerRef.current?.getCurrentFrame() ?? 0;
         playerRef.current?.seekTo(Math.max(0, cur - FPS * 2));
@@ -285,7 +256,7 @@ function EditorPage() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo, addImageClips, lastPasteAttemptAt]);
+  }, [undo, redo, deleteClip]);
 
   async function onExport() {
     setEnqueuing(true);
