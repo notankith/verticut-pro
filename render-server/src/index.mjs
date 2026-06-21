@@ -356,7 +356,7 @@ app.get('/render/status/:jobId', authMiddleware, async (req, res) => {
 // ────────────────────────────────────────────────────────────────
 app.post('/render/verticut', authMiddleware, async (req, res) => {
   try {
-    const { jobId: providedJobId, filename, project, clips, settings, overlayUrl } = req.body || {};
+    const { jobId: providedJobId, filename, project, clips, settings, overlayUrl, audioSegments } = req.body || {};
 
     if (!project || !project.audioUrl) return res.status(400).json({ error: 'project.audioUrl required' });
     if (!Array.isArray(clips)) return res.status(400).json({ error: 'clips array required' });
@@ -407,6 +407,7 @@ app.post('/render/verticut', authMiddleware, async (req, res) => {
         clips,
         settings,
         overlayUrl: overlayUrl || null,
+        audioSegments: audioSegments || project.audioSegments || null,
       },
     });
 
@@ -700,6 +701,13 @@ async function processVerticutRender(jobId, params) {
       durationInFrames,
       fps,
       overlayUrl: overlayUrl || undefined,
+      audioSegments: params.audioSegments || [],
+      captionTextColor: settings.captionTextColor,
+      captionBgColor: settings.captionBgColor,
+      captionPosX: settings.captionPosX,
+      captionPosY: settings.captionPosY,
+      captionFontSize: settings.captionFontSize,
+      transcript: project.transcript || [],
     };
 
     const composition = await selectComposition({

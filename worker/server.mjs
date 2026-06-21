@@ -59,7 +59,7 @@ app.post("/render", async (req, res) => {
   if (req.headers["x-worker-secret"] !== SECRET) {
     return res.status(401).send("Unauthorized");
   }
-  const { jobId, filename, project, clips, settings } = req.body;
+  const { jobId, filename, project, clips, settings, audioSegments } = req.body;
   if (!jobId) return res.status(400).send("Missing jobId");
   res.json({ ok: true });
 
@@ -91,6 +91,13 @@ app.post("/render", async (req, res) => {
         durationInFrames,
         fps,
         overlayUrl: APP_URL ? `${APP_URL.replace(/\/$/, "")}/GradientOverlay.png` : undefined,
+        audioSegments: audioSegments || project.audioSegments || [],
+        captionTextColor: settings.captionTextColor,
+        captionBgColor: settings.captionBgColor,
+        captionPosX: settings.captionPosX,
+        captionPosY: settings.captionPosY,
+        captionFontSize: settings.captionFontSize,
+        transcript: project.transcript || [],
       },
       onProgress: ({ progress }) => {
         postBack(jobId, { status: "rendering", progress });

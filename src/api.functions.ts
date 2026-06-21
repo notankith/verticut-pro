@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { randomUUID } from "crypto";
-import { getDb, type ProjectDoc, type SettingsDoc, type ClipDoc, type RenderDoc, type MarkerDoc } from "./server/mongo.server";
+import { getDb, type ProjectDoc, type SettingsDoc, type ClipDoc, type RenderDoc, type MarkerDoc, type AudioSegment } from "./server/mongo.server";
 import { presignPut, publicUrl } from "./server/r2.server";
 import { uploadBuffer } from "./server/r2.server";
 import { submitTranscript, getTranscript } from "./server/assemblyai.server";
@@ -15,6 +15,8 @@ async function C<T = unknown>(name: string) {
     findOne: (filter: unknown, opts?: unknown) => Promise<T | null>;
     find: (filter?: unknown, opts?: unknown) => { sort: (s: unknown) => { limit?: (n: number) => { toArray: () => Promise<T[]> }; toArray: () => Promise<T[]> }; toArray: () => Promise<T[]> };
     updateOne: (filter: unknown, update: unknown, opts?: unknown) => Promise<unknown>;
+    deleteOne: (filter: unknown) => Promise<unknown>;
+    deleteMany: (filter: unknown) => Promise<unknown>;
   };
 }
 
@@ -49,6 +51,11 @@ function defaultSettings(id: string = GLOBAL_SETTINGS_ID): SettingsDoc {
       { id: "aew", name: "AEW", text: "© AEW | © Getty Images", tint: "#eab308" },
       { id: "custom", name: "Custom", text: "© Source", tint: "#a855f7" },
     ],
+    captionTextColor: "#000000",
+    captionBgColor: "#ffffff",
+    captionPosX: 50,
+    captionPosY: 75,
+    captionFontSize: 36,
   };
 }
 
@@ -107,9 +114,10 @@ export const listProjects = createServerFn({ method: "GET" }).handler(async (): 
 export const deleteProject = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => d)
   .handler(async ({ data }) => {
-    const db = await getDb();
-    await db.collection("projects").deleteOne({ _id: data.id });
-    await db.collection("renders").deleteMany({ projectId: data.id });
+    const projects = await C<ProjectDoc>("projects");
+    const renders = await C<RenderDoc>("renders");
+    await projects.deleteOne({ _id: data.id });
+    await renders.deleteMany({ projectId: data.id });
     return { ok: true };
   });
 
@@ -123,6 +131,7 @@ export type ProjectFull = {
   clips: ClipDoc[];
   markers: MarkerDoc[];
   settings: SettingsDoc;
+  audioSegments?: AudioSegment[];
 };
 
 const GROQ_MODEL = "llama-3.3-70b-versatile";
@@ -276,11 +285,11 @@ export const getProject = createServerFn({ method: "POST" })
     if (p.transcriptStatus === "ready" && markers.length === 0 && p.transcript.length > 0) {
       const fullText = p.transcript.map((w) => w.text).join(" ").replace(/\s+/g, " ").trim();
       try {
-        markers = await generateTranscriptMarkers(fullText, p.transcript);
+        markers = (await generateTranscriptMarkers(fullText, p.transcript)) as MarkerDoc[];
         await projects.updateOne({ _id: data.id }, { $set: { markers, updatedAt: Date.now() } });
       } catch (err) {
         console.error("marker generation failed:", err);
-        markers = sentenceFallbackMarkers(fullText, p.transcript);
+        markers = sentenceFallbackMarkers(fullText, p.transcript) as MarkerDoc[];
         await projects.updateOne({ _id: data.id }, { $set: { markers, updatedAt: Date.now() } });
       }
     }
@@ -296,16 +305,24 @@ export const getProject = createServerFn({ method: "POST" })
       clips: p.clips ?? [],
       markers,
       settings,
+      audioSegments: p.audioSegments ?? [],
     };
   });
 
 export const saveProject = createServerFn({ method: "POST" })
-  .inputValidator((d: { id: string; clips: ClipDoc[] }) => d)
+  .inputValidator((d: { id: string; clips: ClipDoc[]; audioDuration?: number; audioSegments?: AudioSegment[] }) => d)
   .handler(async ({ data }) => {
     const projects = await C<ProjectDoc>("projects");
+    const update: any = { clips: data.clips, updatedAt: Date.now() };
+    if (typeof data.audioDuration === "number") {
+      update.audioDuration = data.audioDuration;
+    }
+    if (data.audioSegments) {
+      update.audioSegments = data.audioSegments;
+    }
     await projects.updateOne(
       { _id: data.id },
-      { $set: { clips: data.clips, updatedAt: Date.now() } },
+      { $set: update },
     );
     return { ok: true };
   });
@@ -403,9 +420,11 @@ export const enqueueRender = createServerFn({ method: "POST" })
               name: project.name,
               audioUrl: project.audioUrl,
               audioDuration: project.audioDuration,
+              transcript: project.transcript || [],
             },
             clips: project.clips ?? [],
             settings,
+            audioSegments: project.audioSegments ?? [],
           }),
         });
         if (!r.ok) {
@@ -568,16 +587,16 @@ export const clearProjectsAndRenders = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     if (!data.confirmed) throw new Error("Clear not confirmed");
     
-    const projectDocs = await (await C<ProjectDoc>("projects")).find({}).toArray();
+    const projects = await C<ProjectDoc>("projects");
+    const projectDocs = await projects.find({}).toArray();
     for (const doc of projectDocs) {
-      const db = await getDb();
-      await db.collection("projects").deleteOne({ _id: doc._id });
+      await projects.deleteOne({ _id: doc._id });
     }
 
-    const renderDocs = await (await C<RenderDoc>("renders")).find({}).toArray();
+    const renders = await C<RenderDoc>("renders");
+    const renderDocs = await renders.find({}).toArray();
     for (const doc of renderDocs) {
-      const db = await getDb();
-      await db.collection("renders").deleteOne({ _id: doc._id });
+      await renders.deleteOne({ _id: doc._id });
     }
 
     return { ok: true, deleted: { projects: projectDocs.length, renders: renderDocs.length } };
@@ -605,14 +624,12 @@ export const resetAllData = createServerFn({ method: "POST" })
     // Better approach: delete by finding all and removing them
     const projectDocs = await projects.find({}).toArray();
     for (const doc of projectDocs) {
-      const db = await getDb();
-      await db.collection("projects").deleteOne({ _id: doc._id });
+      await projects.deleteOne({ _id: doc._id });
     }
 
     const renderDocs = await renders.find({}).toArray();
     for (const doc of renderDocs) {
-      const db = await getDb();
-      await db.collection("renders").deleteOne({ _id: doc._id });
+      await renders.deleteOne({ _id: doc._id });
     }
 
     return { ok: true, deleted: { projects: projectDocs.length, renders: renderDocs.length } };

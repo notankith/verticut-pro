@@ -1,6 +1,6 @@
 import { useEditor } from "@/store/editor";
 import { useRef, useCallback, useEffect, useState } from "react";
-import type { ClipDoc } from "@/server/mongo.server";
+import type { ClipDoc, AudioSegment } from "@/server/mongo.server";
 
 const ANIMS: ClipDoc["animation"][] = ["zoom-in", "zoom-out", "pan-left", "pan-right"];
 
@@ -337,13 +337,106 @@ export function useTimelineActions() {
     [],
   );
 
-  return { addImageClips, moveClip, trimClip, deleteClip, updateClip, splitClip, addKeyframe, splitAudioAt, deleteAudioRange };
+  const moveAudioSegment = useCallback(
+    (id: string, newStart: number) => {
+      const segs = useEditor.getState().audioSegments.slice();
+      const idx = segs.findIndex((s) => s.id === id);
+      if (idx < 0) return;
+      const s = segs[idx];
+      let val = Math.max(0, newStart);
+      
+      const before = segs.filter((seg) => seg.id !== id && seg.projStart <= s.projStart).sort((a, b) => a.projStart - b.projStart).pop();
+      const after = segs.filter((seg) => seg.id !== id && seg.projStart > s.projStart).sort((a, b) => a.projStart - b.projStart)[0];
+      const beforeEnd = before ? before.projStart + before.duration : 0;
+      const afterStart = after ? after.projStart : 999999;
+      
+      const SNAP = 8 / (useEditor.getState().zoom || 60);
+      if (Math.abs(val - beforeEnd) < SNAP) val = beforeEnd;
+      if (Math.abs(val + s.duration - afterStart) < SNAP) val = afterStart - s.duration;
+      
+      if (val < beforeEnd) val = beforeEnd;
+      if (val + s.duration > afterStart) val = afterStart - s.duration;
+      
+      segs[idx] = { ...s, projStart: val };
+      useEditor.getState().set({ audioSegments: segs });
+    },
+    []
+  );
+
+  const trimAudioSegment = useCallback(
+    (id: string, edge: "start" | "end", newValue: number) => {
+      const segs = useEditor.getState().audioSegments.slice();
+      const idx = segs.findIndex((s) => s.id === id);
+      if (idx < 0) return;
+      const s = segs[idx];
+      const before = segs.filter((seg) => seg.id !== id && seg.projStart <= s.projStart).sort((a, b) => a.projStart - b.projStart).pop();
+      const after = segs.filter((seg) => seg.id !== id && seg.projStart > s.projStart).sort((a, b) => a.projStart - b.projStart)[0];
+      const beforeEnd = before ? before.projStart + before.duration : 0;
+      const afterStart = after ? after.projStart : 999999;
+      
+      if (edge === "start") {
+        let val = Math.max(beforeEnd, Math.min(s.projStart + s.duration - 0.1, newValue));
+        const diff = val - s.projStart;
+        segs[idx] = {
+          ...s,
+          projStart: val,
+          srcStart: s.srcStart + diff,
+          duration: s.duration - diff
+        };
+      } else {
+        let val = Math.min(afterStart, Math.max(s.projStart + 0.1, newValue));
+        segs[idx] = {
+          ...s,
+          duration: val - s.projStart
+        };
+      }
+      useEditor.getState().set({ audioSegments: segs });
+    },
+    []
+  );
+
+  const deleteAudioSegment = useCallback(
+    (id: string) => {
+      const segs = useEditor.getState().audioSegments.filter((s) => s.id !== id);
+      useEditor.getState().set({ audioSegments: segs });
+      select(null);
+    },
+    [select]
+  );
+
+  const updateAudioSegment = useCallback(
+    (id: string, patch: Partial<AudioSegment>) => {
+      const segs = useEditor.getState().audioSegments.map((s) =>
+        s.id === id ? { ...s, ...patch } : s
+      );
+      useEditor.getState().set({ audioSegments: segs });
+    },
+    []
+  );
+
+  return {
+    addImageClips,
+    moveClip,
+    trimClip,
+    deleteClip,
+    updateClip,
+    splitClip,
+    addKeyframe,
+    splitAudioAt,
+    deleteAudioRange,
+    moveAudioSegment,
+    trimAudioSegment,
+    deleteAudioSegment,
+    updateAudioSegment,
+  };
 }
 
 
 // Auto-save hook
-export function useAutoSave(save: (clips: ClipDoc[]) => Promise<void>) {
+export function useAutoSave(save: (clips: ClipDoc[], audioDuration: number, audioSegments: AudioSegment[]) => Promise<void>) {
   const clips = useEditor((s) => s.clips);
+  const audioDuration = useEditor((s) => s.audioDuration);
+  const audioSegments = useEditor((s) => s.audioSegments);
   const setSaving = useEditor((s) => s.set);
   const [first, setFirst] = useState(true);
   useEffect(() => {
@@ -354,7 +447,7 @@ export function useAutoSave(save: (clips: ClipDoc[]) => Promise<void>) {
     setSaving({ saving: "saving" });
     const t = setTimeout(async () => {
       try {
-        await save(clips);
+        await save(clips, audioDuration, audioSegments);
         setSaving({ saving: "saved" });
       } catch {
         setSaving({ saving: "idle" });
@@ -362,5 +455,5 @@ export function useAutoSave(save: (clips: ClipDoc[]) => Promise<void>) {
     }, 500);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clips]);
+  }, [clips, audioDuration, audioSegments]);
 }

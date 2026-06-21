@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 import { usePlayerFrame } from "@/components/editor/usePlayerFrame";
-import { Film, Settings, Undo2, Redo2, Loader2, Image as ImageIcon, Play, Pause, Rewind } from "lucide-react";
+import { Film, Settings, Undo2, Redo2, Loader2, Image as ImageIcon, Play, Pause, Rewind, Clock, Plus, Minus } from "lucide-react";
 import {
   enqueueRender,
   getProject,
@@ -20,6 +20,7 @@ import { SettingsPanel } from "@/components/editor/SettingsPanel";
 import { useAutoSave, useTimelineActions } from "@/components/editor/hooks";
 import { extractAndUploadImagesFromClipboard, extractAndUploadPastedImages, uploadToR2 } from "@/lib/upload";
 import { getTemplateById, TEMPLATES } from "@/lib/templates";
+import type { AudioSegment } from "@/server/mongo.server";
 
 const FPS = 30;
 const COMP_WIDTH = 1080;
@@ -53,6 +54,7 @@ function EditorPage() {
   // Timeline height (resizable)
   const [timelineHeight, setTimelineHeight] = useState<number>(192);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [durationOpen, setDurationOpen] = useState(false);
 
   // Sync player frame -> editor currentTime
   const setEditorState = useEditor((s) => s.set);
@@ -63,15 +65,32 @@ function EditorPage() {
 
   const audioUrl = useEditor((s) => s.audioUrl);
   const audioDuration = useEditor((s) => s.audioDuration);
+  const audioSegments = useEditor((s) => s.audioSegments);
   const clips = useEditor((s) => s.clips);
   const settings = useEditor((s) => s.settings);
+  const transcript = useEditor((s) => s.transcript);
   const name = useEditor((s) => s.name);
   const saving = useEditor((s) => s.saving);
   const undo = useEditor((s) => s.undo);
   const redo = useEditor((s) => s.redo);
   const initStore = useEditor((s) => s.init);
 
-  const { addImageClips, deleteClip, splitClip, splitAudioAt } = useTimelineActions();
+  const { addImageClips, deleteClip, splitClip, splitAudioAt, deleteAudioSegment } = useTimelineActions();
+
+  const updateCompositionDuration = useCallback((newDur: number) => {
+    const currentSegments = useEditor.getState().audioSegments;
+    const oldDur = useEditor.getState().audioDuration;
+    let nextSegments = currentSegments.slice();
+    
+    if (currentSegments.length === 1 && currentSegments[0].duration === oldDur) {
+      nextSegments[0] = { ...currentSegments[0], duration: newDur };
+    }
+    
+    useEditor.getState().set({
+      audioDuration: newDur,
+      audioSegments: nextSegments,
+    });
+  }, []);
 
   const loadProject = useCallback(async () => {
     setLoading(true);
@@ -86,6 +105,7 @@ function EditorPage() {
         clips: p.clips,
         markers: p.markers,
         settings: p.settings,
+        audioSegments: p.audioSegments ?? [],
       });
     } catch (e) {
       setError(String(e));
@@ -106,8 +126,8 @@ function EditorPage() {
   }, [audioDuration, loading, loadProject]);
 
   // Autosave
-  useAutoSave(async (clipsArg) => {
-    await saveProject({ data: { id, clips: clipsArg } });
+  useAutoSave(async (clipsArg, audioDurationArg, audioSegmentsArg) => {
+    await saveProject({ data: { id, clips: clipsArg, audioDuration: audioDurationArg, audioSegments: audioSegmentsArg } });
   });
 
   // Aggressively preload all clip images + the gradient overlay into the
@@ -248,18 +268,26 @@ function EditorPage() {
         e.preventDefault();
         playerRef.current?.toggle();
       } else if (e.key === "Delete" || e.key === "Backspace") {
-        const { selectedClipId } = useEditor.getState();
+        const { selectedClipId, clips: storeClips, audioSegments: storeSegs } = useEditor.getState();
         if (!selectedClipId) return;
         e.preventDefault();
-        deleteClip(selectedClipId);
+        const isVisualClip = storeClips.some((c) => c.id === selectedClipId);
+        const isAudioSegment = storeSegs.some((s) => s.id === selectedClipId);
+        if (isVisualClip) {
+          deleteClip(selectedClipId);
+        } else if (isAudioSegment) {
+          deleteAudioSegment(selectedClipId);
+        }
       } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "d") {
         // Cut / split selected layer at playhead
         e.preventDefault();
-        const sel = useEditor.getState().selectedClipId;
+        const { selectedClipId, clips: storeClips, audioSegments: storeSegs } = useEditor.getState();
         const time = (playerRef.current?.getCurrentFrame() ?? 0) / FPS;
-        if (sel && sel !== "VOICEOVER") {
-          splitClip(sel, time);
-        } else if (sel === "VOICEOVER") {
+        const isVisualClip = storeClips.some((c) => c.id === selectedClipId);
+        const isAudioSegment = storeSegs.some((s) => s.id === selectedClipId);
+        if (isVisualClip && selectedClipId) {
+          splitClip(selectedClipId, time);
+        } else if (isAudioSegment || selectedClipId === "VOICEOVER") {
           splitAudioAt(time);
         }
       } else if (e.key.toLowerCase() === "j") {
@@ -444,6 +472,13 @@ function EditorPage() {
       overlayUrl: getTemplateById(settings.activeTemplateId)?.overlayUrl,
       templateWindow: settings.templateWindow,
       enableTransitions: settings.transitionAnimation ?? true,
+      audioSegments,
+      captionTextColor: settings.captionTextColor,
+      captionBgColor: settings.captionBgColor,
+      captionPosX: settings.captionPosX,
+      captionPosY: settings.captionPosY,
+      captionFontSize: settings.captionFontSize,
+      transcript,
     }),
     [
       audioUrl,
@@ -455,8 +490,15 @@ function EditorPage() {
       settings.transitionAnimation,
       settings.activeTemplateId,
       settings.templateWindow,
+      settings.captionTextColor,
+      settings.captionBgColor,
+      settings.captionPosX,
+      settings.captionPosY,
+      settings.captionFontSize,
       clips,
       totalFrames,
+      audioSegments,
+      transcript,
     ],
   );
 
@@ -493,6 +535,12 @@ function EditorPage() {
           className={`flex items-center gap-1 rounded px-2.5 py-1 text-xs ${tab === "settings" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}
         >
           <Settings className="h-3 w-3" /> Settings
+        </button>
+        <button
+          onClick={() => setDurationOpen(true)}
+          className="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent/50"
+        >
+          <Clock className="h-3.5 w-3.5 text-primary" /> Duration ({audioDuration.toFixed(1)}s)
         </button>
           <div className="ml-auto flex items-center gap-2">
           <span className="text-[10px] text-muted-foreground">
@@ -588,7 +636,19 @@ function EditorPage() {
                 <TimecodeBadge playerRef={playerRef} fps={FPS} />
               </div>
               {audioUrl ? (
-                <PreviewAudio src={audioUrl} playerRef={playerRef} fps={FPS} />
+                audioSegments && audioSegments.length > 0 ? (
+                  audioSegments.map((seg) => (
+                    <PreviewAudioSegment
+                      key={seg.id}
+                      src={audioUrl}
+                      segment={seg}
+                      playerRef={playerRef}
+                      fps={FPS}
+                    />
+                  ))
+                ) : (
+                  <PreviewAudio src={audioUrl} playerRef={playerRef} fps={FPS} />
+                )
               ) : null}
               {settings.musicUrl ? (
                 <PreviewAudio
@@ -677,6 +737,94 @@ function EditorPage() {
                   <div className="text-[12px] text-muted-foreground">Overlay: {t.overlayUrl}</div>
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Duration modal */}
+      {durationOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="w-80 rounded-lg border border-border bg-panel p-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-border pb-2">
+              <h4 className="text-sm font-semibold flex items-center gap-1.5">
+                <Clock className="h-4 w-4 text-primary" /> Composition Duration
+              </h4>
+              <button
+                onClick={() => setDurationOpen(false)}
+                className="text-[12px] text-muted-foreground hover:text-foreground"
+              >
+                Close
+              </button>
+            </div>
+            
+            <div className="my-4 space-y-4">
+              <div className="flex flex-col items-center justify-center bg-panel-2 rounded p-3">
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Current Duration</span>
+                <span className="text-2xl font-mono font-bold mt-1 text-primary">
+                  {audioDuration.toFixed(1)}s
+                </span>
+                <span className="text-[10px] text-muted-foreground mt-0.5">
+                  {fmtTC(audioDuration)}
+                </span>
+              </div>
+              
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  onClick={() => {
+                    const next = Math.max(1, audioDuration - 1);
+                    updateCompositionDuration(next);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1 rounded border border-border bg-panel-2 py-1.5 text-xs hover:bg-accent font-medium"
+                >
+                  <Minus className="h-3 w-3" /> 1s
+                </button>
+                <button
+                  onClick={() => {
+                    const next = Math.max(1, audioDuration - 5);
+                    updateCompositionDuration(next);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1 rounded border border-border bg-panel-2 py-1.5 text-xs hover:bg-accent font-medium"
+                >
+                  <Minus className="h-3 w-3" /> 5s
+                </button>
+                <button
+                  onClick={() => {
+                    const next = Math.max(1, audioDuration + 1);
+                    updateCompositionDuration(next);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1 rounded border border-border bg-panel-2 py-1.5 text-xs hover:bg-accent font-medium"
+                >
+                  <Plus className="h-3 w-3" /> 1s
+                </button>
+                <button
+                  onClick={() => {
+                    const next = Math.max(1, audioDuration + 5);
+                    updateCompositionDuration(next);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1 rounded border border-border bg-panel-2 py-1.5 text-xs hover:bg-accent font-medium"
+                >
+                  <Plus className="h-3 w-3" /> 5s
+                </button>
+              </div>
+              
+              <div className="space-y-1">
+                <label className="text-[11px] text-muted-foreground block">Exact duration (seconds)</label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={3600}
+                    step={0.1}
+                    value={audioDuration}
+                    onChange={(e) => {
+                      const next = Math.max(1, Number(e.target.value));
+                      updateCompositionDuration(next);
+                    }}
+                    className="flex-1 rounded border border-border bg-panel-2 px-2.5 py-1 text-xs font-mono"
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1010,3 +1158,159 @@ function PreviewAudio({
     />
   );
 }
+
+function PreviewAudioSegment({
+  src,
+  segment,
+  playerRef,
+  fps,
+  volume = 1,
+}: {
+  src: string;
+  segment: AudioSegment;
+  playerRef: RefObject<PlayerRef | null>;
+  fps: number;
+  volume?: number;
+}) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (audio) audio.volume = volume;
+  }, [volume]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    const player = playerRef.current;
+    if (!audio || !player) return;
+
+    const targetTime = () => player.getCurrentFrame() / fps;
+    const sync = () => {
+      const t = targetTime();
+      const isWithin = t >= segment.projStart && t < segment.projStart + segment.duration;
+      
+      if (isWithin) {
+        const targetSeek = segment.srcStart + (t - segment.projStart);
+        if (Math.abs(audio.currentTime - targetSeek) > DRIFT_HARD) {
+          audio.currentTime = targetSeek;
+        }
+        if (audio.paused) {
+          audio.play().catch(() => {});
+        }
+      } else {
+        if (!audio.paused) {
+          audio.pause();
+        }
+      }
+    };
+
+    const hardSync = () => {
+      const t = targetTime();
+      const isWithin = t >= segment.projStart && t < segment.projStart + segment.duration;
+      if (isWithin) {
+        audio.currentTime = segment.srcStart + (t - segment.projStart);
+      } else {
+        audio.pause();
+      }
+    };
+
+    let driftTimer: number | undefined;
+    const startDriftCheck = () => {
+      if (driftTimer != null) return;
+      driftTimer = window.setInterval(sync, DRIFT_CHECK_MS);
+    };
+    const stopDriftCheck = () => {
+      if (driftTimer != null) {
+        window.clearInterval(driftTimer);
+        driftTimer = undefined;
+      }
+    };
+
+    const handlingPlayRef = { current: false } as { current: boolean };
+
+    const onPlay = async () => {
+      if (handlingPlayRef.current) return;
+      handlingPlayRef.current = true;
+      try {
+        const t = targetTime();
+        const isWithin = t >= segment.projStart && t < segment.projStart + segment.duration;
+        if (isWithin) {
+          hardSync();
+          try {
+            player.pause();
+          } catch {}
+          await audio.play();
+          try {
+            player.play();
+          } catch {}
+          startDriftCheck();
+        } else {
+          audio.pause();
+        }
+      } catch (_) {
+      } finally {
+        handlingPlayRef.current = false;
+      }
+    };
+
+    const onPause = () => {
+      if (handlingPlayRef.current) return;
+      audio.pause();
+      stopDriftCheck();
+      hardSync();
+    };
+
+    const onSeeked = () => {
+      const t = targetTime();
+      const isWithin = t >= segment.projStart && t < segment.projStart + segment.duration;
+      if (isWithin) {
+        hardSync();
+        if (driftTimer != null && audio.paused) {
+          audio.play().catch(() => {});
+        }
+      } else {
+        audio.pause();
+        stopDriftCheck();
+      }
+    };
+
+    const onRateChange = () => {
+      const rate = (player as unknown as { getPlaybackRate?: () => number }).getPlaybackRate?.() ?? 1;
+      audio.playbackRate = rate;
+    };
+
+    const onEnded = () => {
+      audio.pause();
+      stopDriftCheck();
+    };
+
+    player.addEventListener("play", onPlay);
+    player.addEventListener("pause", onPause);
+    player.addEventListener("seeked", onSeeked);
+    player.addEventListener("ratechange", onRateChange);
+    player.addEventListener("ended", onEnded);
+
+    // Initial sync
+    hardSync();
+
+    return () => {
+      stopDriftCheck();
+      player.removeEventListener("play", onPlay);
+      player.removeEventListener("pause", onPause);
+      player.removeEventListener("seeked", onSeeked);
+      player.removeEventListener("ratechange", onRateChange);
+      player.removeEventListener("ended", onEnded);
+      audio.pause();
+    };
+  }, [playerRef, fps, src, segment.id, segment.projStart, segment.duration, segment.srcStart]);
+
+  return (
+    <audio
+      ref={audioRef}
+      src={src}
+      preload="auto"
+      style={{ display: "none" }}
+    />
+  );
+}
+

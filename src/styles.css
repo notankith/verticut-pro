@@ -90,3 +90,10 @@
 ::-webkit-scrollbar-track { background: var(--color-track); }
 ::-webkit-scrollbar-thumb { background: var(--color-ruler); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-muted-foreground); }
+
+@font-face {
+  font-family: 'AcuminProCondensedBlack';
+  src: url('/acumin-pro-condensed-black.otf') format('opentype');
+  font-weight: 900;
+  font-style: normal;
+}

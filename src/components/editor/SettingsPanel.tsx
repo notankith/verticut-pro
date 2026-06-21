@@ -22,7 +22,7 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs
   const [showClearLogsConfirm, setShowClearLogsConfirm] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isClearingLogs, setIsClearingLogs] = useState(false);
-  const [subTab, setSubTab] = useState<"general" | "templates">("general");
+  const [subTab, setSubTab] = useState<"general" | "templates" | "captions">("general");
 
   const templateWindow = settings.templateWindow ?? DEFAULT_TEMPLATE_WINDOW;
   const activeTemplateId = settings.activeTemplateId ?? null;
@@ -134,6 +134,13 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs
         >
           Templates
         </button>
+        <button
+          type="button"
+          onClick={() => setSubTab("captions")}
+          className={`rounded-t px-3 py-2 text-xs ${subTab === "captions" ? "bg-panel text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          Captions
+        </button>
       </div>
 
       {subTab === "general" ? (
@@ -242,13 +249,95 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs
             </div>
           </section>
         </>
-      ) : (
+      ) : subTab === "templates" ? (
         <TemplateEditor
           activeTemplate={activeTemplate}
           windowRect={templateWindow}
           onSelectTemplate={(id) => onChange({ activeTemplateId: id })}
           onWindowChange={(next) => onChange({ templateWindow: next })}
         />
+      ) : (
+        <section className="space-y-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Word-Level Captions</h3>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Text Color</label>
+              <div className="flex gap-2">
+                <input
+                  type="color"
+                  value={settings.captionTextColor ?? "#000000"}
+                  onChange={(e) => onChange({ captionTextColor: e.target.value })}
+                  className="h-8 w-8 rounded border border-border bg-transparent p-0 cursor-pointer"
+                />
+                <input
+                  type="text"
+                  value={settings.captionTextColor ?? "#000000"}
+                  onChange={(e) => onChange({ captionTextColor: e.target.value })}
+                  className="flex-1 rounded border border-border bg-panel-2 px-2.5 py-1 text-xs"
+                />
+              </div>
+            </div>
+            
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Background Color</label>
+              <div className="flex gap-2">
+                <input
+                  type="color"
+                  value={settings.captionBgColor ?? "#ffffff"}
+                  onChange={(e) => onChange({ captionBgColor: e.target.value })}
+                  className="h-8 w-8 rounded border border-border bg-transparent p-0 cursor-pointer"
+                />
+                <input
+                  type="text"
+                  value={settings.captionBgColor ?? "#ffffff"}
+                  onChange={(e) => onChange({ captionBgColor: e.target.value })}
+                  className="flex-1 rounded border border-border bg-panel-2 px-2.5 py-1 text-xs"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Position X (%)</label>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={settings.captionPosX ?? 50}
+                onChange={(e) => onChange({ captionPosX: Number(e.target.value) })}
+                className="w-full"
+              />
+              <span className="text-[10px] text-muted-foreground mt-0.5 block text-right">{settings.captionPosX ?? 50}%</span>
+            </div>
+            
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Position Y (%)</label>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={settings.captionPosY ?? 75}
+                onChange={(e) => onChange({ captionPosY: Number(e.target.value) })}
+                className="w-full"
+              />
+              <span className="text-[10px] text-muted-foreground mt-0.5 block text-right">{settings.captionPosY ?? 75}%</span>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Font Size ({settings.captionFontSize ?? 36}px)</label>
+            <input
+              type="range"
+              min={12}
+              max={120}
+              value={settings.captionFontSize ?? 36}
+              onChange={(e) => onChange({ captionFontSize: Number(e.target.value) })}
+              className="w-full"
+            />
+          </div>
+        </section>
       )}
 
       <section className="space-y-3">

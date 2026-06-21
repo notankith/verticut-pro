@@ -1,5 +1,5 @@
-import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate } from "remotion";
-import type { ClipDoc } from "../server/mongo.server";
+import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate, staticFile } from "remotion";
+import type { ClipDoc, AudioSegment } from "../server/mongo.server";
 import type { TemplateWindow } from "@/lib/templates";
 
 export type CompositionProps = {
@@ -16,6 +16,13 @@ export type CompositionProps = {
   templateWindow?: TemplateWindow;
   // enable or disable the boundary transitions between clips
   enableTransitions?: boolean;
+  audioSegments?: AudioSegment[];
+  captionTextColor?: string;
+  captionBgColor?: string;
+  captionPosX?: number;
+  captionPosY?: number;
+  captionFontSize?: number;
+  transcript?: { text: string; start: number; end: number }[];
 };
 
 const ANIM_SHIFT = 0.6; // base scale/translate range (increased for stronger pan)
@@ -291,6 +298,195 @@ function ClipLayer({
   );
 }
 
+function getSourceTime(audioSegments: AudioSegment[], t: number): number {
+  for (const s of audioSegments) {
+    if (t >= s.projStart && t < s.projStart + s.duration) {
+      return s.srcStart + (t - s.projStart);
+    }
+  }
+  return -1;
+}
+
+type TranscriptWord = {
+  text: string;
+  start: number;
+  end: number;
+};
+
+function getWordProgress(
+  words: TranscriptWord[],
+  wordIndex: number,
+  srcT: number,
+  transitionDuration = 0.08
+): { scale: number; bgOpacity: number; textOpacity: number } {
+  if (words.length === 1) {
+    return { scale: 1.05, bgOpacity: 1.0, textOpacity: 1.0 };
+  }
+
+  const wordA = words[0];
+  const wordB = words[1];
+  const boundary = wordB.start;
+  const halfDt = transitionDuration / 2;
+
+  let pA = 0;
+  let pB = 0;
+
+  if (srcT < boundary - halfDt) {
+    pA = 1.0;
+    pB = 0.0;
+  } else if (srcT > boundary + halfDt) {
+    pA = 0.0;
+    pB = 1.0;
+  } else {
+    const linearP = (srcT - (boundary - halfDt)) / transitionDuration;
+    const easeP = linearP * linearP * (3 - 2 * linearP);
+    pB = easeP;
+    pA = 1 - easeP;
+  }
+
+  const activeP = wordIndex === 0 ? pA : pB;
+
+  return {
+    scale: 0.92 + (1.05 - 0.92) * activeP,
+    bgOpacity: activeP,
+    textOpacity: 1.0,
+  };
+}
+
+const CaptionOverlay: React.FC<{
+  transcript?: TranscriptWord[];
+  audioSegments?: AudioSegment[];
+  captionTextColor?: string;
+  captionBgColor?: string;
+  captionPosX?: number;
+  captionPosY?: number;
+  captionFontSize?: number;
+}> = ({
+  transcript = [],
+  audioSegments = [],
+  captionTextColor = "#000000",
+  captionBgColor = "#ffffff",
+  captionPosX = 50,
+  captionPosY = 75,
+  captionFontSize = 36,
+}) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const currentTime = frame / fps;
+
+  if (!transcript || transcript.length === 0) return null;
+
+  const srcT = audioSegments && audioSegments.length > 0
+    ? getSourceTime(audioSegments, currentTime)
+    : currentTime;
+
+  if (srcT < 0) return null;
+
+  // Group into max 2-word segments
+  const segments: { words: TranscriptWord[]; start: number; end: number }[] = [];
+  for (let i = 0; i < transcript.length; i += 2) {
+    const group = transcript.slice(i, i + 2);
+    if (group.length > 0) {
+      segments.push({
+        words: group,
+        start: group[0].start,
+        end: group[group.length - 1].end,
+      });
+    }
+  }
+
+  let activeSegment = null;
+  if (segments.length > 0) {
+    if (srcT >= segments[0].start) {
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        const nextSeg = segments[i + 1];
+        const limit = nextSeg ? nextSeg.start : (seg.end + 2.0);
+        if (srcT >= seg.start && srcT < limit) {
+          if (srcT > seg.end + 1.0 && nextSeg && nextSeg.start - seg.end > 1.5) {
+            break;
+          }
+          activeSegment = seg;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!activeSegment) return null;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: `${captionPosX}%`,
+        top: `${captionPosY}%`,
+        transform: "translate(-50%, -50%)",
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: `${captionFontSize * 0.25}px`,
+        whiteSpace: "nowrap",
+        pointerEvents: "none",
+        maxWidth: "90%",
+        overflow: "hidden",
+        zIndex: 50,
+      }}
+    >
+      <style>
+        {`
+          @font-face {
+            font-family: 'AcuminProCondensedBlack';
+            src: url('${staticFile("acumin-pro-condensed-black.otf")}') format('opentype');
+            font-weight: 900;
+            font-style: normal;
+          }
+        `}
+      </style>
+      {activeSegment.words.map((word, idx) => {
+        const { scale, bgOpacity } = getWordProgress(
+          activeSegment.words,
+          idx,
+          srcT
+        );
+
+        return (
+          <div
+            key={idx}
+            style={{
+              position: "relative",
+              padding: `${captionFontSize * 0.08}px ${captionFontSize * 0.25}px`,
+              fontSize: `${captionFontSize}px`,
+              fontFamily: "'AcuminProCondensedBlack', ui-sans-serif, system-ui, sans-serif",
+              fontWeight: 900,
+              textTransform: "uppercase",
+              color: captionTextColor,
+              transform: `scale(${scale})`,
+              transformOrigin: "center center",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                backgroundColor: captionBgColor,
+                borderRadius: "9999px",
+                opacity: bgOpacity,
+                zIndex: -1,
+              }}
+            />
+            <span>{word.text}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 export const VertiCutComposition: React.FC<CompositionProps> = ({
   audioUrl,
   musicUrl,
@@ -304,6 +500,13 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
   overlayUrl,
   templateWindow,
   enableTransitions = true,
+  audioSegments = [],
+  captionTextColor,
+  captionBgColor,
+  captionPosX,
+  captionPosY,
+  captionFontSize,
+  transcript = [],
 }) => {
   const scene = (
     <>
@@ -365,6 +568,15 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
           }}
         />
       ) : null}
+      <CaptionOverlay
+        transcript={transcript}
+        audioSegments={audioSegments}
+        captionTextColor={captionTextColor}
+        captionBgColor={captionBgColor}
+        captionPosX={captionPosX}
+        captionPosY={captionPosY}
+        captionFontSize={captionFontSize}
+      />
     </AbsoluteFill>
   );
 };

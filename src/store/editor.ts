@@ -1,16 +1,6 @@
 import { create } from "zustand";
-import type { ClipDoc, MarkerDoc, SettingsDoc } from "@/server/mongo.server";
+import type { ClipDoc, MarkerDoc, SettingsDoc, AudioSegment } from "@/server/mongo.server";
 import { DEFAULT_TEMPLATE_WINDOW } from "@/lib/templates";
-
-export type AudioSegment = {
-  id: string;
-  // source time in original audio (seconds)
-  srcStart: number;
-  // duration of this segment (seconds)
-  duration: number;
-  // project start time (seconds)
-  projStart: number;
-};
 
 export type Keyframe = {
   time: number; // seconds (project time)
@@ -43,7 +33,7 @@ export type EditorState = {
   audioSegments: AudioSegment[];
 
   set: (patch: Partial<EditorState>) => void;
-  init: (p: Omit<EditorState, "selectedClipId" | "zoom" | "saving" | "past" | "future" | "set" | "init" | "updateClips" | "updateSettings" | "select" | "undo" | "redo">) => void;
+  init: (p: Omit<EditorState, "selectedClipId" | "zoom" | "saving" | "past" | "future" | "set" | "init" | "updateClips" | "updateSettings" | "select" | "undo" | "redo" | "currentTime">) => void;
   updateClips: (next: ClipDoc[] | ((prev: ClipDoc[]) => ClipDoc[]), record?: boolean) => void;
   updateSettings: (next: Partial<SettingsDoc>) => void;
   select: (id: string | null) => void;
@@ -85,6 +75,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   init: (p) =>
     set({
       ...p,
+      currentTime: 0,
       settings: {
         ...p.settings,
         transitionAnimation: p.settings.transitionAnimation ?? true,
@@ -97,8 +88,10 @@ export const useEditor = create<EditorState>((set, get) => ({
       saving: "idle",
       past: [],
       future: [],
-      // Initialize audioSegments as one mapping of full audio
-      audioSegments: [{ id: crypto.randomUUID(), srcStart: 0, duration: p.audioDuration ?? 0, projStart: 0 }],
+      // Initialize audioSegments: if they exist on project, use them, otherwise fallback to one mapping of full audio
+      audioSegments: (p.audioSegments && p.audioSegments.length > 0)
+        ? p.audioSegments
+        : [{ id: crypto.randomUUID(), srcStart: 0, duration: p.audioDuration ?? 0, projStart: 0 }],
     }),
   updateClips: (next, record = true) => {
     const prev = get().clips;

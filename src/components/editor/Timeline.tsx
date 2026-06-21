@@ -1,7 +1,7 @@
 import { useEditor } from "@/store/editor";
 import { useTimelineActions } from "./hooks";
 import { useEffect, useRef, useState, type RefObject } from "react";
-import type { ClipDoc, MarkerDoc } from "@/server/mongo.server";
+import type { ClipDoc, MarkerDoc, AudioSegment } from "@/server/mongo.server";
 import type { PlayerRef } from "@remotion/player";
 import { usePlayerFrame } from "./usePlayerFrame";
 
@@ -23,7 +23,7 @@ export function Timeline({
   const settings = useEditor((s) => s.settings);
   const select = useEditor((s) => s.select);
   const set = useEditor((s) => s.set);
-  const { moveClip, trimClip } = useTimelineActions();
+  const { moveClip, trimClip, moveAudioSegment, trimAudioSegment } = useTimelineActions();
   const containerRef = useRef<HTMLDivElement>(null);
   const didAutoFitRef = useRef<string | null>(null);
   const clipsEnd = clips.reduce((max, c) => Math.max(max, c.start + c.duration), 0);
@@ -112,14 +112,16 @@ export function Timeline({
             <div
               className="absolute left-0 top-0 h-full"
               style={{ width: totalWidth }}
-              onClick={() => select("VOICEOVER")}
             >
               {audioSegments.map((s) => (
-                <div
+                <AudioSegmentBlock
                   key={s.id}
-                  className={`absolute top-1 h-6 rounded border ${selectedClipId === "VOICEOVER" ? "border-primary bg-primary/10" : "border-border bg-panel-2"}`}
-                  style={{ left: s.projStart * zoom, width: Math.max(6, s.duration * zoom) }}
-                  title={`Audio segment: ${s.duration.toFixed(2)}s`}
+                  segment={s}
+                  zoom={zoom}
+                  selected={selectedClipId === s.id}
+                  onSelect={() => select(s.id)}
+                  onMove={(newStart) => moveAudioSegment(s.id, newStart)}
+                  onTrim={(edge, val) => trimAudioSegment(s.id, edge, val)}
                 />
               ))}
               <div className="absolute top-0 bottom-0 w-px bg-border" style={{ left: currentTime * zoom }} />
@@ -351,3 +353,73 @@ function ClipBlock({
     </div>
   );
 }
+
+function AudioSegmentBlock({
+  segment,
+  zoom,
+  selected,
+  onSelect,
+  onMove,
+  onTrim,
+}: {
+  segment: AudioSegment;
+  zoom: number;
+  selected: boolean;
+  onSelect: () => void;
+  onMove: (projStart: number) => void;
+  onTrim: (edge: "start" | "end", v: number) => void;
+}) {
+  const [drag, setDrag] = useState<null | { kind: "move" | "left" | "right"; startX: number; orig: number }>(null);
+
+  useEffect(() => {
+    if (!drag) return;
+    function move(ev: MouseEvent) {
+      if (!drag) return;
+      const dx = ev.clientX - drag.startX;
+      const dt = dx / zoom;
+      if (drag.kind === "move") onMove(drag.orig + dt);
+      else if (drag.kind === "left") onTrim("start", drag.orig + dt);
+      else if (drag.kind === "right") onTrim("end", drag.orig + dt);
+    }
+    function up() {
+      setDrag(null);
+    }
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+  }, [drag, zoom, onMove, onTrim]);
+
+  return (
+    <div
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        onSelect();
+        if ((e.target as HTMLElement).dataset.handle === "left") {
+          setDrag({ kind: "left", startX: e.clientX, orig: segment.projStart });
+        } else if ((e.target as HTMLElement).dataset.handle === "right") {
+          setDrag({ kind: "right", startX: e.clientX, orig: segment.projStart + segment.duration });
+        } else {
+          setDrag({ kind: "move", startX: e.clientX, orig: segment.projStart });
+        }
+      }}
+      className={`absolute top-1 h-6 rounded border cursor-grab overflow-hidden select-none ${
+        selected ? "border-primary bg-primary/20 ring-1 ring-primary" : "border-border bg-panel-2 hover:bg-panel-2/90"
+      }`}
+      style={{
+        left: segment.projStart * zoom,
+        width: Math.max(12, segment.duration * zoom),
+      }}
+      title={`Audio segment: ${segment.duration.toFixed(2)}s`}
+    >
+      <div data-handle="left" className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-white/20 hover:bg-white/40" />
+      <div data-handle="right" className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-white/20 hover:bg-white/40" />
+      <div className="pointer-events-none px-2 text-[9px] truncate text-foreground/80 font-mono leading-relaxed select-none">
+        {segment.duration.toFixed(2)}s
+      </div>
+    </div>
+  );
+}
+

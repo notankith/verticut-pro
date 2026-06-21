@@ -19,6 +19,13 @@ export async function coll<T extends Document = Document>(name: string) {
   return db.collection<T & { _id: string }>(name as never) as unknown as ReturnType<Db["collection"]>;
 }
 
+export type AudioSegment = {
+  id: string;
+  srcStart: number;
+  duration: number;
+  projStart: number;
+};
+
 export type ProjectDoc = {
   _id: string;
   name: string;
@@ -32,6 +39,7 @@ export type ProjectDoc = {
   markers?: MarkerDoc[];
   createdAt: number;
   updatedAt: number;
+  audioSegments?: AudioSegment[];
 };
 
 export type ClipDoc = {
@@ -80,6 +88,11 @@ export type SettingsDoc = {
   transitionAnimation?: boolean;
   activeTemplateId?: string | null;
   templateWindow?: TemplateWindow;
+  captionTextColor?: string;
+  captionBgColor?: string;
+  captionPosX?: number;
+  captionPosY?: number;
+  captionFontSize?: number;
 };
 
 export type RenderDoc = {

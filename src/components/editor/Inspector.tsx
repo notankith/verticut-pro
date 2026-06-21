@@ -8,11 +8,12 @@ import { Trash2, RefreshCw, Image as ImageIcon } from "lucide-react";
 const ANIMS: ClipDoc["animation"][] = ["zoom-in", "zoom-out", "pan-left", "pan-right"];
 
 export function Inspector() {
-  const { selectedClipId, clips, settings } = useEditor();
-  const { updateClip, deleteClip } = useTimelineActions();
+  const { selectedClipId, clips, settings, audioSegments, currentTime } = useEditor();
+  const { updateClip, deleteClip, updateAudioSegment, deleteAudioSegment, splitAudioAt, addKeyframe } = useTimelineActions();
   const replaceRef = useRef<HTMLInputElement>(null);
   const splitBottomRef = useRef<HTMLInputElement>(null);
   const clip = clips.find((c) => c.id === selectedClipId);
+  const audioSegment = audioSegments.find((s) => s.id === selectedClipId);
 
   // Probe the selected image's intrinsic pixel dimensions so the anchor inputs
   // can range 0..naturalWidth / 0..naturalHeight instead of a fixed 0–100.
@@ -34,6 +35,74 @@ export function Inspector() {
       cancelled = true;
     };
   }, [imageUrl]);
+
+  if (audioSegment) {
+    return (
+      <div className="h-full overflow-y-auto space-y-4 p-3 text-xs">
+        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Audio Segment Inspector</h3>
+        
+        <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Properties</div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="mb-0.5 block text-muted-foreground">Start Time (s)</label>
+              <input
+                type="number"
+                min={0}
+                step={0.1}
+                value={Number(audioSegment.projStart.toFixed(2))}
+                onChange={(e) => updateAudioSegment(audioSegment.id, { projStart: Math.max(0, Number(e.target.value)) })}
+                className="w-full rounded border border-border bg-panel-3 px-2 py-1 font-mono"
+              />
+            </div>
+            <div>
+              <label className="mb-0.5 block text-muted-foreground">Duration (s)</label>
+              <input
+                type="number"
+                min={0.1}
+                step={0.1}
+                value={Number(audioSegment.duration.toFixed(2))}
+                onChange={(e) => updateAudioSegment(audioSegment.id, { duration: Math.max(0.1, Number(e.target.value)) })}
+                className="w-full rounded border border-border bg-panel-3 px-2 py-1 font-mono"
+              />
+            </div>
+          </div>
+          
+          <div>
+            <label className="mb-0.5 block text-muted-foreground">Source Start Offset (s)</label>
+            <input
+              type="number"
+              min={0}
+              step={0.1}
+              value={Number(audioSegment.srcStart.toFixed(2))}
+              onChange={(e) => updateAudioSegment(audioSegment.id, { srcStart: Math.max(0, Number(e.target.value)) })}
+              className="w-full rounded border border-border bg-panel-3 px-2 py-1 font-mono"
+            />
+          </div>
+        </div>
+
+        <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Actions</div>
+          
+          <button
+            type="button"
+            onClick={() => splitAudioAt(currentTime)}
+            disabled={currentTime <= audioSegment.projStart || currentTime >= audioSegment.projStart + audioSegment.duration}
+            className="w-full flex items-center justify-center gap-1.5 rounded border border-border bg-panel-3 py-1.5 hover:bg-accent disabled:opacity-50 disabled:hover:bg-panel-3"
+          >
+            Split at Playhead ({currentTime.toFixed(2)}s)
+          </button>
+        </div>
+
+        <button
+          onClick={() => deleteAudioSegment(audioSegment.id)}
+          className="flex w-full items-center justify-center gap-1.5 rounded border border-destructive/50 bg-destructive/10 py-1.5 text-destructive hover:bg-destructive/20"
+        >
+          <Trash2 className="h-3 w-3" /> Delete Audio Segment
+        </button>
+      </div>
+    );
+  }
 
   if (!clip) {
     return (
