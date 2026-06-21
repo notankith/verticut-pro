@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { ClipDoc, MarkerDoc, SettingsDoc } from "@/server/mongo.server";
+import { DEFAULT_TEMPLATE_WINDOW } from "@/lib/templates";
 
 export type AudioSegment = {
   id: string;
@@ -67,7 +68,9 @@ export const useEditor = create<EditorState>((set, get) => ({
     musicVolume: 30,
     defaultPresetId: "",
     presets: [],
-      transitionAnimation: true,
+    transitionAnimation: true,
+    activeTemplateId: null,
+    templateWindow: DEFAULT_TEMPLATE_WINDOW,
   },
   selectedClipId: null,
   zoom: 60,
@@ -82,6 +85,12 @@ export const useEditor = create<EditorState>((set, get) => ({
   init: (p) =>
     set({
       ...p,
+      settings: {
+        ...p.settings,
+        transitionAnimation: p.settings.transitionAnimation ?? true,
+        activeTemplateId: p.settings.activeTemplateId ?? null,
+        templateWindow: p.settings.templateWindow ?? DEFAULT_TEMPLATE_WINDOW,
+      },
       markers: p.markers ?? [],
       selectedClipId: null,
       zoom: 60,

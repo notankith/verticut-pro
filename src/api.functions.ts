@@ -4,6 +4,7 @@ import { getDb, type ProjectDoc, type SettingsDoc, type ClipDoc, type RenderDoc,
 import { presignPut, publicUrl } from "./server/r2.server";
 import { uploadBuffer } from "./server/r2.server";
 import { submitTranscript, getTranscript } from "./server/assemblyai.server";
+import { DEFAULT_TEMPLATE_WINDOW } from "@/lib/templates";
 
 // Untyped collection helper to avoid Mongo's ObjectId _id constraint (we use string ids)
 async function C<T = unknown>(name: string) {
@@ -40,6 +41,9 @@ function defaultSettings(id: string = GLOBAL_SETTINGS_ID): SettingsDoc {
     animationIntensity: 1,
     musicUrl: "",
     musicVolume: 30,
+    transitionAnimation: true,
+    activeTemplateId: null,
+    templateWindow: DEFAULT_TEMPLATE_WINDOW,
     presets: [
       { id: "wwe", name: "WWE", text: "© WWE | © Getty Images", tint: "#ef4444" },
       { id: "aew", name: "AEW", text: "© AEW | © Getty Images", tint: "#eab308" },
@@ -51,7 +55,7 @@ function defaultSettings(id: string = GLOBAL_SETTINGS_ID): SettingsDoc {
 async function readGlobalSettings(): Promise<SettingsDoc> {
   const settingsC = await C<SettingsDoc>("settings");
   const doc = await settingsC.findOne({ _id: GLOBAL_SETTINGS_ID });
-  return doc ?? defaultSettings();
+  return doc ? { ...defaultSettings(), ...doc } : defaultSettings();
 }
 
 export const createProjectFromAudio = createServerFn({ method: "POST" })
@@ -315,7 +319,7 @@ export const saveSettings = createServerFn({ method: "POST" })
     const settingsC = await C<SettingsDoc>("settings");
     await settingsC.updateOne(
       { _id: GLOBAL_SETTINGS_ID },
-      { $set: { ...data.settings, _id: GLOBAL_SETTINGS_ID } },
+      { $set: { ...defaultSettings(), ...data.settings, _id: GLOBAL_SETTINGS_ID } },
       { upsert: true },
     );
     return { ok: true };
@@ -333,7 +337,7 @@ export const saveGlobalSettings = createServerFn({ method: "POST" })
     const settingsC = await C<SettingsDoc>("settings");
     await settingsC.updateOne(
       { _id: GLOBAL_SETTINGS_ID },
-      { $set: { ...data.settings, _id: GLOBAL_SETTINGS_ID } },
+      { $set: { ...defaultSettings(), ...data.settings, _id: GLOBAL_SETTINGS_ID } },
       { upsert: true },
     );
     return { ok: true };

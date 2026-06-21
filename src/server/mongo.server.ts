@@ -1,4 +1,5 @@
 import { MongoClient, type Db, type Document } from "mongodb";
+import type { TemplateWindow } from "@/lib/templates";
 
 let client: MongoClient | null = null;
 let dbPromise: Promise<Db> | null = null;
@@ -77,6 +78,8 @@ export type SettingsDoc = {
   presets: { id: string; name: string; text: string; tint: string }[];
   // Whether to enable transition animations between clips in preview and render
   transitionAnimation?: boolean;
+  activeTemplateId?: string | null;
+  templateWindow?: TemplateWindow;
 };
 
 export type RenderDoc = {

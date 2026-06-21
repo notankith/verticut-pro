@@ -19,25 +19,7 @@ import { WordTranscript } from "@/components/editor/WordTranscript";
 import { SettingsPanel } from "@/components/editor/SettingsPanel";
 import { useAutoSave, useTimelineActions } from "@/components/editor/hooks";
 import { extractAndUploadImagesFromClipboard, extractAndUploadPastedImages, uploadToR2 } from "@/lib/upload";
-
-const OVERLAY_URL = "/GradientOverlay.png";
-
-// Templates registry
-const TEMPLATES = [
-  {
-    id: "ES1",
-    name: "ES1",
-    overlayUrl: "/NBA copy_00000.png",
-    // center transparent area as percentages {left, top, width, height}
-    center: { left: 12, top: 15, width: 76, height: 60 },
-    topBoxes: [
-      // three boxes at top — percentages relative to overlay
-      { left: 12, top: 4, width: 20, height: 4 },
-      { left: 34, top: 4, width: 20, height: 4 },
-      { left: 56, top: 4, width: 20, height: 4 },
-    ],
-  },
-];
+import { getTemplateById, TEMPLATES } from "@/lib/templates";
 
 const FPS = 30;
 const COMP_WIDTH = 1080;
@@ -70,10 +52,7 @@ function EditorPage() {
 
   // Timeline height (resizable)
   const [timelineHeight, setTimelineHeight] = useState<number>(192);
-
-  // Templates
   const [templatesOpen, setTemplatesOpen] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
 
   // Sync player frame -> editor currentTime
   const setEditorState = useEditor((s) => s.set);
@@ -141,9 +120,9 @@ function EditorPage() {
       if (c.imageUrl) urls.add(c.imageUrl);
       if (c.splitScreen?.bottomImageUrl) urls.add(c.splitScreen.bottomImageUrl);
     }
-    if (selectedTemplate) {
-      const tpl = TEMPLATES.find((t) => t.id === selectedTemplate);
-      if (tpl?.overlayUrl) urls.add(tpl.overlayUrl);
+    const tpl = getTemplateById(settings.activeTemplateId);
+    if (tpl?.overlayUrl) {
+      urls.add(tpl.overlayUrl);
     }
     const imgs: HTMLImageElement[] = [];
     for (const u of urls) {
@@ -155,7 +134,7 @@ function EditorPage() {
     return () => {
       for (const i of imgs) i.src = "";
     };
-  }, [clips]);
+  }, [clips, settings.activeTemplateId]);
 
   const totalFrames = Math.max(1, Math.round(audioDuration * FPS));
 
@@ -462,7 +441,8 @@ function EditorPage() {
       intensity: settings.animationIntensity,
       durationInFrames: totalFrames,
       fps: FPS,
-      overlayUrl: TEMPLATES.find((t) => t.id === selectedTemplate)?.overlayUrl,
+      overlayUrl: getTemplateById(settings.activeTemplateId)?.overlayUrl,
+      templateWindow: settings.templateWindow,
       enableTransitions: settings.transitionAnimation ?? true,
     }),
     [
@@ -473,9 +453,10 @@ function EditorPage() {
       settings.defaultFontSize,
       settings.animationIntensity,
       settings.transitionAnimation,
+      settings.activeTemplateId,
+      settings.templateWindow,
       clips,
       totalFrames,
-      selectedTemplate,
     ],
   );
 
@@ -675,7 +656,7 @@ function EditorPage() {
             <div className="mt-3 space-y-2">
               <button
                 onClick={() => {
-                  setSelectedTemplate(null);
+                  useEditor.getState().updateSettings({ activeTemplateId: null });
                   setTemplatesOpen(false);
                 }}
                 className="w-full rounded border border-border px-2 py-2 text-left hover:bg-accent"
@@ -684,7 +665,14 @@ function EditorPage() {
                 <div className="text-[12px] text-muted-foreground">Plain preview with no overlay</div>
               </button>
               {TEMPLATES.map((t) => (
-                <button key={t.id} onClick={() => { setSelectedTemplate(t.id); setTemplatesOpen(false); }} className="w-full rounded border border-border px-2 py-2 text-left hover:bg-accent">
+                <button
+                  key={t.id}
+                  onClick={() => {
+                    useEditor.getState().updateSettings({ activeTemplateId: t.id });
+                    setTemplatesOpen(false);
+                  }}
+                  className="w-full rounded border border-border px-2 py-2 text-left hover:bg-accent"
+                >
                   <div className="font-medium">{t.name}</div>
                   <div className="text-[12px] text-muted-foreground">Overlay: {t.overlayUrl}</div>
                 </button>

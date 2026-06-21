@@ -1,5 +1,6 @@
 import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate } from "remotion";
 import type { ClipDoc } from "../server/mongo.server";
+import type { TemplateWindow } from "@/lib/templates";
 
 export type CompositionProps = {
   audioUrl: string;
@@ -12,6 +13,7 @@ export type CompositionProps = {
   durationInFrames: number;
   fps: number;
   overlayUrl?: string;
+  templateWindow?: TemplateWindow;
   // enable or disable the boundary transitions between clips
   enableTransitions?: boolean;
 };
@@ -300,23 +302,54 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
   fps,
   durationInFrames,
   overlayUrl,
+  templateWindow,
   enableTransitions = true,
 }) => {
+  const scene = (
+    <>
+      {clips.map((c, index) => {
+        const from = Math.round(c.start * fps);
+        const dur = Math.max(1, Math.round(c.duration * fps));
+        return (
+          <Sequence key={c.id} from={from} durationInFrames={dur}>
+            <ClipLayer
+              clip={c}
+              clipIndex={index}
+              totalClips={clips.length}
+              intensity={intensity}
+              defaultLabelText={defaultLabelText}
+              fontSize={defaultFontSize}
+              enableTransitions={enableTransitions}
+            />
+          </Sequence>
+        );
+      })}
+    </>
+  );
+
+  const hasTemplate = Boolean(overlayUrl && templateWindow);
+
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
       {/* Preview audio is driven by a controlled HTMLAudioElement in the editor
           (see $id.tsx <PreviewAudio>), so the browser's audio clock is the source
           of truth. Server-side rendering uses worker/composition.jsx which keeps
           its own <Audio> tags. */}
-      {clips.map((c, index) => {
-        const from = Math.round(c.start * fps);
-        const dur = Math.max(1, Math.round(c.duration * fps));
-        return (
-          <Sequence key={c.id} from={from} durationInFrames={dur}>
-            <ClipLayer clip={c} clipIndex={index} totalClips={clips.length} intensity={intensity} defaultLabelText={defaultLabelText} fontSize={defaultFontSize} enableTransitions={enableTransitions} />
-          </Sequence>
-        );
-      })}
+      {hasTemplate ? (
+        <div
+          className="absolute overflow-hidden"
+          style={{
+            left: `${templateWindow!.left}%`,
+            top: `${templateWindow!.top}%`,
+            width: `${templateWindow!.width}%`,
+            height: `${templateWindow!.height}%`,
+          }}
+        >
+          {scene}
+        </div>
+      ) : (
+        scene
+      )}
       {overlayUrl ? (
         <Img
           src={overlayUrl}
