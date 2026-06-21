@@ -201,12 +201,32 @@ function ClipLayer({
           }}
         >
           <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "50%", overflow: "hidden" }}>
-            <KenBurns frame={frame} duration={dur} animation="pan-left" intensity={scaledIntensity} imageUrl={clip.imageUrl} anchorX={anchorX} anchorY={anchorY} />
+            <KenBurns
+              frame={frame}
+              duration={dur}
+              animation="pan-left"
+              intensity={scaledIntensity}
+              imageUrl={clip.imageUrl}
+              anchorX={anchorX}
+              anchorY={anchorY}
+              clip={clip}
+              fps={fps}
+            />
           </div>
           <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 3, backgroundColor: "#000", zIndex: 1 }} />
           {clip.splitScreen.bottomImageUrl ? (
             <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "50%", overflow: "hidden" }}>
-              <KenBurns frame={frame} duration={dur} animation="pan-right" intensity={scaledIntensity} imageUrl={clip.splitScreen.bottomImageUrl} anchorX={50} anchorY={50} />
+              <KenBurns
+                frame={frame}
+                duration={dur}
+                animation="pan-right"
+                intensity={scaledIntensity}
+                imageUrl={clip.splitScreen.bottomImageUrl}
+                anchorX={50}
+                anchorY={50}
+                clip={clip}
+                fps={fps}
+              />
             </div>
           ) : (
             <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "50%", backgroundColor: "#111" }} />

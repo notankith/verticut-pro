@@ -141,7 +141,10 @@ function EditorPage() {
       if (c.imageUrl) urls.add(c.imageUrl);
       if (c.splitScreen?.bottomImageUrl) urls.add(c.splitScreen.bottomImageUrl);
     }
-    urls.add(OVERLAY_URL);
+    if (selectedTemplate) {
+      const tpl = TEMPLATES.find((t) => t.id === selectedTemplate);
+      if (tpl?.overlayUrl) urls.add(tpl.overlayUrl);
+    }
     const imgs: HTMLImageElement[] = [];
     for (const u of urls) {
       const img = new Image();
@@ -459,8 +462,8 @@ function EditorPage() {
       intensity: settings.animationIntensity,
       durationInFrames: totalFrames,
       fps: FPS,
-      overlayUrl: (TEMPLATES.find((t) => t.id === selectedTemplate)?.overlayUrl) ?? OVERLAY_URL,
-        enableTransitions: settings.transitionAnimation ?? true,
+      overlayUrl: TEMPLATES.find((t) => t.id === selectedTemplate)?.overlayUrl,
+      enableTransitions: settings.transitionAnimation ?? true,
     }),
     [
       audioUrl,
@@ -670,6 +673,16 @@ function EditorPage() {
               <button onClick={() => setTemplatesOpen(false)} className="text-[12px] text-muted-foreground">Close</button>
             </div>
             <div className="mt-3 space-y-2">
+              <button
+                onClick={() => {
+                  setSelectedTemplate(null);
+                  setTemplatesOpen(false);
+                }}
+                className="w-full rounded border border-border px-2 py-2 text-left hover:bg-accent"
+              >
+                <div className="font-medium">No template</div>
+                <div className="text-[12px] text-muted-foreground">Plain preview with no overlay</div>
+              </button>
               {TEMPLATES.map((t) => (
                 <button key={t.id} onClick={() => { setSelectedTemplate(t.id); setTemplatesOpen(false); }} className="w-full rounded border border-border px-2 py-2 text-left hover:bg-accent">
                   <div className="font-medium">{t.name}</div>
