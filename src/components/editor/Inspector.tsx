@@ -182,6 +182,49 @@ export function Inspector() {
         </div>
       </div>
 
+      {/* Keyframes */}
+      <div>
+        <label className="mb-1 block text-muted-foreground">Keyframes</label>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => addKeyframe(clip.id, { time: currentTime, scale: 1 })}
+            className="rounded border border-border bg-panel-2 px-2 py-1 text-[11px] hover:bg-accent"
+          >
+            Add Scale keyframe
+          </button>
+          <button
+            type="button"
+            onClick={() => addKeyframe(clip.id, { time: currentTime, posX: clip.anchorX ?? 50, posY: clip.anchorY ?? 50 })}
+            className="rounded border border-border bg-panel-2 px-2 py-1 text-[11px] hover:bg-accent"
+          >
+            Add Position keyframe
+          </button>
+          <button
+            type="button"
+            onClick={() => addKeyframe(clip.id, { time: currentTime, rotation: 0 })}
+            className="rounded border border-border bg-panel-2 px-2 py-1 text-[11px] hover:bg-accent"
+          >
+            Add Rotation keyframe
+          </button>
+        </div>
+        {clip.keyframes && clip.keyframes.length > 0 ? (
+          <div className="mt-2 space-y-1">
+            {clip.keyframes.map((k, i) => (
+              <div key={i} className="flex items-center justify-between rounded border border-border bg-panel-3 px-2 py-1 text-[11px]">
+                <div>
+                  <div className="font-mono">{k.time.toFixed(2)}s</div>
+                  <div className="text-[10px] text-muted-foreground">{k.scale ? `Scale ${k.scale}` : k.posX != null ? `Pos ${k.posX}% ${k.posY}%` : k.rotation != null ? `Rot ${k.rotation}°` : ""}</div>
+                </div>
+                <div>
+                  <button onClick={() => updateClip(clip.id, { keyframes: clip.keyframes?.filter((_, idx) => idx !== i) })} className="text-[10px] text-destructive hover:underline">Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
       <div className="flex gap-2">
         <button
           onClick={() => replaceRef.current?.click()}

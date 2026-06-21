@@ -100,6 +100,15 @@ export const listProjects = createServerFn({ method: "GET" }).handler(async (): 
   }));
 });
 
+export const deleteProject = createServerFn({ method: "POST" })
+  .inputValidator((d: { id: string }) => d)
+  .handler(async ({ data }) => {
+    const db = await getDb();
+    await db.collection("projects").deleteOne({ _id: data.id });
+    await db.collection("renders").deleteMany({ projectId: data.id });
+    return { ok: true };
+  });
+
 export type ProjectFull = {
   id: string;
   name: string;
@@ -548,6 +557,27 @@ export const listRenders = createServerFn({ method: "GET" }).handler(async (): P
     createdAt: r.createdAt,
   }));
 });
+
+// Clear only projects and renders, preserving settings and presets
+export const clearProjectsAndRenders = createServerFn({ method: "POST" })
+  .inputValidator((d: { confirmed: boolean }) => d)
+  .handler(async ({ data }) => {
+    if (!data.confirmed) throw new Error("Clear not confirmed");
+    
+    const projectDocs = await (await C<ProjectDoc>("projects")).find({}).toArray();
+    for (const doc of projectDocs) {
+      const db = await getDb();
+      await db.collection("projects").deleteOne({ _id: doc._id });
+    }
+
+    const renderDocs = await (await C<RenderDoc>("renders")).find({}).toArray();
+    for (const doc of renderDocs) {
+      const db = await getDb();
+      await db.collection("renders").deleteOne({ _id: doc._id });
+    }
+
+    return { ok: true, deleted: { projects: projectDocs.length, renders: renderDocs.length } };
+  });
 
 // Delete all projects and renders, but preserve settings
 export const resetAllData = createServerFn({ method: "POST" })

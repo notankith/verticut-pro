@@ -54,6 +54,8 @@ export type ClipDoc = {
     bottomImageKey?: string;
     bottomImageUrl?: string;
   };
+  // Keyframes for clip-level transforms
+  keyframes?: { time: number; scale?: number; posX?: number; posY?: number; rotation?: number }[];
 };
 
 export type MarkerDoc = {
@@ -73,6 +75,8 @@ export type SettingsDoc = {
   // The preset to apply to future imports. Optional for back-compat.
   defaultPresetId?: string;
   presets: { id: string; name: string; text: string; tint: string }[];
+  // Whether to enable transition animations between clips in preview and render
+  transitionAnimation?: boolean;
 };
 
 export type RenderDoc = {

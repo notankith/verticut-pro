@@ -1,8 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { Upload, Film, Loader2, Download, Settings as SettingsIcon } from "lucide-react";
+import { Upload, Film, Loader2, Download, Settings as SettingsIcon, Trash2 } from "lucide-react";
 import {
   createProjectFromAudio,
+  clearProjectsAndRenders,
+  deleteProject,
   getGlobalSettings,
   listProjects,
   listRenders,
@@ -37,6 +39,7 @@ function Home() {
   const [tab, setTab] = useState<"projects" | "settings">("projects");
   const [settings, setSettings] = useState<SettingsDoc | null>(null);
   const [savingState, setSavingState] = useState<"idle" | "saving" | "saved">("idle");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     listProjects().then(setProjects).catch(() => {});
@@ -85,7 +88,7 @@ function Home() {
 
   async function handleReset() {
     try {
-      await resetAllData({ confirmed: true });
+      await resetAllData({ data: { confirmed: true } });
       // Refresh projects and renders lists
       const [newProjects, newRenders] = await Promise.all([
         listProjects(),
@@ -96,6 +99,36 @@ function Home() {
     } catch (e) {
       alert(`Reset failed: ${e}`);
       throw e;
+    }
+  }
+
+  async function handleClearLogs() {
+    try {
+      await clearProjectsAndRenders({ data: { confirmed: true } });
+      // Refresh projects and renders lists
+      const [newProjects, newRenders] = await Promise.all([
+        listProjects(),
+        listRenders(),
+      ]);
+      setProjects(newProjects);
+      setRenders(newRenders);
+    } catch (e) {
+      alert(`Clear logs failed: ${e}`);
+      throw e;
+    }
+  }
+
+  async function handleDeleteProject(id: string) {
+    if (deletingId) return;
+    setDeletingId(id);
+    try {
+      await deleteProject({ data: { id } });
+      setProjects((prev) => prev.filter((p) => p.id !== id));
+      setRenders((prev) => prev.filter((r) => r.projectId !== id));
+    } catch (e) {
+      alert(`Delete failed: ${e}`);
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -127,6 +160,7 @@ function Home() {
               settings={settings}
               onChange={applySettingsPatch}
               onSave={saveSettingsNow}
+              onClearLogs={handleClearLogs}
               onReset={handleReset}
               saving={savingState}
               subtitle="Saved globally — applies to every project."
@@ -158,22 +192,41 @@ function Home() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {projects.map((p) => (
-                  <Link
-                    key={p.id}
-                    to="/project/$id"
-                    params={{ id: p.id }}
-                    className="block rounded-md border border-border bg-panel p-4 hover:bg-panel-2 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="text-sm font-medium line-clamp-2">{p.name}</h3>
-                      <StatusBadge status={p.transcriptStatus} />
-                    </div>
-                    <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
-                      <span>{p.clipCount} clips</span>
-                      <span>{fmtDuration(p.duration)}</span>
-                      <span>{new Date(p.createdAt).toLocaleDateString()}</span>
-                    </div>
-                  </Link>
+                  <div key={p.id} className="group relative rounded-md border border-border bg-panel transition-colors hover:bg-panel-2">
+                    <Link
+                      to="/project/$id"
+                      params={{ id: p.id }}
+                      className="block p-4"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="text-sm font-medium line-clamp-2">{p.name}</h3>
+                        <StatusBadge status={p.transcriptStatus} />
+                      </div>
+                      <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
+                        <span>{p.clipCount} clips</span>
+                        <span>{fmtDuration(p.duration)}</span>
+                        <span>{new Date(p.createdAt).toLocaleDateString()}</span>
+                      </div>
+                    </Link>
+                    <button
+                      type="button"
+                      aria-label="Delete project"
+                      title="Delete project"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void handleDeleteProject(p.id);
+                      }}
+                      disabled={deletingId === p.id}
+                      className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded border border-border bg-panel-2 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 disabled:opacity-60"
+                    >
+                      {deletingId === p.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </div>
                 ))}
               </div>
             )}

@@ -1,23 +1,26 @@
 import { uploadToR2 } from "@/lib/upload";
 import { useState } from "react";
 import type { SettingsDoc } from "@/server/mongo.server";
-import { Trash2 } from "lucide-react";
+import { Trash2, Loader2 } from "lucide-react";
 
 type Props = {
   settings: SettingsDoc;
   onChange: (patch: Partial<SettingsDoc>) => void;
   onSave?: () => void;
   onReset?: () => Promise<void>;
+  onClearLogs?: () => Promise<void>;
   saving?: "idle" | "saving" | "saved";
   title?: string;
   subtitle?: string;
 };
 
-export function SettingsPanel({ settings, onChange, onSave, onReset, saving, title, subtitle }: Props) {
+export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs, saving, title, subtitle }: Props) {
   const [newPreset, setNewPreset] = useState({ name: "", text: "" });
   const [musicTesting, setMusicTesting] = useState<HTMLAudioElement | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showClearLogsConfirm, setShowClearLogsConfirm] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [isClearingLogs, setIsClearingLogs] = useState(false);
 
   function deletePreset(id: string) {
     onChange({ presets: settings.presets.filter((p) => p.id !== id) });
@@ -53,6 +56,20 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, saving, tit
     }
   }
 
+  async function handleClearLogs() {
+    setIsClearingLogs(true);
+    try {
+      if (onClearLogs) {
+        await onClearLogs();
+      }
+      setShowClearLogsConfirm(false);
+    } catch (err) {
+      alert(`Clear logs failed: ${err}`);
+    } finally {
+      setIsClearingLogs(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-8 p-6 text-sm">
       <header className="flex items-center justify-between">
@@ -75,6 +92,16 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, saving, tit
                 Save settings
               </button>
             </>
+          ) : null}
+          {onClearLogs ? (
+            <button
+              onClick={() => setShowClearLogsConfirm(true)}
+              disabled={isClearingLogs}
+              className="flex items-center gap-1.5 rounded bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-600 hover:bg-amber-500/20 disabled:opacity-50"
+              title="Delete projects and downloads history"
+            >
+              <Trash2 className="h-3 w-3" /> Clear logs
+            </button>
           ) : null}
           {onReset ? (
             <button
@@ -177,6 +204,17 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, saving, tit
             className="w-full"
           />
           <p className="mt-1 text-[10px] text-muted-foreground">Higher = faster movement.</p>
+
+          <div className="mt-3 flex items-center gap-2">
+            <input
+              id="transitionAnimation"
+              type="checkbox"
+              checked={settings.transitionAnimation ?? true}
+              onChange={(e) => onChange({ transitionAnimation: e.target.checked })}
+              className="h-4 w-4"
+            />
+            <label htmlFor="transitionAnimation" className="text-xs text-muted-foreground">Transition animation</label>
+          </div>
         </div>
       </section>
 
@@ -233,6 +271,42 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, saving, tit
           </button>
         </div>
       </section>
+
+      {/* Clear Logs Confirmation Dialog */}
+      {showClearLogsConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="max-w-sm rounded-lg border border-border bg-panel p-6 shadow-lg">
+            <h3 className="text-base font-semibold text-foreground">Clear logs?</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              This will delete all projects and download history. Your settings and presets will be preserved. This action cannot be undone.
+            </p>
+            <div className="mt-6 flex gap-3 justify-end">
+              <button
+                onClick={() => setShowClearLogsConfirm(false)}
+                disabled={isClearingLogs}
+                className="rounded border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleClearLogs}
+                disabled={isClearingLogs}
+                className="flex items-center gap-1.5 rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+              >
+                {isClearingLogs ? (
+                  <>
+                    <Loader2 className="h-3 w-3 animate-spin" /> Clearing…
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3 w-3" /> Clear logs
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Reset Confirmation Dialog */}
       {showResetConfirm && (

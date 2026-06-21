@@ -1,27 +1,4 @@
-// Frontend helper: presign + upload to R2
-// Calls the Node.js API endpoints directly to avoid AWS SDK browser-bundle issues
-// (the TanStack Start server bundle resolves @smithy/core/config to its browser stub
-// where loadConfig = Symbol.for("node-only"), not a function).
-
-async function apiPresignUpload(kind: "audio" | "image" | "music", ext: string, contentType: string) {
-  const res = await fetch("/api/presign-upload", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ kind, ext, contentType }),
-  });
-  if (!res.ok) throw new Error(`Presign failed: ${res.status} ${await res.text()}`);
-  return res.json() as Promise<{ uploadUrl: string; key: string; publicUrl: string }>;
-}
-
-async function apiFetchAndUploadImage(url: string) {
-  const res = await fetch("/api/fetch-and-upload-image", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ url }),
-  });
-  if (!res.ok) throw new Error(`Fetch/upload failed: ${res.status} ${await res.text()}`);
-  return res.json() as Promise<{ key: string; publicUrl: string }>;
-}
+import { fetchAndUploadImage, presignUpload } from "@/api.functions";
 
 export async function uploadToR2(
   file: File,
@@ -29,7 +6,9 @@ export async function uploadToR2(
   onProgress?: (pct: number) => void,
 ) {
   const ext = (file.name.split(".").pop() || "bin").toLowerCase();
-  const { uploadUrl, key, publicUrl } = await apiPresignUpload(kind, ext, file.type || "application/octet-stream");
+  const { uploadUrl, key, publicUrl } = await presignUpload({
+   data: { kind, ext, contentType: file.type || "application/octet-stream" },
+  });
 
   // Use XHR to provide upload progress events
   await new Promise<void>((resolve, reject) => {
@@ -59,6 +38,32 @@ export async function uploadToR2(
 }
 
 const IMAGE_MIME_RE = /^image\/(png|jpe?g|webp|avif|gif|bmp|svg\+xml|heic|heif)$/i;
+const IMAGE_TYPE_PRIORITY = [
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+  "image/avif",
+  "image/gif",
+  "image/bmp",
+  "image/svg+xml",
+  "image/heic",
+  "image/heif",
+];
+
+function getImageTypePriority(type: string) {
+  const idx = IMAGE_TYPE_PRIORITY.indexOf(type.toLowerCase());
+  return idx === -1 ? IMAGE_TYPE_PRIORITY.length : idx;
+}
+
+function pickPreferredImageItems(items: DataTransferItem[]) {
+  if (items.length <= 1) return items;
+  let best = IMAGE_TYPE_PRIORITY.length;
+  for (const item of items) {
+    best = Math.min(best, getImageTypePriority(item.type));
+  }
+  return items.filter((item) => getImageTypePriority(item.type) === best);
+}
 // Loose URL → image hint. Used only for *priority ordering* of fallback
 // candidates — the server validates content-type, so non-matching URLs are
 // still attempted (many real CDN URLs lack a file extension).
@@ -115,8 +120,15 @@ export async function extractAndUploadPastedImages(
 
   // Collect blob candidates (screenshots, "copy image")
   const blobs: File[] = [];
-  for (const item of Array.from(cd.items)) {
-    if (item.kind === "file" && IMAGE_MIME_RE.test(item.type)) {
+  const fileList = Array.from(cd.files || []);
+  const imageFiles = fileList.filter((file) => IMAGE_MIME_RE.test(file.type));
+  if (imageFiles.length > 0) {
+    blobs.push(...imageFiles);
+  } else {
+    const imageItems = Array.from(cd.items).filter(
+      (item) => item.kind === "file" && IMAGE_MIME_RE.test(item.type),
+    );
+    for (const item of pickPreferredImageItems(imageItems)) {
       const file = item.getAsFile();
       if (file) blobs.push(file);
     }
@@ -159,7 +171,7 @@ export async function extractAndUploadPastedImages(
     );
 
   const tryUrl = async (url: string, idx: number): Promise<PastedImage> => {
-    const res = await withRetry(() => apiFetchAndUploadImage(url));
+    const res = await withRetry(() => fetchAndUploadImage({ data: { url } }));
     opts?.onProgress?.(idx, 100);
     return { key: res.key, url: res.publicUrl };
   };
@@ -226,14 +238,14 @@ export async function extractAndUploadImagesFromClipboard(
     let idx = 0;
     for (const item of items) {
       const imageTypes = item.types.filter((t) => IMAGE_MIME_RE.test(t));
-      for (const t of imageTypes) {
-        try {
-          const blob = await item.getType(t);
-          out.push(await uploadClipboardBlob(blob, idx, opts));
-          idx++;
-        } catch (err) {
-          opts?.onError?.(idx, err);
-        }
+      if (imageTypes.length === 0) continue;
+      const preferred = imageTypes.slice().sort((a, b) => getImageTypePriority(a) - getImageTypePriority(b))[0];
+      try {
+        const blob = await item.getType(preferred);
+        out.push(await uploadClipboardBlob(blob, idx, opts));
+        idx++;
+      } catch (err) {
+        opts?.onError?.(idx, err);
       }
     }
     return out.length > 0 ? out : null;

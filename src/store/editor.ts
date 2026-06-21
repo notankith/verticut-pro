@@ -1,6 +1,24 @@
 import { create } from "zustand";
 import type { ClipDoc, MarkerDoc, SettingsDoc } from "@/server/mongo.server";
 
+export type AudioSegment = {
+  id: string;
+  // source time in original audio (seconds)
+  srcStart: number;
+  // duration of this segment (seconds)
+  duration: number;
+  // project start time (seconds)
+  projStart: number;
+};
+
+export type Keyframe = {
+  time: number; // seconds (project time)
+  scale?: number;
+  posX?: number; // percentage 0..100
+  posY?: number; // percentage 0..100
+  rotation?: number; // degrees
+};
+
 export type EditorState = {
   projectId: string;
   name: string;
@@ -10,12 +28,18 @@ export type EditorState = {
   clips: ClipDoc[];
   markers: MarkerDoc[];
   settings: SettingsDoc;
-  selectedClipId: string | null;
+  selectedClipId: string | null; // "VOICEOVER" reserved for audio track
   zoom: number; // pixels per second
   saving: "idle" | "saving" | "saved";
   // history
   past: ClipDoc[][];
   future: ClipDoc[][];
+
+  // Playback state (updated from player)
+  currentTime: number;
+
+  // Audio editing: list of audio segments composing project audio
+  audioSegments: AudioSegment[];
 
   set: (patch: Partial<EditorState>) => void;
   init: (p: Omit<EditorState, "selectedClipId" | "zoom" | "saving" | "past" | "future" | "set" | "init" | "updateClips" | "updateSettings" | "select" | "undo" | "redo">) => void;
@@ -43,12 +67,16 @@ export const useEditor = create<EditorState>((set, get) => ({
     musicVolume: 30,
     defaultPresetId: "",
     presets: [],
+      transitionAnimation: true,
   },
   selectedClipId: null,
   zoom: 60,
   saving: "idle",
   past: [],
   future: [],
+
+  currentTime: 0,
+  audioSegments: [],
 
   set: (patch) => set(patch),
   init: (p) =>
@@ -60,6 +88,8 @@ export const useEditor = create<EditorState>((set, get) => ({
       saving: "idle",
       past: [],
       future: [],
+      // Initialize audioSegments as one mapping of full audio
+      audioSegments: [{ id: crypto.randomUUID(), srcStart: 0, duration: p.audioDuration ?? 0, projStart: 0 }],
     }),
   updateClips: (next, record = true) => {
     const prev = get().clips;

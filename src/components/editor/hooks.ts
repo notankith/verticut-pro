@@ -244,7 +244,7 @@ export function useTimelineActions() {
     },
     [updateClips, select],
   );
-
+ 
   const updateClip = useCallback(
     (id: string, patch: Partial<ClipDoc>) => {
       updateClips((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
@@ -252,8 +252,94 @@ export function useTimelineActions() {
     [updateClips],
   );
 
-  return { addImageClips, moveClip, trimClip, deleteClip, updateClip };
+  const splitClip = useCallback(
+    (id: string, atTime: number) => {
+      updateClips((prev) => {
+        const list = [...prev].sort((a, b) => a.start - b.start);
+        const idx = list.findIndex((c) => c.id === id);
+        if (idx < 0) return prev;
+        const c = list[idx];
+        if (atTime <= c.start + 0.01 || atTime >= c.start + c.duration - 0.01) return prev;
+        const leftDur = atTime - c.start;
+        const rightDur = c.start + c.duration - atTime;
+        const left: ClipDoc = { ...c, id: crypto.randomUUID(), duration: leftDur };
+        const right: ClipDoc = { ...c, id: crypto.randomUUID(), start: atTime, duration: rightDur };
+        list.splice(idx, 1, left, right);
+        return list;
+      });
+    },
+    [updateClips],
+  );
+
+  const addKeyframe = useCallback(
+    (clipId: string, kf: { time: number; scale?: number; posX?: number; posY?: number; rotation?: number }) => {
+      updateClips((prev) => prev.map((c) => (c.id === clipId ? { ...c, keyframes: [...(c.keyframes ?? []), kf] } : c)));
+    },
+    [updateClips],
+  );
+
+  // Audio editing helpers: operate on audioSegments stored in the editor state
+  const splitAudioAt = useCallback(
+    (t: number) => {
+      const segs = useEditor.getState().audioSegments.slice();
+      for (let i = 0; i < segs.length; i++) {
+        const s = segs[i];
+        if (t > s.projStart && t < s.projStart + s.duration) {
+          const offset = t - s.projStart;
+          const left: any = { id: crypto.randomUUID(), srcStart: s.srcStart, duration: offset, projStart: s.projStart };
+          const right: any = { id: crypto.randomUUID(), srcStart: s.srcStart + offset, duration: s.duration - offset, projStart: s.projStart + offset };
+          segs.splice(i, 1, left, right);
+          // adjust following segments' projStart (they are already correct relative)
+          useEditor.getState().set({ audioSegments: segs });
+          return;
+        }
+      }
+    },
+    [],
+  );
+
+  const deleteAudioRange = useCallback(
+    (start: number, end: number, closeGap = true) => {
+      if (end <= start) return;
+      const segs = useEditor.getState().audioSegments.slice();
+      let removed = 0;
+      const keep: typeof segs = [];
+      for (const s of segs) {
+        const segStart = s.projStart;
+        const segEnd = s.projStart + s.duration;
+        if (segEnd <= start || segStart >= end) {
+          keep.push({ ...s });
+        } else {
+          // segment overlaps deletion range — may need to keep left/right parts
+          if (segStart < start) {
+            keep.push({ id: crypto.randomUUID(), srcStart: s.srcStart, duration: start - segStart, projStart: segStart });
+          }
+          if (segEnd > end) {
+            const rightDur = segEnd - end;
+            const rightSrc = s.srcStart + (s.duration - rightDur);
+            // will set projStart after compaction
+            keep.push({ id: crypto.randomUUID(), srcStart: rightSrc, duration: rightDur, projStart: end });
+          }
+          removed += Math.min(segEnd, end) - Math.max(segStart, start);
+        }
+      }
+      // If closeGap, shift following segments earlier by removed amount
+      if (closeGap && removed > 0) {
+        keep.sort((a, b) => a.projStart - b.projStart);
+        let cur = 0;
+        for (const s of keep) {
+          s.projStart = cur;
+          cur += s.duration;
+        }
+      }
+      useEditor.getState().set({ audioSegments: keep });
+    },
+    [],
+  );
+
+  return { addImageClips, moveClip, trimClip, deleteClip, updateClip, splitClip, addKeyframe, splitAudioAt, deleteAudioRange };
 }
+
 
 // Auto-save hook
 export function useAutoSave(save: (clips: ClipDoc[]) => Promise<void>) {

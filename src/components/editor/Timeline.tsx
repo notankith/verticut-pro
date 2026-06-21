@@ -76,6 +76,9 @@ export function Timeline({
     targetEl.addEventListener("pointercancel", end);
   }
 
+  const audioSegments = useEditor((s) => s.audioSegments);
+  const currentTime = useEditor((s) => s.currentTime);
+
   return (
     <div className="flex h-full flex-col bg-track">
       <div className="flex items-center gap-3 border-b border-border bg-panel px-3 py-1.5">
@@ -102,6 +105,27 @@ export function Timeline({
           >
             <Ruler totalWidth={totalWidth} zoom={zoom} duration={projectDuration} />
           </div>
+
+          {/* Audio track (voice-over) */}
+          <div className="relative h-8 border-b border-border bg-panel px-2 text-[11px] text-muted-foreground">
+            <div className="absolute left-2 top-1 text-[10px]">Voice-over</div>
+            <div
+              className="absolute left-0 top-0 h-full"
+              style={{ width: totalWidth }}
+              onClick={() => select("VOICEOVER")}
+            >
+              {audioSegments.map((s) => (
+                <div
+                  key={s.id}
+                  className={`absolute top-1 h-6 rounded border ${selectedClipId === "VOICEOVER" ? "border-primary bg-primary/10" : "border-border bg-panel-2"}`}
+                  style={{ left: s.projStart * zoom, width: Math.max(6, s.duration * zoom) }}
+                  title={`Audio segment: ${s.duration.toFixed(2)}s`}
+                />
+              ))}
+              <div className="absolute top-0 bottom-0 w-px bg-border" style={{ left: currentTime * zoom }} />
+            </div>
+          </div>
+
           {/* Track */}
           <div
             className="relative h-24"

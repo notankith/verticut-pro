@@ -22,6 +22,23 @@ import { extractAndUploadImagesFromClipboard, extractAndUploadPastedImages, uplo
 
 const OVERLAY_URL = "/GradientOverlay.png";
 
+// Templates registry
+const TEMPLATES = [
+  {
+    id: "ES1",
+    name: "ES1",
+    overlayUrl: "/NBA copy_00000.png",
+    // center transparent area as percentages {left, top, width, height}
+    center: { left: 12, top: 15, width: 76, height: 60 },
+    topBoxes: [
+      // three boxes at top — percentages relative to overlay
+      { left: 12, top: 4, width: 20, height: 4 },
+      { left: 34, top: 4, width: 20, height: 4 },
+      { left: 56, top: 4, width: 20, height: 4 },
+    ],
+  },
+];
+
 const FPS = 30;
 const COMP_WIDTH = 1080;
 const COMP_HEIGHT = 1920;
@@ -34,6 +51,7 @@ function EditorPage() {
   const { id } = Route.useParams();
   const nav = useNavigate();
   const playerRef = useRef<PlayerRef>(null);
+  const frameForSync = usePlayerFrame(playerRef);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"editor" | "settings">("editor");
@@ -50,6 +68,20 @@ function EditorPage() {
   const previewDropRef = useRef<HTMLElement | null>(null);
   const dragDepthRef = useRef(0);
 
+  // Timeline height (resizable)
+  const [timelineHeight, setTimelineHeight] = useState<number>(192);
+
+  // Templates
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+
+  // Sync player frame -> editor currentTime
+  const setEditorState = useEditor((s) => s.set);
+  useEffect(() => {
+    const fpsLocal = FPS;
+    setEditorState({ currentTime: Math.max(0, (frameForSync ?? 0) / fpsLocal) });
+  }, [frameForSync, setEditorState]);
+
   const audioUrl = useEditor((s) => s.audioUrl);
   const audioDuration = useEditor((s) => s.audioDuration);
   const clips = useEditor((s) => s.clips);
@@ -60,7 +92,7 @@ function EditorPage() {
   const redo = useEditor((s) => s.redo);
   const initStore = useEditor((s) => s.init);
 
-  const { addImageClips, deleteClip } = useTimelineActions();
+  const { addImageClips, deleteClip, splitClip, splitAudioAt } = useTimelineActions();
 
   const loadProject = useCallback(async () => {
     setLoading(true);
@@ -238,6 +270,16 @@ function EditorPage() {
         if (!selectedClipId) return;
         e.preventDefault();
         deleteClip(selectedClipId);
+      } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "d") {
+        // Cut / split selected layer at playhead
+        e.preventDefault();
+        const sel = useEditor.getState().selectedClipId;
+        const time = (playerRef.current?.getCurrentFrame() ?? 0) / FPS;
+        if (sel && sel !== "VOICEOVER") {
+          splitClip(sel, time);
+        } else if (sel === "VOICEOVER") {
+          splitAudioAt(time);
+        }
       } else if (e.key.toLowerCase() === "j") {
         const cur = playerRef.current?.getCurrentFrame() ?? 0;
         playerRef.current?.seekTo(Math.max(0, cur - FPS * 2));
@@ -254,9 +296,9 @@ function EditorPage() {
         useEditor.getState().updateSettings({ defaultPresetId: preset.id });
       }
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo, deleteClip]);
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () => window.removeEventListener("keydown", onKey, { capture: true });
+  }, [undo, redo, deleteClip, splitClip, splitAudioAt]);
 
   async function onExport() {
     setEnqueuing(true);
@@ -417,7 +459,8 @@ function EditorPage() {
       intensity: settings.animationIntensity,
       durationInFrames: totalFrames,
       fps: FPS,
-      overlayUrl: OVERLAY_URL,
+      overlayUrl: (TEMPLATES.find((t) => t.id === selectedTemplate)?.overlayUrl) ?? OVERLAY_URL,
+        enableTransitions: settings.transitionAnimation ?? true,
     }),
     [
       audioUrl,
@@ -426,8 +469,10 @@ function EditorPage() {
       settings.defaultLabelText,
       settings.defaultFontSize,
       settings.animationIntensity,
+      settings.transitionAnimation,
       clips,
       totalFrames,
+      selectedTemplate,
     ],
   );
 
@@ -530,6 +575,13 @@ function EditorPage() {
                 </div>
               )}
               <button
+                onClick={() => setTemplatesOpen(true)}
+                className="absolute right-40 top-2 z-10 flex items-center gap-1.5 rounded border border-border bg-panel/90 px-2.5 py-1 text-[11px] backdrop-blur hover:bg-accent"
+                title="Templates"
+              >
+                Templates
+              </button>
+              <button
                 onClick={() => fileImportRef.current?.click()}
                 className="absolute right-2 top-2 z-10 flex items-center gap-1.5 rounded border border-border bg-panel/90 px-2.5 py-1 text-[11px] backdrop-blur hover:bg-accent"
                 title="Import images (Ctrl+I)"
@@ -577,12 +629,57 @@ function EditorPage() {
             </aside>
           </div>
 
-          {/* Timeline */}
-          <div className="h-48 shrink-0 border-t border-border">
+          {/* Timeline: resizable */}
+          <div
+            className="border-t border-border"
+            style={{ height: timelineHeight }}
+          >
+            {/* Divider / handle */}
+            <div
+              onPointerDown={(e) => {
+                const startY = e.clientY;
+                const startH = timelineHeight;
+                const root = document.documentElement;
+                try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch {}
+                const move = (ev: PointerEvent) => {
+                  const dy = ev.clientY - startY;
+                  const next = Math.max(80, Math.min(window.innerHeight * 0.8, startH - dy));
+                  setTimelineHeight(next);
+                };
+                const up = (ev: PointerEvent) => {
+                  try { (e.currentTarget as HTMLElement).releasePointerCapture(ev.pointerId); } catch {}
+                  window.removeEventListener("pointermove", move);
+                  window.removeEventListener("pointerup", up);
+                };
+                window.addEventListener("pointermove", move);
+                window.addEventListener("pointerup", up);
+              }}
+              className="cursor-row-resize bg-panel/60 h-2 w-full"
+            />
             <Timeline playerRef={playerRef} fps={FPS} onSeek={seekTo} />
           </div>
         </>
       )}
+
+      {/* Templates modal */}
+      {templatesOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-96 rounded bg-panel p-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold">Templates</h4>
+              <button onClick={() => setTemplatesOpen(false)} className="text-[12px] text-muted-foreground">Close</button>
+            </div>
+            <div className="mt-3 space-y-2">
+              {TEMPLATES.map((t) => (
+                <button key={t.id} onClick={() => { setSelectedTemplate(t.id); setTemplatesOpen(false); }} className="w-full rounded border border-border px-2 py-2 text-left hover:bg-accent">
+                  <div className="font-medium">{t.name}</div>
+                  <div className="text-[12px] text-muted-foreground">Overlay: {t.overlayUrl}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <input
         ref={fileImportRef}

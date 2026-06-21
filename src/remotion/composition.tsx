@@ -12,6 +12,8 @@ export type CompositionProps = {
   durationInFrames: number;
   fps: number;
   overlayUrl?: string;
+  // enable or disable the boundary transitions between clips
+  enableTransitions?: boolean;
 };
 
 const ANIM_SHIFT = 0.6; // base scale/translate range (increased for stronger pan)
@@ -47,6 +49,8 @@ function KenBurns({
   imageUrl,
   anchorX,
   anchorY,
+  clip,
+  fps,
 }: {
   frame: number;
   duration: number;
@@ -55,32 +59,67 @@ function KenBurns({
   imageUrl: string;
   anchorX: number;
   anchorY: number;
+  clip: ClipDoc;
+  fps: number;
 }) {
   const t = interpolate(frame, [0, duration], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const range = ANIM_SHIFT * intensity;
-  let scale = 1.05;
+  let baseScale = 1.05;
   let txPercent = 0;
   let ty = 0;
   if (animation === "zoom-in") {
-    // gentler zoom so pan doesn't feel weak by comparison
-    scale = 1 + range * 0.35 * t + 0.02;
+    baseScale = 1 + range * 0.35 * t + 0.02;
   } else if (animation === "zoom-out") {
-    scale = 1 + range * 0.35 + 0.02 - range * 0.35 * t;
+    baseScale = 1 + range * 0.35 + 0.02 - range * 0.35 * t;
   } else if (animation === "pan-left") {
-    // compute desired percent shift (negative -> move left over time)
     txPercent = Number(interpolate(t, [0, 1], [range * 40, -range * 40]));
-    // Do not apply zoom during pan — keep scale at 1 to avoid visible zoom.
-    scale = 1;
+    baseScale = 1;
   } else if (animation === "pan-right") {
     txPercent = Number(interpolate(t, [0, 1], [-range * 40, range * 40]));
-    scale = 1;
+    baseScale = 1;
   }
 
-  // Use objectPosition to offset the visible image by anchor + txPercent, and
-  // use translate only for any small pixel adjustments (ty).
-  // Clamp objectPosition so we don't ask for out-of-range positions which can
-  // expose background. Keep within 0..100.
-  const posX = Math.max(0, Math.min(100, anchorX + txPercent));
+  // Keyframe interpolation (clip.keyframes use project time; convert to local)
+  let kfScale: number | undefined = undefined;
+  let kfPosX: number | undefined = undefined;
+  let kfPosY: number | undefined = undefined;
+  let kfRot: number | undefined = undefined;
+  if (clip.keyframes && clip.keyframes.length > 0) {
+    const localT = frame / fps;
+    const kfs = clip.keyframes
+      .map((k) => ({ ...k, local: k.time - clip.start }))
+      .filter((k) => k.local >= 0 && k.local <= duration)
+      .sort((a, b) => a.local - b.local);
+    if (kfs.length > 0) {
+      // for each property interpolate between surrounding keyframes
+      function interpProp(prop: keyof typeof kfs[0]) {
+        // find surrounding
+        let prev = null as any;
+        let next = null as any;
+        for (let i = 0; i < kfs.length; i++) {
+          if ((kfs[i] as any).local <= localT) prev = kfs[i];
+          if ((kfs[i] as any).local > localT) { next = kfs[i]; break; }
+        }
+        if (!prev && !next) return undefined;
+        if (!prev) return (next as any)[prop];
+        if (!next) return (prev as any)[prop];
+        const pVal = (prev as any)[prop];
+        const nVal = (next as any)[prop];
+        if (pVal == null || nVal == null) return pVal ?? nVal;
+        const alpha = (localT - prev.local) / Math.max(1e-6, next.local - prev.local);
+        return pVal + (nVal - pVal) * alpha;
+      }
+      kfScale = interpProp("scale");
+      kfPosX = interpProp("posX");
+      kfPosY = interpProp("posY");
+      kfRot = interpProp("rotation");
+    }
+  }
+
+  const appliedScale = (kfScale ?? 1) * baseScale;
+  const appliedPosX = Math.max(0, Math.min(100, (kfPosX ?? anchorX) + txPercent));
+  const appliedPosY = Math.max(0, Math.min(100, kfPosY ?? anchorY));
+
   return (
     <Img
       src={imageUrl}
@@ -90,9 +129,9 @@ function KenBurns({
         width: "100%",
         height: "100%",
         objectFit: "cover",
-        objectPosition: `${posX}% ${anchorY}%`,
+        objectPosition: `${appliedPosX}% ${appliedPosY}%`,
         filter: `contrast(${CONTRAST_MULTIPLIER})`,
-        transform: `scale(${scale}) translate(0px, ${ty}px)`,
+        transform: `scale(${appliedScale}) rotate(${kfRot ?? 0}deg) translate(0px, ${ty}px)`,
       }}
     />
   );
@@ -110,6 +149,7 @@ function ClipLayer({
   fontSize,
   clipIndex,
   totalClips,
+  enableTransitions = true,
 }: {
   clip: ClipDoc;
   intensity: number;
@@ -117,6 +157,7 @@ function ClipLayer({
   fontSize: number;
   clipIndex: number;
   totalClips: number;
+  enableTransitions?: boolean;
 }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -126,8 +167,8 @@ function ClipLayer({
   const appliedIntensity = clip.intensity ?? intensity;
   const durationFactor = Math.min(1, clip.duration / REF_DURATION_SEC);
   const scaledIntensity = appliedIntensity * durationFactor;
-  const incomingKind = clipIndex > 0 ? getBoundaryTransition(clipIndex - 1) : null;
-  const outgoingKind = clipIndex < totalClips - 1 ? getBoundaryTransition(clipIndex) : null;
+  const incomingKind = enableTransitions ? (clipIndex > 0 ? getBoundaryTransition(clipIndex - 1) : null) : null;
+  const outgoingKind = enableTransitions ? (clipIndex < totalClips - 1 ? getBoundaryTransition(clipIndex) : null) : null;
   const incomingFrame = incomingKind ? Math.min(TRANSITION_FRAMES, dur) : 0;
   const outgoingFrame = outgoingKind ? Math.min(TRANSITION_FRAMES, dur) : 0;
 
@@ -198,7 +239,17 @@ function ClipLayer({
           willChange: "transform, opacity",
         }}
       >
-        <KenBurns frame={frame} duration={dur} animation={clip.animation} intensity={scaledIntensity} imageUrl={clip.imageUrl} anchorX={anchorX} anchorY={anchorY} />
+        <KenBurns
+          frame={frame}
+          duration={dur}
+          animation={clip.animation}
+          intensity={scaledIntensity}
+          imageUrl={clip.imageUrl}
+          anchorX={anchorX}
+          anchorY={anchorY}
+          clip={clip}
+          fps={fps}
+        />
         <div
           style={{
             position: "absolute",
@@ -229,6 +280,7 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
   fps,
   durationInFrames,
   overlayUrl,
+  enableTransitions = true,
 }) => {
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
@@ -241,7 +293,7 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
         const dur = Math.max(1, Math.round(c.duration * fps));
         return (
           <Sequence key={c.id} from={from} durationInFrames={dur}>
-            <ClipLayer clip={c} clipIndex={index} totalClips={clips.length} intensity={intensity} defaultLabelText={defaultLabelText} fontSize={defaultFontSize} />
+            <ClipLayer clip={c} clipIndex={index} totalClips={clips.length} intensity={intensity} defaultLabelText={defaultLabelText} fontSize={defaultFontSize} enableTransitions={enableTransitions} />
           </Sequence>
         );
       })}
