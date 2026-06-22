@@ -22,7 +22,7 @@ export const TEMPLATES: TemplateDef[] = [
   {
     id: "ES1",
     name: "ES1",
-    overlayUrl: "/NBA copy_00000.png",
+    overlayUrl: "https://raw.githubusercontent.com/notankith/verticut-pro/refs/heads/main/public/NBA%20copy_00000.png",
   },
 ];
 

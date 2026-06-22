@@ -18,7 +18,10 @@
       "Bash(dir D:\\\\codebases\\\\verticut-pro\\\\src\\\\routes\\\\api *)",
       "Bash(Get-ChildItem \"D:\\\\codebases\\\\verticut-pro\\\\src\\\\routes\\\\api\" -Recurse)",
       "Bash(Select-Object FullName)",
-      "Bash(xargs grep -l \"createServerFn\")"
+      "Bash(xargs grep -l \"createServerFn\")",
+      "Bash(taskkill *)",
+      "Bash(RENDER_SERVER_PORT=5051 timeout 10 node src/index.mjs)",
+      "Bash(powershell *)"
     ]
   }
 }

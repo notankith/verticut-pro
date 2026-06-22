@@ -31,11 +31,18 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { randomUUID } from 'crypto';
+import { fileURLToPath } from 'url';
 
 // ─── Config ───
 const PORT = parseInt(process.env.RENDER_SERVER_PORT || '5050', 10);
 const SHARED_SECRET = process.env.RENDER_SERVER_SECRET || '';
 const CDN_BASE = (process.env.CDN_BASE_URL || 'https://cdn.ankith.studio/').replace(/\/$/, '');
+const PUBLIC_DIR = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  'public'
+);
 
 // ─── Template → Composition ID mapping ───
 const TEMPLATE_TO_COMPOSITION = {
@@ -128,12 +135,10 @@ async function getOrCreateBundle(entryPathOverride) {
 
   log('BUNDLE', `Creating new Remotion bundle for ${entryPoint}`);
   const safeKey = entryPoint.replace(/[^a-z0-9]/gi, '_').slice(-80);
-  // Resolve publicDir as <render-server>/public, where GradientOverlay.png lives
-  const publicDir = path.resolve(path.dirname(entryPoint), '..', 'public');
   const bundleUrl = await bundle({
     entryPoint,
     outDir: path.join(os.tmpdir(), `remotion-bundle-${safeKey}`),
-    publicDir: fs.existsSync(publicDir) ? publicDir : undefined,
+    publicDir: fs.existsSync(PUBLIC_DIR) ? PUBLIC_DIR : undefined,
   });
   bundleCache.set(entryPoint, bundleUrl);
   log('BUNDLE', `Bundle ready: ${bundleUrl}`);

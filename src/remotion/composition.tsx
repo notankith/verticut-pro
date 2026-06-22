@@ -78,15 +78,21 @@ function KenBurns({
   let baseScale = 1.05;
   let txPercent = 0;
   let ty = 0;
-  if (animation === "zoom-in") {
+  
+  // Disable auto-animation if keyframes are present
+  const hasKeyframes = clip.keyframes && clip.keyframes.length > 0;
+  
+  if (!hasKeyframes && animation === "zoom-in") {
     baseScale = 1 + range * 0.35 * t + 0.02;
-  } else if (animation === "zoom-out") {
+  } else if (!hasKeyframes && animation === "zoom-out") {
     baseScale = 1 + range * 0.35 + 0.02 - range * 0.35 * t;
-  } else if (animation === "pan-left") {
+  } else if (!hasKeyframes && animation === "pan-left") {
     txPercent = Number(interpolate(t, [0, 1], [range * 40, -range * 40]));
     baseScale = 1;
-  } else if (animation === "pan-right") {
+  } else if (!hasKeyframes && animation === "pan-right") {
     txPercent = Number(interpolate(t, [0, 1], [-range * 40, range * 40]));
+    baseScale = 1;
+  } else if (!hasKeyframes) {
     baseScale = 1;
   }
 

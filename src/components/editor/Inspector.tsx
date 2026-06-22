@@ -3,7 +3,7 @@ import { useTimelineActions } from "./hooks";
 import { uploadToR2 } from "@/lib/upload";
 import { useEffect, useRef, useState } from "react";
 import type { ClipDoc } from "@/server/mongo.server";
-import { Trash2, RefreshCw, Image as ImageIcon } from "lucide-react";
+import { Trash2, RefreshCw, Image as ImageIcon, Star } from "lucide-react";
 
 const ANIMS: ClipDoc["animation"][] = ["zoom-in", "zoom-out", "pan-left", "pan-right"];
 
@@ -251,47 +251,199 @@ export function Inspector() {
         </div>
       </div>
 
-      {/* Keyframes */}
-      <div>
-        <label className="mb-1 block text-muted-foreground">Keyframes</label>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => addKeyframe(clip.id, { time: currentTime, scale: 1 })}
-            className="rounded border border-border bg-panel-2 px-2 py-1 text-[11px] hover:bg-accent"
-          >
-            Add Scale keyframe
-          </button>
-          <button
-            type="button"
-            onClick={() => addKeyframe(clip.id, { time: currentTime, posX: clip.anchorX ?? 50, posY: clip.anchorY ?? 50 })}
-            className="rounded border border-border bg-panel-2 px-2 py-1 text-[11px] hover:bg-accent"
-          >
-            Add Position keyframe
-          </button>
-          <button
-            type="button"
-            onClick={() => addKeyframe(clip.id, { time: currentTime, rotation: 0 })}
-            className="rounded border border-border bg-panel-2 px-2 py-1 text-[11px] hover:bg-accent"
-          >
-            Add Rotation keyframe
-          </button>
-        </div>
-        {clip.keyframes && clip.keyframes.length > 0 ? (
-          <div className="mt-2 space-y-1">
-            {clip.keyframes.map((k, i) => (
-              <div key={i} className="flex items-center justify-between rounded border border-border bg-panel-3 px-2 py-1 text-[11px]">
-                <div>
-                  <div className="font-mono">{k.time.toFixed(2)}s</div>
-                  <div className="text-[10px] text-muted-foreground">{k.scale ? `Scale ${k.scale}` : k.posX != null ? `Pos ${k.posX}% ${k.posY}%` : k.rotation != null ? `Rot ${k.rotation}°` : ""}</div>
-                </div>
-                <div>
-                  <button onClick={() => updateClip(clip.id, { keyframes: clip.keyframes?.filter((_, idx) => idx !== i) })} className="text-[10px] text-destructive hover:underline">Remove</button>
-                </div>
-              </div>
-            ))}
+      {/* Keyframes Section - After Effects / Premiere Style */}
+      <div className="bg-panel-2 rounded border border-border p-3 space-y-3">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Keyframes</div>
+        
+        {/* Scale Keyframes */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] text-muted-foreground">Scale (%)</label>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                min={10}
+                max={300}
+                step={5}
+                value={Math.round((clip.keyframes?.find(k => Math.abs((k.time ?? 0) - currentTime) < 0.05)?.scale ?? 1) * 100)}
+                onChange={(e) => {
+                  const scale = Number(e.target.value) / 100;
+                  // Find or create keyframe at current time
+                  const existing = clip.keyframes?.findIndex(k => Math.abs((k.time ?? 0) - currentTime) < 0.05) ?? -1;
+                  if (existing >= 0 && clip.keyframes) {
+                    const kfs = [...clip.keyframes];
+                    kfs[existing] = { ...kfs[existing], scale };
+                    updateClip(clip.id, { keyframes: kfs });
+                  } else if (clip.keyframes) {
+                    // No keyframe at current time yet, so create one with just this property
+                    updateClip(clip.id, { keyframes: [...clip.keyframes, { time: currentTime, scale }] });
+                  }
+                }}
+                className="w-16 rounded border border-border bg-panel-3 px-2 py-1 text-[11px] font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const scale = (clip.keyframes?.find(k => Math.abs((k.time ?? 0) - currentTime) < 0.05)?.scale ?? 1);
+                  // Ensure we consolidate keyframes at the same time instead of creating duplicates
+                  const existing = clip.keyframes?.findIndex(k => Math.abs((k.time ?? 0) - currentTime) < 0.05);
+                  if (existing != null && existing >= 0) {
+                    // Update existing keyframe at this time
+                    const kfs = [...clip.keyframes!];
+                    kfs[existing] = { ...kfs[existing], scale };
+                    updateClip(clip.id, { keyframes: kfs });
+                  } else {
+                    // Add new keyframe at this time
+                    addKeyframe(clip.id, { time: currentTime, scale });
+                  }
+                  // Disable animation when keyframe is added
+                  if (clip.animation !== "none") {
+                    updateClip(clip.id, { animation: "none" });
+                  }
+                }}
+                className="rounded p-1 text-yellow-500 hover:bg-yellow-500/20 transition-colors"
+                title="Add scale keyframe"
+              >
+                <Star className="h-3.5 w-3.5 fill-current" />
+              </button>
+            </div>
           </div>
-        ) : null}
+        </div>
+
+        {/* Position X & Y Keyframes */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] text-muted-foreground">Position X (%)</label>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={Math.round(clip.keyframes?.find(k => Math.abs((k.time ?? 0) - currentTime) < 0.05)?.posX ?? 50)}
+                onChange={(e) => {
+                  const posX = Number(e.target.value);
+                  // Find or create keyframe at current time
+                  const existing = clip.keyframes?.findIndex(k => Math.abs((k.time ?? 0) - currentTime) < 0.05) ?? -1;
+                  if (existing >= 0 && clip.keyframes) {
+                    const kfs = [...clip.keyframes];
+                    kfs[existing] = { ...kfs[existing], posX };
+                    updateClip(clip.id, { keyframes: kfs });
+                  } else if (clip.keyframes) {
+                    const posY = clip.keyframes.find(k => Math.abs((k.time ?? 0) - currentTime) < 0.05)?.posY ?? 50;
+                    updateClip(clip.id, { keyframes: [...clip.keyframes, { time: currentTime, posX, posY }] });
+                  }
+                }}
+                className="w-16 rounded border border-border bg-panel-3 px-2 py-1 text-[11px] font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const posX = clip.keyframes?.find(k => Math.abs((k.time ?? 0) - currentTime) < 0.05)?.posX ?? 50;
+                  const posY = clip.keyframes?.find(k => Math.abs((k.time ?? 0) - currentTime) < 0.05)?.posY ?? 50;
+                  // Ensure we consolidate keyframes at the same time
+                  const existing = clip.keyframes?.findIndex(k => Math.abs((k.time ?? 0) - currentTime) < 0.05);
+                  if (existing != null && existing >= 0) {
+                    // Update existing keyframe at this time
+                    const kfs = [...clip.keyframes!];
+                    kfs[existing] = { ...kfs[existing], posX, posY };
+                    updateClip(clip.id, { keyframes: kfs });
+                  } else {
+                    // Add new keyframe at this time
+                    addKeyframe(clip.id, { time: currentTime, posX, posY });
+                  }
+                  // Disable animation when keyframe is added
+                  if (clip.animation !== "none") {
+                    updateClip(clip.id, { animation: "none" });
+                  }
+                }}
+                className="rounded p-1 text-yellow-500 hover:bg-yellow-500/20 transition-colors"
+                title="Add position keyframe"
+              >
+                <Star className="h-3.5 w-3.5 fill-current" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] text-muted-foreground">Position Y (%)</label>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              value={Math.round(clip.keyframes?.find(k => Math.abs((k.time ?? 0) - currentTime) < 0.05)?.posY ?? 50)}
+              onChange={(e) => {
+                const posY = Number(e.target.value);
+                // Find or create keyframe at current time
+                const existing = clip.keyframes?.findIndex(k => Math.abs((k.time ?? 0) - currentTime) < 0.05) ?? -1;
+                if (existing >= 0 && clip.keyframes) {
+                  const kfs = [...clip.keyframes];
+                  kfs[existing] = { ...kfs[existing], posY };
+                  updateClip(clip.id, { keyframes: kfs });
+                } else if (clip.keyframes) {
+                  const posX = clip.keyframes.find(k => Math.abs((k.time ?? 0) - currentTime) < 0.05)?.posX ?? 50;
+                  updateClip(clip.id, { keyframes: [...clip.keyframes, { time: currentTime, posX, posY }] });
+                }
+              }}
+              className="w-16 rounded border border-border bg-panel-3 px-2 py-1 text-[11px] font-mono"
+            />
+          </div>
+        </div>
+
+        {/* Rotation Keyframes */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] text-muted-foreground">Rotation (°)</label>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                min={-360}
+                max={360}
+                step={5}
+                value={Math.round(clip.keyframes?.find(k => Math.abs((k.time ?? 0) - currentTime) < 0.05)?.rotation ?? 0)}
+                onChange={(e) => {
+                  const rotation = Number(e.target.value);
+                  // Find or create keyframe at current time
+                  const existing = clip.keyframes?.findIndex(k => Math.abs((k.time ?? 0) - currentTime) < 0.05) ?? -1;
+                  if (existing >= 0 && clip.keyframes) {
+                    const kfs = [...clip.keyframes];
+                    kfs[existing] = { ...kfs[existing], rotation };
+                    updateClip(clip.id, { keyframes: kfs });
+                  } else if (clip.keyframes) {
+                    updateClip(clip.id, { keyframes: [...clip.keyframes, { time: currentTime, rotation }] });
+                  }
+                }}
+                className="w-16 rounded border border-border bg-panel-3 px-2 py-1 text-[11px] font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const rotation = clip.keyframes?.find(k => Math.abs((k.time ?? 0) - currentTime) < 0.05)?.rotation ?? 0;
+                  // Ensure we consolidate keyframes at the same time
+                  const existing = clip.keyframes?.findIndex(k => Math.abs((k.time ?? 0) - currentTime) < 0.05);
+                  if (existing != null && existing >= 0) {
+                    // Update existing keyframe at this time
+                    const kfs = [...clip.keyframes!];
+                    kfs[existing] = { ...kfs[existing], rotation };
+                    updateClip(clip.id, { keyframes: kfs });
+                  } else {
+                    // Add new keyframe at this time
+                    addKeyframe(clip.id, { time: currentTime, rotation });
+                  }
+                  // Disable animation when keyframe is added
+                  if (clip.animation !== "none") {
+                    updateClip(clip.id, { animation: "none" });
+                  }
+                }}
+                className="rounded p-1 text-yellow-500 hover:bg-yellow-500/20 transition-colors"
+                title="Add rotation keyframe"
+              >
+                <Star className="h-3.5 w-3.5 fill-current" />
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="flex gap-2">

@@ -23,7 +23,7 @@ export function Timeline({
   const settings = useEditor((s) => s.settings);
   const select = useEditor((s) => s.select);
   const set = useEditor((s) => s.set);
-  const { moveClip, trimClip, moveAudioSegment, trimAudioSegment } = useTimelineActions();
+  const { moveClip, trimClip, updateClip, moveAudioSegment, trimAudioSegment } = useTimelineActions();
   const containerRef = useRef<HTMLDivElement>(null);
   const didAutoFitRef = useRef<string | null>(null);
   const clipsEnd = clips.reduce((max, c) => Math.max(max, c.start + c.duration), 0);
@@ -299,7 +299,8 @@ function ClipBlock({
   onMove: (start: number) => void;
   onTrim: (edge: "start" | "end", v: number) => void;
 }) {
-  const [drag, setDrag] = useState<null | { kind: "move" | "left" | "right"; startX: number; orig: number }>(null);
+  const [drag, setDrag] = useState<null | { kind: "move" | "left" | "right" | "keyframe"; startX: number; orig: number; keyframeIndex?: number }>(null);
+  const { updateClip } = useTimelineActions();
 
   useEffect(() => {
     if (!drag) return;
@@ -310,6 +311,12 @@ function ClipBlock({
       if (drag.kind === "move") onMove(drag.orig + dt);
       else if (drag.kind === "left") onTrim("start", drag.orig + dt);
       else if (drag.kind === "right") onTrim("end", drag.orig + dt);
+      else if (drag.kind === "keyframe" && drag.keyframeIndex != null && clip.keyframes) {
+        const kfs = [...clip.keyframes];
+        const newTime = Math.max(clip.start, Math.min(clip.start + clip.duration, drag.orig + dt));
+        kfs[drag.keyframeIndex] = { ...kfs[drag.keyframeIndex], time: newTime };
+        updateClip(clip.id, { keyframes: kfs });
+      }
     }
     function up() {
       setDrag(null);
@@ -320,7 +327,7 @@ function ClipBlock({
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
     };
-  }, [drag, zoom, onMove, onTrim]);
+  }, [drag, zoom, onMove, onTrim, clip.id, clip.keyframes, clip.start, clip.duration, updateClip]);
 
   return (
     <div
@@ -330,11 +337,16 @@ function ClipBlock({
           setDrag({ kind: "left", startX: e.clientX, orig: clip.start });
         } else if ((e.target as HTMLElement).dataset.handle === "right") {
           setDrag({ kind: "right", startX: e.clientX, orig: clip.start + clip.duration });
+        } else if ((e.target as HTMLElement).dataset.keyframeIndex) {
+          const kfIdx = parseInt((e.target as HTMLElement).dataset.keyframeIndex, 10);
+          if (clip.keyframes?.[kfIdx]) {
+            setDrag({ kind: "keyframe", startX: e.clientX, orig: clip.keyframes[kfIdx].time, keyframeIndex: kfIdx });
+          }
         } else {
           setDrag({ kind: "move", startX: e.clientX, orig: clip.start });
         }
       }}
-      className={`absolute top-2 bottom-2 cursor-grab overflow-hidden rounded border ${
+      className={`absolute top-2 bottom-2 cursor-grab overflow-visible rounded border relative ${
         selected ? "border-primary ring-1 ring-primary" : "border-border"
       }`}
       style={{
@@ -345,6 +357,28 @@ function ClipBlock({
     >
       <div data-handle="left" className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-white/20 hover:bg-white/40" />
       <div data-handle="right" className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-white/20 hover:bg-white/40" />
+      
+      {/* Keyframe markers */}
+      {clip.keyframes?.map((k, idx) => (
+        <div
+          key={idx}
+          data-keyframe-index={idx}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            onSelect();
+            setDrag({ kind: "keyframe", startX: e.clientX, orig: k.time, keyframeIndex: idx });
+          }}
+          className="absolute top-1/2 -translate-y-1/2 cursor-grab hover:scale-125 transition-transform"
+          style={{
+            left: (k.time - clip.start) * zoom,
+            transform: "translate(-50%, -50%)",
+          }}
+          title={`KF: ${k.time.toFixed(2)}s`}
+        >
+          <div className="text-yellow-400 text-base">★</div>
+        </div>
+      ))}
+      
       <div className="pointer-events-none p-1.5 text-[10px] leading-tight">
         <div className="truncate font-semibold">{clip.labelText}</div>
         <div className="absolute bottom-1 left-2 text-[9px] uppercase tracking-wide opacity-80">{clip.animation}</div>

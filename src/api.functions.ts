@@ -4,7 +4,7 @@ import { getDb, type ProjectDoc, type SettingsDoc, type ClipDoc, type RenderDoc,
 import { presignPut, publicUrl } from "./server/r2.server";
 import { uploadBuffer } from "./server/r2.server";
 import { submitTranscript, getTranscript } from "./server/assemblyai.server";
-import { DEFAULT_TEMPLATE_WINDOW } from "@/lib/templates";
+import { DEFAULT_TEMPLATE_WINDOW, getTemplateById } from "@/lib/templates";
 
 // Untyped collection helper to avoid Mongo's ObjectId _id constraint (we use string ids)
 async function C<T = unknown>(name: string) {
@@ -406,15 +406,18 @@ export const enqueueRender = createServerFn({ method: "POST" })
     const { url, secret } = getRenderServerConfig();
     if (url && secret) {
       try {
-        const appOrigin = publicAppOrigin();
-        const overlayUrl = appOrigin ? `${appOrigin}/GradientOverlay.png` : undefined;
+        let templateOverlayUrl = getTemplateById(settings.activeTemplateId)?.overlayUrl;
+        // Override the ES1 template overlayUrl to use the hosted URL
+        if (settings.activeTemplateId === "ES1") {
+          templateOverlayUrl = "https://raw.githubusercontent.com/notankith/verticut-pro/refs/heads/main/public/NBA%20copy_00000.png";
+        }
         const r = await fetch(url + "/render/verticut", {
           method: "POST",
           headers: { "content-type": "application/json", "x-render-secret": secret },
           body: JSON.stringify({
             jobId: id,
             filename,
-            overlayUrl,
+            overlayUrl: templateOverlayUrl,
             project: {
               id: project._id,
               name: project.name,
