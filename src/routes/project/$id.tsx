@@ -17,10 +17,10 @@ import { Timeline } from "@/components/editor/Timeline";
 import { Inspector } from "@/components/editor/Inspector";
 import { WordTranscript } from "@/components/editor/WordTranscript";
 import { SettingsPanel } from "@/components/editor/SettingsPanel";
-import { useAutoSave, useTimelineActions } from "@/components/editor/hooks";
+import { useAutoSave, useTimelineActions, findNextStart } from "@/components/editor/hooks";
 import { extractAndUploadImagesFromClipboard, extractAndUploadPastedImages, uploadToR2 } from "@/lib/upload";
 import { getTemplateById, TEMPLATES } from "@/lib/templates";
-import type { AudioSegment } from "@/server/mongo.server";
+import type { AudioSegment, ClipDoc } from "@/server/mongo.server";
 
 const FPS = 30;
 const COMP_WIDTH = 1080;
@@ -362,6 +362,12 @@ function EditorPage() {
   }, [renderJob?.id, renderJob?.status]);
 
   const [dragOver, setDragOver] = useState(false);
+  const [videoTrimModal, setVideoTrimModal] = useState<{
+    file: File;
+    duration: number;
+    startTime: number;
+    endTime: number;
+  } | null>(null);
 
   const onImageImport = useCallback(async (files: FileList | File[] | null) => {
     if (!files) return;
@@ -369,10 +375,30 @@ function EditorPage() {
     if (arr.length === 0) return;
     for (const f of arr) {
       try {
-        const res = await uploadToR2(f, "image");
-        addImageClips([{ key: res.key, url: res.url }]);
+        const isVideo = /^video\//i.test(f.type);
+        if (isVideo) {
+          // Get video duration for trim dialog
+          const video = document.createElement("video");
+          const url = URL.createObjectURL(f);
+          await new Promise<void>((resolve) => {
+            video.onloadedmetadata = () => {
+              setVideoTrimModal({
+                file: f,
+                duration: video.duration,
+                startTime: 0,
+                endTime: video.duration,
+              });
+              URL.revokeObjectURL(url);
+              resolve();
+            };
+            video.src = url;
+          });
+        } else {
+          const res = await uploadToR2(f, "image");
+          addImageClips([{ key: res.key, url: res.url }]);
+        }
       } catch (err) {
-        console.error("Image import failed", err);
+        console.error("Import failed", err);
       }
     }
   }, [addImageClips]);
@@ -830,10 +856,177 @@ function EditorPage() {
         </div>
       ) : null}
 
+      {/* Video trim modal */}
+      {videoTrimModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="w-96 rounded-lg border border-border bg-panel p-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-border pb-2 mb-4">
+              <h4 className="text-sm font-semibold">Trim Video</h4>
+              <button
+                onClick={() => setVideoTrimModal(null)}
+                className="text-[12px] text-muted-foreground hover:text-foreground"
+              >
+                Cancel
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="text-[11px] text-muted-foreground block mb-2">Duration: {videoTrimModal.duration.toFixed(2)}s</label>
+                <div className="space-y-3">
+                  {/* Visual slider */}
+                  <div className="bg-panel-2 rounded p-2 space-y-2">
+                    <div className="relative h-12 bg-black/50 rounded cursor-pointer border border-border overflow-hidden flex items-center" 
+                      onClick={(e) => {
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        const percent = (e.clientX - rect.left) / rect.width;
+                        const time = percent * videoTrimModal.duration;
+                        const mid = (videoTrimModal.startTime + videoTrimModal.endTime) / 2;
+                        if (time < mid) {
+                          setVideoTrimModal({ ...videoTrimModal, startTime: Math.max(0, time) });
+                        } else {
+                          setVideoTrimModal({ ...videoTrimModal, endTime: Math.min(videoTrimModal.duration, time) });
+                        }
+                      }}>
+                      {/* Background bar showing full duration */}
+                      <div className="absolute inset-0 bg-accent/20" />
+                      {/* Selected range bar */}
+                      <div className="absolute h-full bg-primary/40"
+                        style={{
+                          left: `${(videoTrimModal.startTime / videoTrimModal.duration) * 100}%`,
+                          right: `${100 - (videoTrimModal.endTime / videoTrimModal.duration) * 100}%`,
+                        }}
+                      />
+                      {/* Start handle */}
+                      <div className="absolute top-1/2 -translate-y-1/2 w-1 h-10 bg-primary cursor-col-resize"
+                        style={{ left: `${(videoTrimModal.startTime / videoTrimModal.duration) * 100}%`, marginLeft: '-2px' }}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          const rect = (e.currentTarget as HTMLElement).parentElement!.getBoundingClientRect();
+                          const onMove = (me: MouseEvent) => {
+                            const percent = (me.clientX - rect.left) / rect.width;
+                            const time = Math.max(0, Math.min(videoTrimModal.endTime - 0.1, percent * videoTrimModal.duration));
+                            setVideoTrimModal({ ...videoTrimModal, startTime: time });
+                          };
+                          const onUp = () => {
+                            document.removeEventListener('mousemove', onMove);
+                            document.removeEventListener('mouseup', onUp);
+                          };
+                          document.addEventListener('mousemove', onMove);
+                          document.addEventListener('mouseup', onUp);
+                        }}
+                      />
+                      {/* End handle */}
+                      <div className="absolute top-1/2 -translate-y-1/2 w-1 h-10 bg-primary cursor-col-resize"
+                        style={{ left: `${(videoTrimModal.endTime / videoTrimModal.duration) * 100}%`, marginLeft: '-2px' }}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          const rect = (e.currentTarget as HTMLElement).parentElement!.getBoundingClientRect();
+                          const onMove = (me: MouseEvent) => {
+                            const percent = (me.clientX - rect.left) / rect.width;
+                            const time = Math.min(videoTrimModal.duration, Math.max(videoTrimModal.startTime + 0.1, percent * videoTrimModal.duration));
+                            setVideoTrimModal({ ...videoTrimModal, endTime: time });
+                          };
+                          const onUp = () => {
+                            document.removeEventListener('mousemove', onMove);
+                            document.removeEventListener('mouseup', onUp);
+                          };
+                          document.addEventListener('mousemove', onMove);
+                          document.addEventListener('mouseup', onUp);
+                        }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-[10px] text-muted-foreground">
+                      <span>{videoTrimModal.startTime.toFixed(2)}s</span>
+                      <span>{videoTrimModal.endTime.toFixed(2)}s</span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="text-[10px] text-muted-foreground block mb-1">Start (s)</label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={videoTrimModal.duration}
+                      step={0.1}
+                      value={videoTrimModal.startTime}
+                      onChange={(e) => {
+                        const val = Math.max(0, Math.min(videoTrimModal.endTime - 0.1, Number(e.target.value)));
+                        setVideoTrimModal({ ...videoTrimModal, startTime: val });
+                      }}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted-foreground block mb-1">End (s)</label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={videoTrimModal.duration}
+                      step={0.1}
+                      value={videoTrimModal.endTime}
+                      onChange={(e) => {
+                        const val = Math.max(videoTrimModal.startTime + 0.1, Math.min(videoTrimModal.duration, Number(e.target.value)));
+                        setVideoTrimModal({ ...videoTrimModal, endTime: val });
+                      }}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="text-[10px] text-muted-foreground text-center bg-panel-2 rounded p-2">
+                    Selected: {(videoTrimModal.endTime - videoTrimModal.startTime).toFixed(2)}s
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setVideoTrimModal(null)}
+                  className="flex-1 rounded border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!videoTrimModal) return;
+                    try {
+                      const res = await uploadToR2(videoTrimModal.file, "video");
+                      const cursor = findNextStart(useEditor.getState().clips);
+                      const duration = videoTrimModal.endTime - videoTrimModal.startTime;
+                      const { settings } = useEditor.getState();
+                      const preset = settings.presets[0];
+                      const newClip: ClipDoc = {
+                        id: crypto.randomUUID(),
+                        start: cursor,
+                        duration: duration,
+                        videoUrl: res.url,
+                        videoKey: res.key,
+                        trimStart: videoTrimModal.startTime,
+                        trimEnd: videoTrimModal.endTime,
+                        animation: "none",
+                        labelText: settings.defaultLabelText || "",
+                        labelPresetId: preset?.id ?? "custom",
+                      };
+                      useEditor.getState().updateClips([...useEditor.getState().clips, newClip]);
+                      setVideoTrimModal(null);
+                    } catch (err) {
+                      console.error("Video upload failed", err);
+                      alert("Video upload failed: " + err);
+                    }
+                  }}
+                  className="flex-1 rounded bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
+                >
+                  Import
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <input
         ref={fileImportRef}
         type="file"
-        accept="image/*"
+        accept="image/*,video/*"
         multiple
         className="hidden"
         onChange={(e) => onImageImport(e.target.files)}

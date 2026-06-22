@@ -1,0 +1,30 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { s3Client, uploadBuffer } from "../../server/r2.server";
+import { randomUUID } from "crypto";
+
+export const Route = createFileRoute("/api/fetch-and-upload-image")({
+  server: {
+    handlers: {
+      POST: async ({ request }) => {
+        let body: { url: string };
+        try {
+          body = await request.json();
+        } catch {
+          return new Response("Bad JSON", { status: 400 });
+        }
+        if (!body?.url || !/^https?:\/\//i.test(body.url)) return new Response("Invalid URL", { status: 400 });
+        const resp = await fetch(body.url);
+        if (!resp.ok) return new Response(`Fetch failed: ${resp.status}`, { status: 400 });
+        const contentType = resp.headers.get("content-type") || "application/octet-stream";
+        if (!contentType.startsWith("image/")) return new Response(`Not an image: ${contentType}`, { status: 400 });
+        const arrayBuffer = await resp.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const id = randomUUID();
+        const ext = (contentType.split("/").pop() || "bin").replace(/[^a-z0-9]/gi, "");
+        const key = `image/${id}.${ext}`;
+        const publicUrl = await uploadBuffer(key, buffer, contentType);
+        return Response.json({ key, publicUrl });
+      },
+    },
+  },
+});

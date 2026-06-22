@@ -46,9 +46,13 @@ export type ClipDoc = {
   id: string;
   start: number;
   duration: number;
-  imageKey: string;
-  imageUrl: string;
-  animation: "zoom-in" | "zoom-out" | "pan-left" | "pan-right";
+  imageKey?: string;
+  imageUrl?: string;
+  videoKey?: string;
+  videoUrl?: string;
+  trimStart?: number;
+  trimEnd?: number;
+  animation: "zoom-in" | "zoom-out" | "pan-left" | "pan-right" | "none";
   labelText: string;
   labelPresetId: string;
   // Per-clip animation intensity multiplier (overrides project/global intensity)

@@ -147,6 +147,8 @@ function findNextStart(clips: ClipDoc[]) {
   return last.start + last.duration;
 }
 
+export { findNextStart };
+
 export function useTimelineActions() {
   const { clips, updateClips, settings, select, audioDuration } = useEditor();
   const clipsRef = useRef(clips);

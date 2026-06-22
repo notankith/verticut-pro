@@ -1,13 +1,23 @@
-import { fetchAndUploadImage, presignUpload } from "@/api.functions";
+async function presignUpload(opts: { kind: string; ext: string; contentType: string }) {
+  const res = await fetch("/api/presign-upload", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(opts),
+  });
+  if (!res.ok) throw new Error(`Presign failed: ${res.statusText}`);
+  return res.json() as Promise<{ uploadUrl: string; key: string; publicUrl: string }>;
+}
 
 export async function uploadToR2(
   file: File,
-  kind: "audio" | "image" | "music",
+  kind: "audio" | "image" | "music" | "video",
   onProgress?: (pct: number) => void,
 ) {
   const ext = (file.name.split(".").pop() || "bin").toLowerCase();
   const { uploadUrl, key, publicUrl } = await presignUpload({
-   data: { kind, ext, contentType: file.type || "application/octet-stream" },
+    kind,
+    ext,
+    contentType: file.type || "application/octet-stream",
   });
 
   // Use XHR to provide upload progress events
@@ -35,6 +45,16 @@ export async function uploadToR2(
 
   if (onProgress) try { onProgress(100); } catch {}
   return { key, url: publicUrl };
+}
+
+async function fetchAndUploadImageUrl(url: string) {
+  const res = await fetch("/api/fetch-and-upload-image", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) throw new Error(`Fetch and upload failed: ${res.statusText}`);
+  return res.json() as Promise<{ key: string; publicUrl: string }>;
 }
 
 const IMAGE_MIME_RE = /^image\/(png|jpe?g|webp|avif|gif|bmp|svg\+xml|heic|heif)$/i;
@@ -171,7 +191,7 @@ export async function extractAndUploadPastedImages(
     );
 
   const tryUrl = async (url: string, idx: number): Promise<PastedImage> => {
-    const res = await withRetry(() => fetchAndUploadImage({ data: { url } }));
+    const res = await withRetry(() => fetchAndUploadImageUrl(url));
     opts?.onProgress?.(idx, 100);
     return { key: res.key, url: res.publicUrl };
   };

@@ -1,4 +1,4 @@
-import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate, staticFile } from "remotion";
+import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate, staticFile, Video } from "remotion";
 import type { ClipDoc, AudioSegment } from "../server/mongo.server";
 import type { TemplateWindow } from "@/lib/templates";
 
@@ -56,6 +56,7 @@ function KenBurns({
   animation,
   intensity,
   imageUrl,
+  videoUrl,
   anchorX,
   anchorY,
   clip,
@@ -65,7 +66,8 @@ function KenBurns({
   duration: number;
   animation: ClipDoc["animation"];
   intensity: number;
-  imageUrl: string;
+  imageUrl?: string;
+  videoUrl?: string;
   anchorX: number;
   anchorY: number;
   clip: ClipDoc;
@@ -129,20 +131,44 @@ function KenBurns({
   const appliedPosX = Math.max(0, Math.min(100, (kfPosX ?? anchorX) + txPercent));
   const appliedPosY = Math.max(0, Math.min(100, kfPosY ?? anchorY));
 
-  return (
-    <Img
-      src={imageUrl}
-      style={{
-        position: "absolute",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        objectFit: "cover",
-        objectPosition: `${appliedPosX}% ${appliedPosY}%`,
+  if (videoUrl) {
+    const trimStartFrames = Math.round((clip.trimStart ?? 0) * fps);
+    return (
+      <AbsoluteFill style={{ 
+        transform: `scale(${appliedScale}) rotate(${kfRot ?? 0}deg)`,
         filter: `contrast(${CONTRAST_MULTIPLIER})`,
-        transform: `scale(${appliedScale}) rotate(${kfRot ?? 0}deg) translate(0px, ${ty}px)`,
-      }}
-    />
+        willChange: "transform",
+      }}>
+        <Video
+          src={videoUrl}
+          startFrom={trimStartFrames}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition: `${appliedPosX}% ${appliedPosY}%`,
+          }}
+        />
+      </AbsoluteFill>
+    );
+  }
+
+  return (
+    <AbsoluteFill style={{ 
+      transform: `scale(${appliedScale}) rotate(${kfRot ?? 0}deg)`,
+      filter: `contrast(${CONTRAST_MULTIPLIER})`,
+      willChange: "transform",
+    }}>
+      <Img
+        src={imageUrl || ""}
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          objectPosition: `${appliedPosX}% ${appliedPosY}%`,
+        }}
+      />
+    </AbsoluteFill>
   );
 }
 
@@ -216,6 +242,7 @@ function ClipLayer({
               animation="pan-left"
               intensity={scaledIntensity}
               imageUrl={clip.imageUrl}
+              videoUrl={clip.videoUrl}
               anchorX={anchorX}
               anchorY={anchorY}
               clip={clip}
@@ -231,6 +258,7 @@ function ClipLayer({
                 animation="pan-right"
                 intensity={scaledIntensity}
                 imageUrl={clip.splitScreen.bottomImageUrl}
+                videoUrl={undefined}
                 anchorX={50}
                 anchorY={50}
                 clip={clip}
@@ -274,6 +302,7 @@ function ClipLayer({
           animation={clip.animation}
           intensity={scaledIntensity}
           imageUrl={clip.imageUrl}
+          videoUrl={clip.videoUrl}
           anchorX={anchorX}
           anchorY={anchorY}
           clip={clip}

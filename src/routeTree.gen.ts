@@ -11,6 +11,8 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProjectIdRouteImport } from './routes/project/$id'
+import { Route as ApiPresignUploadRouteImport } from './routes/api/presign-upload'
+import { Route as ApiFetchAndUploadImageRouteImport } from './routes/api/fetch-and-upload-image'
 import { Route as ApiPublicRenderCompleteRouteImport } from './routes/api/public/render-complete'
 
 const IndexRoute = IndexRouteImport.update({
@@ -23,6 +25,16 @@ const ProjectIdRoute = ProjectIdRouteImport.update({
   path: '/project/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPresignUploadRoute = ApiPresignUploadRouteImport.update({
+  id: '/api/presign-upload',
+  path: '/api/presign-upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiFetchAndUploadImageRoute = ApiFetchAndUploadImageRouteImport.update({
+  id: '/api/fetch-and-upload-image',
+  path: '/api/fetch-and-upload-image',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicRenderCompleteRoute = ApiPublicRenderCompleteRouteImport.update({
   id: '/api/public/render-complete',
   path: '/api/public/render-complete',
@@ -31,30 +43,54 @@ const ApiPublicRenderCompleteRoute = ApiPublicRenderCompleteRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/fetch-and-upload-image': typeof ApiFetchAndUploadImageRoute
+  '/api/presign-upload': typeof ApiPresignUploadRoute
   '/project/$id': typeof ProjectIdRoute
   '/api/public/render-complete': typeof ApiPublicRenderCompleteRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/fetch-and-upload-image': typeof ApiFetchAndUploadImageRoute
+  '/api/presign-upload': typeof ApiPresignUploadRoute
   '/project/$id': typeof ProjectIdRoute
   '/api/public/render-complete': typeof ApiPublicRenderCompleteRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/fetch-and-upload-image': typeof ApiFetchAndUploadImageRoute
+  '/api/presign-upload': typeof ApiPresignUploadRoute
   '/project/$id': typeof ProjectIdRoute
   '/api/public/render-complete': typeof ApiPublicRenderCompleteRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/project/$id' | '/api/public/render-complete'
+  fullPaths:
+    | '/'
+    | '/api/fetch-and-upload-image'
+    | '/api/presign-upload'
+    | '/project/$id'
+    | '/api/public/render-complete'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/project/$id' | '/api/public/render-complete'
-  id: '__root__' | '/' | '/project/$id' | '/api/public/render-complete'
+  to:
+    | '/'
+    | '/api/fetch-and-upload-image'
+    | '/api/presign-upload'
+    | '/project/$id'
+    | '/api/public/render-complete'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/fetch-and-upload-image'
+    | '/api/presign-upload'
+    | '/project/$id'
+    | '/api/public/render-complete'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiFetchAndUploadImageRoute: typeof ApiFetchAndUploadImageRoute
+  ApiPresignUploadRoute: typeof ApiPresignUploadRoute
   ProjectIdRoute: typeof ProjectIdRoute
   ApiPublicRenderCompleteRoute: typeof ApiPublicRenderCompleteRoute
 }
@@ -75,6 +111,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/presign-upload': {
+      id: '/api/presign-upload'
+      path: '/api/presign-upload'
+      fullPath: '/api/presign-upload'
+      preLoaderRoute: typeof ApiPresignUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/fetch-and-upload-image': {
+      id: '/api/fetch-and-upload-image'
+      path: '/api/fetch-and-upload-image'
+      fullPath: '/api/fetch-and-upload-image'
+      preLoaderRoute: typeof ApiFetchAndUploadImageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/render-complete': {
       id: '/api/public/render-complete'
       path: '/api/public/render-complete'
@@ -87,6 +137,8 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiFetchAndUploadImageRoute: ApiFetchAndUploadImageRoute,
+  ApiPresignUploadRoute: ApiPresignUploadRoute,
   ProjectIdRoute: ProjectIdRoute,
   ApiPublicRenderCompleteRoute: ApiPublicRenderCompleteRoute,
 }
