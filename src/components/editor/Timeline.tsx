@@ -95,20 +95,20 @@ export function Timeline({
           />
         </div>
       </div>
-      <div ref={containerRef} className="flex-1 overflow-x-auto overflow-y-auto">
-        <div style={{ width: totalWidth }} className="relative">
+      <div ref={containerRef} className="flex-1 overflow-x-auto overflow-y-hidden">
+        <div style={{ width: totalWidth, minHeight: "100%" }} className="flex flex-col">
           {/* Ruler */}
           <div
             onPointerDown={startScrubFromEvent}
-            className="sticky top-0 z-10 h-6 cursor-ew-resize select-none border-b border-border bg-panel"
+            className="sticky top-0 z-10 h-6 shrink-0 cursor-ew-resize select-none border-b border-border bg-panel"
             style={{ width: totalWidth, touchAction: "none" }}
           >
             <Ruler totalWidth={totalWidth} zoom={zoom} duration={projectDuration} />
           </div>
 
-          {/* Audio track (voice-over) */}
-          <div className="relative h-8 border-b border-border bg-panel px-2 text-[11px] text-muted-foreground">
-            <div className="absolute left-2 top-1 text-[10px]">Voice-over</div>
+          {/* Audio track */}
+          <div className="relative h-7 shrink-0 border-b border-border bg-panel px-2 text-[11px] text-muted-foreground">
+            <div className="absolute left-2 top-0.5 text-[9px] opacity-60">Audio</div>
             <div
               className="absolute left-0 top-0 h-full"
               style={{ width: totalWidth }}
@@ -128,9 +128,9 @@ export function Timeline({
             </div>
           </div>
 
-          {/* Track */}
+          {/* Media track */}
           <div
-            className="relative h-24"
+            className="relative flex-1 min-h-[48px]"
             style={{ width: totalWidth }}
             onPointerDown={(e) => {
               if (e.target !== e.currentTarget) return;
@@ -346,7 +346,7 @@ function ClipBlock({
           setDrag({ kind: "move", startX: e.clientX, orig: clip.start });
         }
       }}
-      className={`absolute top-2 bottom-2 cursor-grab overflow-visible rounded border relative ${
+      className={`absolute top-2 bottom-2 cursor-grab overflow-visible rounded border ${
         selected ? "border-primary ring-1 ring-primary" : "border-border"
       }`}
       style={{
@@ -439,7 +439,7 @@ function AudioSegmentBlock({
           setDrag({ kind: "move", startX: e.clientX, orig: segment.projStart });
         }
       }}
-      className={`absolute top-1 h-6 rounded border cursor-grab overflow-hidden select-none ${
+      className={`absolute top-0.5 h-5 rounded border cursor-grab overflow-hidden select-none ${
         selected ? "border-primary bg-primary/20 ring-1 ring-primary" : "border-border bg-panel-2 hover:bg-panel-2/90"
       }`}
       style={{
