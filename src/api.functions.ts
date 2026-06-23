@@ -21,7 +21,7 @@ async function C<T = unknown>(name: string) {
 }
 
 export const presignUpload = createServerFn({ method: "POST" })
-  .inputValidator((d: { kind: "audio" | "image" | "music"; ext: string; contentType: string }) => d)
+  .inputValidator((d: { kind: "audio" | "image" | "music" | "video"; ext: string; contentType: string }) => d)
   .handler(async ({ data }) => {
     const id = randomUUID();
     const safeExt = data.ext.replace(/[^a-z0-9]/gi, "").toLowerCase() || "bin";
