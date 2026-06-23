@@ -418,6 +418,7 @@ export const enqueueRender = createServerFn({ method: "POST" })
             jobId: id,
             filename,
             overlayUrl: templateOverlayUrl,
+            templateWindow: settings.templateWindow || null,
             project: {
               id: project._id,
               name: project.name,

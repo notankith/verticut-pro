@@ -95,7 +95,7 @@ export function Timeline({
           />
         </div>
       </div>
-      <div ref={containerRef} className="flex-1 overflow-x-auto overflow-y-hidden">
+      <div ref={containerRef} className="flex-1 overflow-x-auto overflow-y-auto">
         <div style={{ width: totalWidth }} className="relative">
           {/* Ruler */}
           <div

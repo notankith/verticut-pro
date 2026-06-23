@@ -63,7 +63,7 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, anchorX, an
 
 const REF_DURATION_SEC = 3.5;
 
-function ClipLayer({ clip, intensity, defaultLabelText, fontSize, clipIndex, totalClips }) {
+function ClipLayer({ clip, intensity, defaultLabelText, fontSize, clipIndex, totalClips, enableTransitions = true }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const dur = Math.max(1, Math.round(clip.duration * fps));
@@ -72,8 +72,8 @@ function ClipLayer({ clip, intensity, defaultLabelText, fontSize, clipIndex, tot
   const appliedIntensity = clip.intensity ?? intensity;
   const durationFactor = Math.min(1, clip.duration / REF_DURATION_SEC);
   const scaledIntensity = appliedIntensity * durationFactor;
-  const incomingKind = clipIndex > 0 ? getBoundaryTransition(clipIndex - 1) : null;
-  const outgoingKind = clipIndex < totalClips - 1 ? getBoundaryTransition(clipIndex) : null;
+  const incomingKind = enableTransitions ? (clipIndex > 0 ? getBoundaryTransition(clipIndex - 1) : null) : null;
+  const outgoingKind = enableTransitions ? (clipIndex < totalClips - 1 ? getBoundaryTransition(clipIndex) : null) : null;
   const incomingFrame = incomingKind ? Math.min(TRANSITION_FRAMES, dur) : 0;
   const outgoingFrame = outgoingKind ? Math.min(TRANSITION_FRAMES, dur) : 0;
 
@@ -333,6 +333,8 @@ export const VertiCutComposition = ({
   fps,
   durationInFrames,
   overlayUrl,
+  templateWindow,
+  enableTransitions = true,
   audioSegments = [],
   captionTextColor,
   captionBgColor,
@@ -341,6 +343,22 @@ export const VertiCutComposition = ({
   captionFontSize,
   transcript = [],
 }) => {
+  const scene = (
+    <>
+      {(clips || []).map((c, index) => {
+        const from = Math.round(c.start * fps);
+        const dur = Math.max(1, Math.round(c.duration * fps));
+        return (
+          <Sequence key={c.id} from={from} durationInFrames={dur}>
+            <ClipLayer clip={c} clipIndex={index} totalClips={(clips || []).length} intensity={intensity} defaultLabelText={defaultLabelText} fontSize={defaultFontSize} enableTransitions={enableTransitions} />
+          </Sequence>
+        );
+      })}
+    </>
+  );
+
+  const hasTemplate = Boolean(overlayUrl && templateWindow);
+
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
       {audioSegments && audioSegments.length > 0 ? (
@@ -364,28 +382,37 @@ export const VertiCutComposition = ({
           <Audio src={musicUrl} volume={musicVolume} loop acceptableTimeShiftInSeconds={2} />
         </Sequence>
       ) : null}
-      {(clips || []).map((c, index) => {
-        const from = Math.round(c.start * fps);
-        const dur = Math.max(1, Math.round(c.duration * fps));
-        return (
-          <Sequence key={c.id} from={from} durationInFrames={dur}>
-            <ClipLayer clip={c} clipIndex={index} totalClips={(clips || []).length} intensity={intensity} defaultLabelText={defaultLabelText} fontSize={defaultFontSize} />
-          </Sequence>
-        );
-      })}
-      <Img
-        src={overlayUrl || staticFile("GradientOverlay.png")}
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          width: "100%",
-          height: "auto",
-          pointerEvents: "none",
-          display: "block",
-        }}
-      />
+      {hasTemplate ? (
+        <div
+          style={{
+            position: "absolute",
+            overflow: "hidden",
+            left: `${templateWindow.left}%`,
+            top: `${templateWindow.top}%`,
+            width: `${templateWindow.width}%`,
+            height: `${templateWindow.height}%`,
+          }}
+        >
+          {scene}
+        </div>
+      ) : (
+        scene
+      )}
+      {overlayUrl ? (
+        <Img
+          src={overlayUrl}
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: "100%",
+            height: "auto",
+            pointerEvents: "none",
+            display: "block",
+          }}
+        />
+      ) : null}
       <CaptionOverlay
         transcript={transcript}
         audioSegments={audioSegments}

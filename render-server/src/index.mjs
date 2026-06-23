@@ -361,7 +361,7 @@ app.get('/render/status/:jobId', authMiddleware, async (req, res) => {
 // ────────────────────────────────────────────────────────────────
 app.post('/render/verticut', authMiddleware, async (req, res) => {
   try {
-    const { jobId: providedJobId, filename, project, clips, settings, overlayUrl, audioSegments } = req.body || {};
+    const { jobId: providedJobId, filename, project, clips, settings, overlayUrl, templateWindow, audioSegments } = req.body || {};
 
     if (!project || !project.audioUrl) return res.status(400).json({ error: 'project.audioUrl required' });
     if (!Array.isArray(clips)) return res.status(400).json({ error: 'clips array required' });
@@ -412,6 +412,7 @@ app.post('/render/verticut', authMiddleware, async (req, res) => {
         clips,
         settings,
         overlayUrl: overlayUrl || null,
+        templateWindow: templateWindow || null,
         audioSegments: audioSegments || project.audioSegments || null,
       },
     });
@@ -662,7 +663,7 @@ async function processRender(jobId, params) {
 // VertiCut render processor
 // ────────────────────────────────────────────────────────────────
 async function processVerticutRender(jobId, params) {
-  const { filename, project, clips, settings, overlayUrl } = params;
+  const { filename, project, clips, settings, overlayUrl, templateWindow } = params;
   const job = jobQueue.get(jobId);
   const db = await getDb();
 
@@ -706,6 +707,7 @@ async function processVerticutRender(jobId, params) {
       durationInFrames,
       fps,
       overlayUrl: overlayUrl || undefined,
+      templateWindow: templateWindow || undefined,
       audioSegments: params.audioSegments || [],
       captionTextColor: settings.captionTextColor,
       captionBgColor: settings.captionBgColor,
@@ -713,6 +715,7 @@ async function processVerticutRender(jobId, params) {
       captionPosY: settings.captionPosY,
       captionFontSize: settings.captionFontSize,
       transcript: project.transcript || [],
+      enableTransitions: settings.transitionAnimation ?? true,
     };
 
     const composition = await selectComposition({
