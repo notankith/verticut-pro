@@ -22,6 +22,7 @@ export type CompositionProps = {
   captionPosX?: number;
   captionPosY?: number;
   captionFontSize?: number;
+  showLabels?: boolean;
   transcript?: { text: string; start: number; end: number }[];
 };
 
@@ -148,6 +149,8 @@ function KenBurns({
         <Video
           src={videoUrl}
           startFrom={trimStartFrames}
+          muted={clip.muted ?? true}
+          volume={(clip.volume ?? 100) / 100}
           style={{
             width: "100%",
             height: "100%",
@@ -191,6 +194,7 @@ function ClipLayer({
   clipIndex,
   totalClips,
   enableTransitions = true,
+  showLabels = true,
 }: {
   clip: ClipDoc;
   intensity: number;
@@ -199,6 +203,7 @@ function ClipLayer({
   clipIndex: number;
   totalClips: number;
   enableTransitions?: boolean;
+  showLabels?: boolean;
 }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -274,20 +279,23 @@ function ClipLayer({
           ) : (
             <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "50%", backgroundColor: "#111" }} />
           )}
-          <div
-            style={{
-              position: "absolute",
-              top: 40,
-              left: 40,
-              color: "white",
-              fontSize,
-              fontFamily: "Inter, system-ui, sans-serif",
-              fontWeight: 600,
-              textShadow: "0 2px 8px rgba(0,0,0,0.8)",
-            }}
-          >
-            {clip.labelText || defaultLabelText}
-          </div>
+          {showLabels !== false && (
+            <div
+              style={{
+                position: "absolute",
+                top: 40,
+                left: 40,
+                color: "white",
+                fontSize,
+                fontFamily: "Inter, system-ui, sans-serif",
+                fontWeight: 600,
+                textShadow: "0 2px 8px rgba(0,0,0,0.8)",
+                zIndex: 10,
+              }}
+            >
+              {clip.labelText || defaultLabelText}
+            </div>
+          )}
         </AbsoluteFill>
       </AbsoluteFill>
     );
@@ -314,20 +322,22 @@ function ClipLayer({
           clip={clip}
           fps={fps}
         />
-        <div
-          style={{
-            position: "absolute",
-            top: 40,
-            left: 40,
-            color: "white",
-            fontSize,
-            fontFamily: "Inter, system-ui, sans-serif",
-            fontWeight: 600,
-            textShadow: "0 2px 8px rgba(0,0,0,0.8)",
-          }}
-        >
-          {clip.labelText || defaultLabelText}
-        </div>
+        {showLabels !== false && (
+          <div
+            style={{
+              position: "absolute",
+              top: 40,
+              left: 40,
+              color: "white",
+              fontSize,
+              fontFamily: "Inter, system-ui, sans-serif",
+              fontWeight: 600,
+              textShadow: "0 2px 8px rgba(0,0,0,0.8)",
+            }}
+          >
+            {clip.labelText || defaultLabelText}
+          </div>
+        )}
       </AbsoluteFill>
     </AbsoluteFill>
   );
@@ -539,8 +549,9 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
   captionTextColor,
   captionBgColor,
   captionPosX,
-  captionPosY,
-  captionFontSize,
+  captionPosY = 75,
+  captionFontSize = 36,
+  showLabels = true,
   transcript = [],
 }) => {
   const scene = (
@@ -558,6 +569,7 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
               defaultLabelText={defaultLabelText}
               fontSize={defaultFontSize}
               enableTransitions={enableTransitions}
+              showLabels={showLabels}
             />
           </Sequence>
         );

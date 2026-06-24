@@ -3,7 +3,7 @@ import { useTimelineActions } from "./hooks";
 import { uploadToR2 } from "@/lib/upload";
 import { useEffect, useRef, useState } from "react";
 import type { ClipDoc } from "@/server/mongo.server";
-import { Trash2, RefreshCw, Image as ImageIcon, Star } from "lucide-react";
+import { Trash2, RefreshCw, Image as ImageIcon, Star, VolumeX, Volume2 } from "lucide-react";
 
 const ANIMS: ClipDoc["animation"][] = ["zoom-in", "zoom-out", "pan-left", "pan-right"];
 
@@ -115,6 +115,40 @@ export function Inspector() {
   return (
     <div className="h-full overflow-y-auto space-y-4 p-3 text-xs">
       <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Clip Inspector</h3>
+
+      {clip.videoUrl && (
+        <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Video Audio</div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => updateClip(clip.id, { muted: !clip.muted })}
+              className={`p-1.5 rounded border transition-colors ${
+                clip.muted 
+                  ? "border-destructive/50 bg-destructive/10 text-destructive hover:bg-destructive/20" 
+                  : "border-border bg-panel-3 text-muted-foreground hover:bg-accent hover:text-foreground"
+              }`}
+            >
+              {clip.muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+            </button>
+            <div className="flex-1">
+              <div className="flex justify-between mb-1">
+                <label className="text-[10px] text-muted-foreground">Volume</label>
+                <span className="text-[10px] text-muted-foreground">{clip.volume ?? 100}%</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={clip.volume ?? 100}
+                disabled={clip.muted}
+                onChange={(e) => updateClip(clip.id, { volume: Number(e.target.value) })}
+                className={`w-full ${clip.muted ? 'opacity-50' : ''}`}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <div>
         <label className="mb-1 block text-muted-foreground">Animation</label>

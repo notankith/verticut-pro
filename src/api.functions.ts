@@ -38,7 +38,7 @@ const GLOBAL_SETTINGS_ID = "global";
 function defaultSettings(id: string = GLOBAL_SETTINGS_ID): SettingsDoc {
   return {
     _id: id,
-    defaultLabelText: "© WWE | © Getty Images",
+    defaultLabelText: "‎ ",
     defaultFontSize: 18,
     animationIntensity: 1,
     musicUrl: "",
@@ -47,7 +47,7 @@ function defaultSettings(id: string = GLOBAL_SETTINGS_ID): SettingsDoc {
     activeTemplateId: null,
     templateWindow: DEFAULT_TEMPLATE_WINDOW,
     presets: [
-      { id: "wwe", name: "WWE", text: "© WWE | © Getty Images", tint: "#ef4444" },
+      { id: "wwe", name: "WWE", text: "‎ ", tint: "#ef4444" },
       { id: "aew", name: "AEW", text: "© AEW | © Getty Images", tint: "#eab308" },
       { id: "custom", name: "Custom", text: "© Source", tint: "#a855f7" },
     ],
@@ -56,6 +56,7 @@ function defaultSettings(id: string = GLOBAL_SETTINGS_ID): SettingsDoc {
     captionPosX: 50,
     captionPosY: 75,
     captionFontSize: 36,
+    showLabels: true,
   };
 }
 

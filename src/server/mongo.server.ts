@@ -52,6 +52,8 @@ export type ClipDoc = {
   videoUrl?: string;
   trimStart?: number;
   trimEnd?: number;
+  muted?: boolean;
+  volume?: number;
   animation: "zoom-in" | "zoom-out" | "pan-left" | "pan-right" | "none";
   labelText: string;
   labelPresetId: string;
@@ -97,6 +99,7 @@ export type SettingsDoc = {
   captionPosX?: number;
   captionPosY?: number;
   captionFontSize?: number;
+  showLabels?: boolean;
 };
 
 export type RenderDoc = {

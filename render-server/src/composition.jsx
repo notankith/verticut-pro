@@ -57,6 +57,8 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
         <OffthreadVideo
           src={videoUrl}
           startFrom={trimStartFrames}
+          muted={clip.muted ?? true}
+          volume={(clip.volume ?? 100) / 100}
           style={{
             width: "100%",
             height: "100%",
@@ -87,7 +89,7 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
 
 const REF_DURATION_SEC = 3.5;
 
-function ClipLayer({ clip, intensity, defaultLabelText, fontSize, clipIndex, totalClips, enableTransitions = true }) {
+function ClipLayer({ clip, intensity, defaultLabelText, fontSize, clipIndex, totalClips, enableTransitions = true, showLabels = true }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const dur = Math.max(1, Math.round(clip.duration * fps));
@@ -134,6 +136,33 @@ function ClipLayer({ clip, intensity, defaultLabelText, fontSize, clipIndex, tot
           ) : (
             <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "50%", backgroundColor: "#111" }} />
           )}
+          {showLabels !== false && (
+            <div
+              style={{
+                position: "absolute",
+                top: 40,
+                left: 40,
+                color: "white",
+                fontSize,
+                fontFamily: "Inter, system-ui, sans-serif",
+                fontWeight: 600,
+                textShadow: "0 2px 8px rgba(0,0,0,0.8)",
+                zIndex: 10,
+              }}
+            >
+              {clip.labelText || defaultLabelText}
+            </div>
+          )}
+        </AbsoluteFill>
+      </AbsoluteFill>
+    );
+  }
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
+      <AbsoluteFill style={{ transform: `translate3d(${transitionX}%, ${transitionY}%, 0)`, opacity: transitionOpacity, willChange: "transform, opacity" }}>
+        <KenBurns frame={frame} duration={dur} animation={clip.animation} intensity={scaledIntensity} imageUrl={clip.imageUrl} videoUrl={clip.videoUrl} anchorX={anchorX} anchorY={anchorY} clip={clip} fps={fps} />
+        {showLabels !== false && (
           <div
             style={{
               position: "absolute",
@@ -148,29 +177,7 @@ function ClipLayer({ clip, intensity, defaultLabelText, fontSize, clipIndex, tot
           >
             {clip.labelText || defaultLabelText}
           </div>
-        </AbsoluteFill>
-      </AbsoluteFill>
-    );
-  }
-
-  return (
-    <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
-      <AbsoluteFill style={{ transform: `translate3d(${transitionX}%, ${transitionY}%, 0)`, opacity: transitionOpacity, willChange: "transform, opacity" }}>
-        <KenBurns frame={frame} duration={dur} animation={clip.animation} intensity={scaledIntensity} imageUrl={clip.imageUrl} videoUrl={clip.videoUrl} anchorX={anchorX} anchorY={anchorY} clip={clip} fps={fps} />
-        <div
-          style={{
-            position: "absolute",
-            top: 40,
-            left: 40,
-            color: "white",
-            fontSize,
-            fontFamily: "Inter, system-ui, sans-serif",
-            fontWeight: 600,
-            textShadow: "0 2px 8px rgba(0,0,0,0.8)",
-          }}
-        >
-          {clip.labelText || defaultLabelText}
-        </div>
+        )}
       </AbsoluteFill>
     </AbsoluteFill>
   );
@@ -364,7 +371,8 @@ export const VertiCutComposition = ({
   captionBgColor,
   captionPosX,
   captionPosY,
-  captionFontSize,
+  captionFontSize = 36,
+  showLabels = true,
   transcript = [],
 }) => {
   const scene = (
@@ -374,7 +382,16 @@ export const VertiCutComposition = ({
         const dur = Math.max(1, Math.round(c.duration * fps));
         return (
           <Sequence key={c.id} from={from} durationInFrames={dur}>
-            <ClipLayer clip={c} clipIndex={index} totalClips={(clips || []).length} intensity={intensity} defaultLabelText={defaultLabelText} fontSize={defaultFontSize} enableTransitions={enableTransitions} />
+            <ClipLayer
+              clip={c}
+              clipIndex={index}
+              totalClips={(clips || []).length}
+              intensity={intensity}
+              defaultLabelText={defaultLabelText}
+              fontSize={defaultFontSize}
+              enableTransitions={enableTransitions}
+              showLabels={showLabels}
+            />
           </Sequence>
         );
       })}

@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 import { usePlayerFrame } from "@/components/editor/usePlayerFrame";
-import { Film, Settings, Undo2, Redo2, Loader2, Image as ImageIcon, Play, Pause, Rewind, Clock, Plus, Minus } from "lucide-react";
+import { Film, Settings, Undo2, Redo2, Loader2, Image as ImageIcon, Play, Pause, Rewind, Clock, Plus, Minus, FileText } from "lucide-react";
 import {
   enqueueRender,
   getProject,
@@ -14,6 +14,7 @@ import {
 import { VertiCutComposition } from "@/remotion/composition";
 import { useEditor } from "@/store/editor";
 import { Timeline } from "@/components/editor/Timeline";
+import { ImportSourcingModal } from "@/components/editor/ImportSourcingModal";
 import { Inspector } from "@/components/editor/Inspector";
 import { WordTranscript } from "@/components/editor/WordTranscript";
 import { SettingsPanel } from "@/components/editor/SettingsPanel";
@@ -21,6 +22,7 @@ import { useAutoSave, useTimelineActions, findNextStart } from "@/components/edi
 import { extractAndUploadImagesFromClipboard, extractAndUploadPastedImages, uploadToR2 } from "@/lib/upload";
 import { getTemplateById, TEMPLATES } from "@/lib/templates";
 import type { AudioSegment, ClipDoc } from "@/server/mongo.server";
+
 
 const FPS = 30;
 const COMP_WIDTH = 1080;
@@ -55,6 +57,7 @@ function EditorPage() {
   const [timelineHeight, setTimelineHeight] = useState<number>(192);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [durationOpen, setDurationOpen] = useState(false);
+  const [sourcingModalOpen, setSourcingModalOpen] = useState(false);
 
   // Sync player frame -> editor currentTime
   const setEditorState = useEditor((s) => s.set);
@@ -504,6 +507,7 @@ function EditorPage() {
       captionPosX: settings.captionPosX,
       captionPosY: settings.captionPosY,
       captionFontSize: settings.captionFontSize,
+      showLabels: settings.showLabels ?? true,
       transcript,
     }),
     [
@@ -521,6 +525,7 @@ function EditorPage() {
       settings.captionPosX,
       settings.captionPosY,
       settings.captionFontSize,
+      settings.showLabels,
       clips,
       totalFrames,
       audioSegments,
@@ -561,6 +566,12 @@ function EditorPage() {
           className={`flex items-center gap-1 rounded px-2.5 py-1 text-xs ${tab === "settings" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}
         >
           <Settings className="h-3 w-3" /> Settings
+        </button>
+        <button
+          onClick={() => setSourcingModalOpen(true)}
+          className="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent/50"
+        >
+          <FileText className="h-3.5 w-3.5 text-primary" /> Import Sourcing
         </button>
         <button
           onClick={() => setDurationOpen(true)}
@@ -966,7 +977,7 @@ function EditorPage() {
                       step={0.1}
                       value={videoTrimModal.endTime}
                       onChange={(e) => {
-                        const val = Math.max(videoTrimModal.startTime + 0.1, Math.min(videoTrimModal.duration, Number(e.target.value)));
+                        const val = Math.min(videoTrimModal.startTime + 0.1, Math.min(videoTrimModal.duration, Number(e.target.value)));
                         setVideoTrimModal({ ...videoTrimModal, endTime: val });
                       }}
                       className="w-full"
@@ -1005,6 +1016,8 @@ function EditorPage() {
                         animation: "none",
                         labelText: settings.defaultLabelText || "",
                         labelPresetId: preset?.id ?? "custom",
+                        muted: true,
+                        volume: 100,
                       };
                       useEditor.getState().updateClips([...useEditor.getState().clips, newClip]);
                       setVideoTrimModal(null);
@@ -1035,6 +1048,8 @@ function EditorPage() {
       {renderJob ? (
         <RenderProgressToast job={renderJob} onDismiss={() => setRenderJob(null)} />
       ) : null}
+
+      <ImportSourcingModal open={sourcingModalOpen} onOpenChange={setSourcingModalOpen} />
     </div>
   );
 }

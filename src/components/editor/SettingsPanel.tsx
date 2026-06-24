@@ -146,7 +146,25 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs
       {subTab === "general" ? (
         <>
           <section className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Label Presets</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Label Presets</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Show Labels</span>
+                <button
+                  type="button"
+                  onClick={() => onChange({ showLabels: !(settings.showLabels ?? true) })}
+                  className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors ${
+                    (settings.showLabels ?? true) ? "bg-primary" : "bg-muted"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                      (settings.showLabels ?? true) ? "translate-x-4" : "translate-x-1"
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
             <ul className="space-y-2">
               {settings.presets.map((p, i) => (
                 <li key={p.id} className="flex items-center gap-2 rounded border border-border bg-panel p-2">

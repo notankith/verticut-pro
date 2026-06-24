@@ -47,7 +47,7 @@ export async function uploadToR2(
   return { key, url: publicUrl };
 }
 
-async function fetchAndUploadImageUrl(url: string) {
+export async function fetchAndUploadImageUrl(url: string) {
   const res = await fetch("/api/fetch-and-upload-image", {
     method: "POST",
     headers: { "content-type": "application/json" },
