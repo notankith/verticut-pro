@@ -1,60 +1,25 @@
-import yt_dlp
-import subprocess
-import glob
-import os
-import re
+from playwright.sync_api import sync_playwright
 
-download_path = r"D:\work stuff\downloads"
-ffmpeg_path = r"C:\Users\ankit\Downloads\ffmpeg.exe"
+url = "https://share.google/HL09p6Hmnb61YO9ki"
 
-user_input = input("Enter (URL START-END):\n")
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=True)
+    page = browser.new_page()
 
-try:
-    url, time_range = user_input.split()
-    start, end = time_range.split("-")
-except:
-    print("❌ Format: URL 00:07-00:12")
-    exit()
+    page.goto(url, wait_until="networkidle")
 
-# 🧠 Clean filename
-def clean_name(name):
-    return re.sub(r'[\\/*?:"<>|]', "", name)
+    # Wait until at least 2 images exist
+    page.wait_for_function(
+        "() => document.querySelectorAll('img').length >= 2"
+    )
 
-# Step 1: Get title + download FULL video
-ydl_opts = {
-    "format": "bestvideo+bestaudio",
-    "outtmpl": download_path + r"\temp.%(ext)s",
-    "quiet": False
-}
+    images = page.locator("img").evaluate_all(
+        "(imgs) => imgs.map(img => img.src)"
+    )
 
-with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-    info = ydl.extract_info(url, download=True)
-    title = clean_name(info.get("title", "video"))
+    image_url = images[1]
 
-# Step 2: Find downloaded file
-files = glob.glob(download_path + r"\temp.*")
-if not files:
-    print("❌ Download failed")
-    exit()
+    print("Image URL:")
+    print(image_url)
 
-input_file = files[0]
-output_file = os.path.join(download_path, f"{title}.mp4")
-
-# Step 3: CUT + ENCODE using ffmpeg ONLY
-cmd = [
-    ffmpeg_path,
-    "-y",
-    "-ss", start,
-    "-to", end,
-    "-i", input_file,
-    "-c:v", "libx264",
-    "-preset", "fast",
-    "-crf", "18",
-    "-pix_fmt", "yuv420p",
-    "-an",
-    output_file
-]
-
-subprocess.run(cmd)
-
-print(f"✅ Done: {output_file}")
+    browser.close()

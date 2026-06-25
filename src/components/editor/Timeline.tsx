@@ -128,16 +128,17 @@ export function Timeline({
             </div>
           </div>
 
-          {/* Media track */}
+          {/* Solids track */}
           <div
-            className="relative flex-1 min-h-[48px]"
+            className="relative h-14 shrink-0 border-b border-border bg-panel"
             style={{ width: totalWidth }}
             onPointerDown={(e) => {
               if (e.target !== e.currentTarget) return;
               startScrubFromEvent(e);
             }}
           >
-            {clips.map((c) => (
+            <div className="absolute left-2 top-1 text-[9px] font-semibold tracking-wider text-muted-foreground opacity-60 z-[1]">SOLIDS</div>
+            {clips.filter(c => c.kind === "solid").map((c) => (
               <ClipBlock
                 key={c.id}
                 clip={c}
@@ -147,6 +148,57 @@ export function Timeline({
                 onSelect={() => select(c.id)}
                 onMove={(s) => moveClip(c.id, s)}
                 onTrim={(edge, v) => trimClip(c.id, edge, v)}
+                onKeyframeClick={(t) => onSeek(t)}
+              />
+            ))}
+          </div>
+
+          {/* Texts track */}
+          <div
+            className="relative h-14 shrink-0 border-b border-border bg-panel"
+            style={{ width: totalWidth }}
+            onPointerDown={(e) => {
+              if (e.target !== e.currentTarget) return;
+              startScrubFromEvent(e);
+            }}
+          >
+            <div className="absolute left-2 top-1 text-[9px] font-semibold tracking-wider text-muted-foreground opacity-60 z-[1]">TEXTS</div>
+            {clips.filter(c => c.kind === "text").map((c) => (
+              <ClipBlock
+                key={c.id}
+                clip={c}
+                zoom={zoom}
+                tint={presetTint(c.labelPresetId)}
+                selected={selectedClipId === c.id}
+                onSelect={() => select(c.id)}
+                onMove={(s) => moveClip(c.id, s)}
+                onTrim={(edge, v) => trimClip(c.id, edge, v)}
+                onKeyframeClick={(t) => onSeek(t)}
+              />
+            ))}
+          </div>
+
+          {/* Media track */}
+          <div
+            className="relative flex-1 min-h-[48px]"
+            style={{ width: totalWidth }}
+            onPointerDown={(e) => {
+              if (e.target !== e.currentTarget) return;
+              startScrubFromEvent(e);
+            }}
+          >
+            <div className="absolute left-2 top-1 text-[9px] font-semibold tracking-wider text-muted-foreground opacity-60 z-[1]">MEDIA</div>
+            {clips.filter(c => !c.kind || c.kind === "media").map((c) => (
+              <ClipBlock
+                key={c.id}
+                clip={c}
+                zoom={zoom}
+                tint={presetTint(c.labelPresetId)}
+                selected={selectedClipId === c.id}
+                onSelect={() => select(c.id)}
+                onMove={(s) => moveClip(c.id, s)}
+                onTrim={(edge, v) => trimClip(c.id, edge, v)}
+                onKeyframeClick={(t) => onSeek(t)}
               />
             ))}
             {markers
@@ -155,6 +207,8 @@ export function Timeline({
               .map((marker, index) => (
                 <TimelineMarker key={marker.id} marker={marker} zoom={zoom} onSeek={onSeek} colorIndex={index} />
               ))}
+          </div>
+          <div className="pointer-events-none absolute inset-0 z-20">
             <Playhead playerRef={playerRef} fps={fps} zoom={zoom} onSeek={onSeek} containerRef={containerRef} />
           </div>
         </div>
@@ -298,16 +352,23 @@ function ClipBlock({
   onSelect: () => void;
   onMove: (start: number) => void;
   onTrim: (edge: "start" | "end", v: number) => void;
+  onKeyframeClick?: (time: number) => void;
 }) {
   const [drag, setDrag] = useState<null | { kind: "move" | "left" | "right" | "keyframe"; startX: number; orig: number; keyframeIndex?: number }>(null);
   const { updateClip } = useTimelineActions();
 
+  const latest = useRef({ zoom, onMove, onTrim, updateClip, clip });
+  latest.current = { zoom, onMove, onTrim, updateClip, clip };
+
   useEffect(() => {
     if (!drag) return;
+
     function move(ev: MouseEvent) {
       if (!drag) return;
+      const { zoom, onMove, onTrim, updateClip, clip } = latest.current;
       const dx = ev.clientX - drag.startX;
       const dt = dx / zoom;
+
       if (drag.kind === "move") onMove(drag.orig + dt);
       else if (drag.kind === "left") onTrim("start", drag.orig + dt);
       else if (drag.kind === "right") onTrim("end", drag.orig + dt);
@@ -318,16 +379,18 @@ function ClipBlock({
         updateClip(clip.id, { keyframes: kfs });
       }
     }
+
     function up() {
       setDrag(null);
     }
+
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
     return () => {
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
     };
-  }, [drag, zoom, onMove, onTrim, clip.id, clip.keyframes, clip.start, clip.duration, updateClip]);
+  }, [drag]);
 
   return (
     <div
@@ -364,23 +427,27 @@ function ClipBlock({
           key={idx}
           data-keyframe-index={idx}
           onMouseDown={(e) => {
+            e.preventDefault();
             e.stopPropagation();
             onSelect();
+            onKeyframeClick?.(k.time);
             setDrag({ kind: "keyframe", startX: e.clientX, orig: k.time, keyframeIndex: idx });
           }}
-          className="absolute top-1/2 -translate-y-1/2 cursor-grab hover:scale-125 transition-transform"
+          className="absolute top-1/2 -translate-y-1/2 cursor-ew-resize hover:scale-125 transition-transform"
           style={{
             left: (k.time - clip.start) * zoom,
             transform: "translate(-50%, -50%)",
           }}
           title={`KF: ${k.time.toFixed(2)}s`}
         >
-          <div className="text-yellow-400 text-base">★</div>
+          <div className="text-yellow-400 text-base pointer-events-none">★</div>
         </div>
       ))}
       
       <div className="pointer-events-none p-1.5 text-[10px] leading-tight">
-        <div className="truncate font-semibold">{clip.labelText}</div>
+        <div className="truncate font-semibold">
+          {clip.kind === "text" ? `T: ${clip.textContent || "Text"}` : clip.kind === "solid" ? "Solid Layer" : clip.labelText}
+        </div>
         <div className="absolute bottom-1 left-2 text-[9px] uppercase tracking-wide opacity-80">{clip.animation}</div>
         <div className="absolute bottom-1 right-2 text-[9px] font-mono opacity-80">{clip.duration.toFixed(2)}s</div>
       </div>

@@ -329,7 +329,7 @@ export const VertiCutComposition = ({
           <Audio src={musicUrl} volume={musicVolume} loop acceptableTimeShiftInSeconds={2} />
         </Sequence>
       ) : null}
-      {(clips || []).map((c, index) => {
+      {(clips || []).filter(c => c.kind === "solid").map((c, index) => {
         const from = Math.round(c.start * fps);
         const dur = Math.max(1, Math.round(c.duration * fps));
         return (
@@ -338,6 +338,27 @@ export const VertiCutComposition = ({
           </Sequence>
         );
       })}
+
+      {(clips || []).filter(c => c.kind === "text").map((c, index) => {
+        const from = Math.round(c.start * fps);
+        const dur = Math.max(1, Math.round(c.duration * fps));
+        return (
+          <Sequence key={c.id} from={from} durationInFrames={dur}>
+            <ClipLayer clip={c} clipIndex={index} totalClips={(clips || []).length} intensity={intensity} defaultLabelText={defaultLabelText} fontSize={defaultFontSize} />
+          </Sequence>
+        );
+      })}
+
+      {(clips || []).filter(c => !c.kind || c.kind === "media").map((c, index) => {
+        const from = Math.round(c.start * fps);
+        const dur = Math.max(1, Math.round(c.duration * fps));
+        return (
+          <Sequence key={c.id} from={from} durationInFrames={dur}>
+            <ClipLayer clip={c} clipIndex={index} totalClips={(clips || []).length} intensity={intensity} defaultLabelText={defaultLabelText} fontSize={defaultFontSize} />
+          </Sequence>
+        );
+      })}
+
       <Img
         src={overlayUrl || staticFile("GradientOverlay.png")}
         style={{

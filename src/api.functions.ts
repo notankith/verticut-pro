@@ -48,8 +48,8 @@ function defaultSettings(id: string = GLOBAL_SETTINGS_ID): SettingsDoc {
     templateWindow: DEFAULT_TEMPLATE_WINDOW,
     presets: [
       { id: "wwe", name: "WWE", text: "‎ ", tint: "#ef4444" },
-      { id: "aew", name: "AEW", text: "© AEW | © Getty Images", tint: "#eab308" },
-      { id: "custom", name: "Custom", text: "© Source", tint: "#a855f7" },
+      { id: "aew", name: "AEW", text: "‎ ", tint: "#eab308" },
+      { id: "custom", name: "Custom", text: "‎ ", tint: "#a855f7" },
     ],
     captionTextColor: "#000000",
     captionBgColor: "#ffffff",
@@ -391,6 +391,16 @@ export const enqueueRender = createServerFn({ method: "POST" })
 
     const project = await projects.findOne({ _id: data.projectId });
     if (!project) throw new Error("Project not found");
+
+    // Clean up any old "© WWE | © Getty Images" labels baked into existing clips
+    if (project.clips) {
+      for (const clip of project.clips) {
+        if (clip.labelText && clip.labelText.includes("Getty")) {
+          clip.labelText = "‎ ";
+        }
+      }
+    }
+
     const settings = await readGlobalSettings();
     const id = randomUUID();
     const filename = slugFilename(project.name);

@@ -44,12 +44,17 @@ export type ProjectDoc = {
 
 export type ClipDoc = {
   id: string;
+  kind?: "media" | "solid" | "text";
   start: number;
   duration: number;
   imageKey?: string;
   imageUrl?: string;
   videoKey?: string;
   videoUrl?: string;
+  videoDuration?: number;
+  solidColor?: string;
+  textContent?: string;
+  opacity?: number;
   trimStart?: number;
   trimEnd?: number;
   muted?: boolean;
@@ -57,20 +62,20 @@ export type ClipDoc = {
   animation: "zoom-in" | "zoom-out" | "pan-left" | "pan-right" | "none";
   labelText: string;
   labelPresetId: string;
-  // Per-clip animation intensity multiplier (overrides project/global intensity)
   intensity?: number;
-  // Anchor point for the Ken Burns transform, expressed as a percentage of
-  // the layer's box (0–100). 50/50 = center. Optional for back-compat.
   anchorX?: number;
   anchorY?: number;
-  // Split-screen: top half uses existing imageUrl (pan-left), bottom half uses a second image (pan-right)
+  posX?: number;
+  posY?: number;
+  scale?: number;
+  rotation?: number;
   splitScreen?: {
     enabled: boolean;
     bottomImageKey?: string;
     bottomImageUrl?: string;
   };
-  // Keyframes for clip-level transforms
-  keyframes?: { time: number; scale?: number; posX?: number; posY?: number; rotation?: number }[];
+  keyframes?: { time: number; scale?: number; posX?: number; posY?: number; rotation?: number; opacity?: number }[];
+  keyframedProps?: string[];
 };
 
 export type MarkerDoc = {

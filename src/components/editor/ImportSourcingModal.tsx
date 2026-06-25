@@ -40,30 +40,56 @@ export function ImportSourcingModal({ open, onOpenChange }: ImportSourcingModalP
       for (const match of matches) {
         if (!match.link) continue; // Skip matches without a link
 
-        // Fetch and upload image to R2
         let key = "";
         let url = match.link; // fallback to direct URL
+        let isVideo = match.link.match(/\.(mp4|webm|mov)$/i);
+        
         try {
           const res = await fetchAndUploadImageUrl(match.link);
           key = res.key;
           url = res.publicUrl;
+          if (key.startsWith("video/")) {
+            isVideo = true;
+          }
         } catch (e) {
-          console.warn("Failed to fetch/upload image, using direct URL", e);
+          console.warn("Failed to fetch/upload media, using direct URL", e);
         }
 
         const preset = settings.presets[0];
         
-        newClips.push({
+        const clipBase = {
           id: crypto.randomUUID(),
           start: match.start,
           duration: match.end - match.start,
-          imageUrl: url,
-          imageKey: key,
           animation: settings.animationIntensity > 0 ? "pan-left" : "none",
           labelText: settings.defaultLabelText || "",
           labelPresetId: preset?.id ?? "custom",
           intensity: settings.animationIntensity || 1,
-        });
+        } as Partial<ClipDoc>;
+        
+        if (isVideo) {
+          clipBase.videoUrl = url;
+          clipBase.videoKey = key;
+          clipBase.muted = true;
+          clipBase.volume = 100;
+          try {
+            // Fetch video duration
+            clipBase.videoDuration = await new Promise<number>((resolve, reject) => {
+              const video = document.createElement("video");
+              video.preload = "metadata";
+              video.onloadedmetadata = () => resolve(video.duration);
+              video.onerror = () => reject(new Error("Failed to load video metadata"));
+              video.src = url;
+            });
+          } catch (err) {
+            console.warn("Could not fetch video duration", err);
+          }
+        } else {
+          clipBase.imageUrl = url;
+          clipBase.imageKey = key;
+        }
+
+        newClips.push(clipBase as ClipDoc);
       }
 
       // Add to editor

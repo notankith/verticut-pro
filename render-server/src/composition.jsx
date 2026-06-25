@@ -29,43 +29,142 @@ function getTransitionTransform(kind, progress, mode) {
 function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, anchorX, anchorY, clip, fps }) {
   const t = interpolate(frame, [0, duration], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const range = ANIM_SHIFT * intensity;
-  let scale = 1.05;
+  let baseScale = 1.05;
   let txPercent = 0;
-  if (animation === "zoom-in") {
-    scale = 1 + range * 0.35 * t + 0.02;
-  } else if (animation === "zoom-out") {
-    scale = 1 + range * 0.35 + 0.02 - range * 0.35 * t;
-  } else if (animation === "pan-left") {
+  const hasKeyframes = clip.keyframes && clip.keyframes.length > 0;
+  
+  if (!hasKeyframes && animation === "zoom-in") {
+    baseScale = 1 + range * 0.35 * t + 0.02;
+  } else if (!hasKeyframes && animation === "zoom-out") {
+    baseScale = 1 + range * 0.35 + 0.02 - range * 0.35 * t;
+  } else if (!hasKeyframes && animation === "pan-left") {
     txPercent = interpolate(t, [0, 1], [range * 40, -range * 40]);
-    scale = 1;
-  } else if (animation === "pan-right") {
+    baseScale = 1;
+  } else if (!hasKeyframes && animation === "pan-right") {
     txPercent = interpolate(t, [0, 1], [-range * 40, range * 40]);
-    scale = 1;
+    baseScale = 1;
+  } else if (!hasKeyframes) {
+    baseScale = 1;
   }
 
-  const posX = Math.max(0, Math.min(100, anchorX + txPercent));
+  let kfScale = undefined;
+  let kfPosX = undefined;
+  let kfPosY = undefined;
+  let kfRot = undefined;
+  let kfOpacity = undefined;
+  if (clip.keyframes && clip.keyframes.length > 0) {
+    const localT = frame / fps;
+    const kfs = clip.keyframes
+      .map((k) => ({ ...k, local: k.time - clip.start }))
+      .filter((k) => k.local >= 0 && k.local <= duration)
+      .sort((a, b) => a.local - b.local);
+    if (kfs.length > 0) {
+      function interpProp(prop) {
+        let prev = null;
+        let next = null;
+        for (let i = 0; i < kfs.length; i++) {
+          if (kfs[i].local <= localT) prev = kfs[i];
+          if (kfs[i].local > localT) { next = kfs[i]; break; }
+        }
+        if (!prev && !next) return undefined;
+        if (!prev) return next[prop];
+        if (!next) return prev[prop];
+        const pVal = prev[prop];
+        const nVal = next[prop];
+        if (pVal == null || nVal == null) return pVal ?? nVal;
+        const alpha = (localT - prev.local) / Math.max(1e-6, next.local - prev.local);
+        return pVal + (nVal - pVal) * alpha;
+      }
+      kfScale = interpProp("scale");
+      kfPosX = interpProp("posX");
+      kfPosY = interpProp("posY");
+      kfRot = interpProp("rotation");
+      kfOpacity = interpProp("opacity");
+    }
+  }
+
+  const appliedScale = (kfScale ?? clip.scale ?? 1) * baseScale;
+  const appliedPosX = (kfPosX ?? clip.posX ?? anchorX) + txPercent;
+  const appliedPosY = kfPosY ?? clip.posY ?? anchorY;
+  const appliedOpacity = kfOpacity ?? clip.opacity ?? 1;
+
+  if (clip.kind === "solid") {
+    return (
+      <AbsoluteFill style={{ 
+        transform: `translate(-50%, -50%) translate(${appliedPosX}%, ${appliedPosY}%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        opacity: appliedOpacity,
+        backgroundColor: clip.solidColor || "#800000",
+        willChange: "transform, opacity",
+        width: "100%",
+        height: "100%",
+        transformOrigin: "center",
+      }} />
+    );
+  }
+
+  if (clip.kind === "text") {
+    return (
+      <AbsoluteFill style={{ 
+        transform: `translate(-50%, -50%) translate(${appliedPosX}%, ${appliedPosY}%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        opacity: appliedOpacity,
+        willChange: "transform, opacity",
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        transformOrigin: "center",
+      }}>
+        <div style={{
+          fontSize: 80,
+          fontWeight: 800,
+          color: "#fff",
+          fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
+          textShadow: "0 2px 10px rgba(0,0,0,0.8)",
+          textAlign: "center",
+          whiteSpace: "pre-wrap",
+        }}>
+          {clip.textContent || ""}
+        </div>
+      </AbsoluteFill>
+    );
+  }
 
   if (videoUrl) {
     const trimStartSec = (clip && clip.trimStart) || 0;
     const trimStartFrames = Math.round(trimStartSec * (fps || 30));
+    
+    const vidDurFrames = clip.videoDuration ? Math.max(1, Math.round((clip.videoDuration - trimStartSec) * (fps || 30))) : Math.max(1, duration);
+    const loopCount = clip.videoDuration ? Math.ceil(duration / vidDurFrames) : 1;
+    
+    const loops = [];
+    for (let i = 0; i < loopCount; i++) {
+      loops.push(
+        <Sequence from={i * vidDurFrames} durationInFrames={vidDurFrames} key={i}>
+          <OffthreadVideo
+            src={videoUrl}
+            startFrom={trimStartFrames}
+            muted={clip.muted ?? true}
+            volume={(clip.volume ?? 100) / 100}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              objectPosition: `${appliedPosX}% ${appliedPosY}%`,
+            }}
+          />
+        </Sequence>
+      );
+    }
+
     return (
       <AbsoluteFill style={{
-        transform: `scale(${scale})`,
+        transform: `scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        opacity: appliedOpacity,
         filter: `contrast(${CONTRAST_MULTIPLIER})`,
         willChange: "transform",
       }}>
-        <OffthreadVideo
-          src={videoUrl}
-          startFrom={trimStartFrames}
-          muted={clip.muted ?? true}
-          volume={(clip.volume ?? 100) / 100}
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            objectPosition: `${posX}% ${anchorY}%`,
-          }}
-        />
+        {loops}
       </AbsoluteFill>
     );
   }
@@ -79,9 +178,10 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
         width: "100%",
         height: "100%",
         objectFit: "cover",
-        objectPosition: `${posX}% ${anchorY}%`,
+        objectPosition: `${appliedPosX}% ${appliedPosY}%`,
         filter: `contrast(${CONTRAST_MULTIPLIER})`,
-        transform: `scale(${scale}) translate(0px, 0px)`,
+        opacity: appliedOpacity,
+        transform: `scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
       }}
     />
   );
@@ -159,7 +259,7 @@ function ClipLayer({ clip, intensity, defaultLabelText, fontSize, clipIndex, tot
   }
 
   return (
-    <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
+    <AbsoluteFill style={{ backgroundColor: clip.kind === "text" ? "transparent" : "#000", overflow: clip.kind === "text" ? "visible" : "hidden" }}>
       <AbsoluteFill style={{ transform: `translate3d(${transitionX}%, ${transitionY}%, 0)`, opacity: transitionOpacity, willChange: "transform, opacity" }}>
         <KenBurns frame={frame} duration={dur} animation={clip.animation} intensity={scaledIntensity} imageUrl={clip.imageUrl} videoUrl={clip.videoUrl} anchorX={anchorX} anchorY={anchorY} clip={clip} fps={fps} />
         {showLabels !== false && (
@@ -248,13 +348,14 @@ const CaptionOverlay = ({
 
   if (srcT < 0) return null;
 
-  // Group into max 2-word segments
+  // Group into max 3-word segments
   const segments = [];
-  for (let i = 0; i < transcript.length; i += 2) {
-    const group = transcript.slice(i, i + 2);
+  for (let i = 0; i < transcript.length; i += 3) {
+    const group = transcript.slice(i, i + 3);
     if (group.length > 0) {
       segments.push({
         words: group,
+        text: group.map((w) => w.text).join(" "),
         start: group[0].start,
         end: group[group.length - 1].end,
       });
@@ -310,45 +411,25 @@ const CaptionOverlay = ({
           }
         `}
       </style>
-      {activeSegment.words.map((word, idx) => {
-        const { scale, bgOpacity } = getWordProgress(
-          activeSegment.words,
-          idx,
-          srcT
-        );
-
-        return (
-          <div
-            key={idx}
-            style={{
-              position: "relative",
-              padding: `${captionFontSize * 0.08}px ${captionFontSize * 0.25}px`,
-              fontSize: `${captionFontSize}px`,
-              fontFamily: "'AcuminProCondensedBlack', ui-sans-serif, system-ui, sans-serif",
-              fontWeight: 900,
-              textTransform: "uppercase",
-              color: captionTextColor,
-              transform: `scale(${scale})`,
-              transformOrigin: "center center",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                backgroundColor: captionBgColor,
-                borderRadius: "9999px",
-                opacity: bgOpacity,
-                zIndex: -1,
-              }}
-            />
-            <span>{word.text}</span>
-          </div>
-        );
-      })}
+      <div
+        style={{
+          position: "relative",
+          padding: `${captionFontSize * 0.15}px ${captionFontSize * 0.4}px`,
+          fontSize: `${captionFontSize}px`,
+          fontFamily: "'AcuminProCondensedBlack', ui-sans-serif, system-ui, sans-serif",
+          fontWeight: 900,
+          textTransform: "uppercase",
+          color: captionTextColor,
+          backgroundColor: captionBgColor,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          whiteSpace: "pre-wrap",
+          textAlign: "center",
+        }}
+      >
+        <span>{activeSegment.text}</span>
+      </div>
     </div>
   );
 };
@@ -375,28 +456,24 @@ export const VertiCutComposition = ({
   showLabels = true,
   transcript = [],
 }) => {
-  const scene = (
+  const renderClips = (subset) => (
     <>
-      {(clips || []).map((c, index) => {
+      {subset.map(({ c, originalIndex }) => {
         const from = Math.round(c.start * fps);
         const dur = Math.max(1, Math.round(c.duration * fps));
         return (
           <Sequence key={c.id} from={from} durationInFrames={dur}>
-            <ClipLayer
-              clip={c}
-              clipIndex={index}
-              totalClips={(clips || []).length}
-              intensity={intensity}
-              defaultLabelText={defaultLabelText}
-              fontSize={defaultFontSize}
-              enableTransitions={enableTransitions}
-              showLabels={showLabels}
-            />
+            <ClipLayer clip={c} clipIndex={originalIndex} totalClips={clips.length} intensity={intensity} defaultLabelText={defaultLabelText} fontSize={defaultFontSize} enableTransitions={enableTransitions && c.kind !== "text" && c.kind !== "solid"} showLabels={showLabels} />
           </Sequence>
         );
       })}
     </>
   );
+
+  const clipsWithIndex = (clips || []).map((c, originalIndex) => ({ c, originalIndex }));
+  const solidClips = clipsWithIndex.filter(x => x.c.kind === "solid");
+  const mediaClips = clipsWithIndex.filter(x => !x.c.kind || x.c.kind === "media");
+  const textClips = clipsWithIndex.filter(x => x.c.kind === "text");
 
   const hasTemplate = Boolean(overlayUrl && templateWindow);
 
@@ -423,22 +500,17 @@ export const VertiCutComposition = ({
           <Audio src={musicUrl} volume={musicVolume} loop acceptableTimeShiftInSeconds={2} />
         </Sequence>
       ) : null}
+      {renderClips(solidClips)}
+
       {hasTemplate ? (
-        <div
-          style={{
-            position: "absolute",
-            overflow: "hidden",
-            left: `${templateWindow.left}%`,
-            top: `${templateWindow.top}%`,
-            width: `${templateWindow.width}%`,
-            height: `${templateWindow.height}%`,
-          }}
-        >
-          {scene}
+        <div style={{ position: "absolute", overflow: "hidden", left: `${templateWindow.left}%`, top: `${templateWindow.top}%`, width: `${templateWindow.width}%`, height: `${templateWindow.height}%` }}>
+          {renderClips(mediaClips)}
         </div>
       ) : (
-        scene
+        renderClips(mediaClips)
       )}
+
+      {renderClips(textClips)}
       {overlayUrl ? (
         <Img
           src={overlayUrl}
@@ -448,7 +520,8 @@ export const VertiCutComposition = ({
             right: 0,
             bottom: 0,
             width: "100%",
-            height: "auto",
+            height: "100%",
+            objectFit: "cover",
             pointerEvents: "none",
             display: "block",
           }}

@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 import { usePlayerFrame } from "@/components/editor/usePlayerFrame";
-import { Film, Settings, Undo2, Redo2, Loader2, Image as ImageIcon, Play, Pause, Rewind, Clock, Plus, Minus, FileText } from "lucide-react";
+import { Film, Settings, Undo2, Redo2, Loader2, Image as ImageIcon, Play, Pause, Rewind, Clock, Plus, Minus, FileText, Square, Type } from "lucide-react";
 import {
   enqueueRender,
   getProject,
@@ -77,6 +77,7 @@ function EditorPage() {
   const undo = useEditor((s) => s.undo);
   const redo = useEditor((s) => s.redo);
   const initStore = useEditor((s) => s.init);
+  const updateClips = useEditor((s) => s.updateClips);
 
   const { addImageClips, deleteClip, splitClip, splitAudioAt, deleteAudioSegment } = useTimelineActions();
 
@@ -165,6 +166,7 @@ function EditorPage() {
     (t: number) => {
       const frame = Math.max(0, Math.min(totalFrames - 1, Math.round(t * FPS)));
       playerRef.current?.seekTo(frame);
+      useEditor.getState().set({ currentTime: frame / FPS });
     },
     [totalFrames],
   );
@@ -578,6 +580,45 @@ function EditorPage() {
           className="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent/50"
         >
           <Clock className="h-3.5 w-3.5 text-primary" /> Duration ({audioDuration.toFixed(1)}s)
+        </button>
+        <div className="mx-1 h-4 w-px bg-border" />
+        <button
+          onClick={() => {
+            const start = playerRef.current?.getCurrentFrame() ? playerRef.current.getCurrentFrame() / FPS : 0;
+            updateClips((prev) => [...prev, {
+              id: crypto.randomUUID(),
+              kind: "solid",
+              start,
+              duration: 2,
+              solidColor: "#800000",
+              animation: "none",
+              labelText: "",
+              labelPresetId: "custom"
+            }]);
+          }}
+          className="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent/50"
+        >
+          <Square className="h-3.5 w-3.5 text-primary" /> New Solid
+        </button>
+        <button
+          onClick={() => {
+            const start = playerRef.current?.getCurrentFrame() ? playerRef.current.getCurrentFrame() / FPS : 0;
+            updateClips((prev) => [...prev, {
+              id: crypto.randomUUID(),
+              kind: "text",
+              start,
+              duration: audioDuration - start,
+              textContent: "Text",
+              animation: "none",
+              labelText: "",
+              labelPresetId: "custom",
+              posY: 20,
+              scale: 0.5
+            }]);
+          }}
+          className="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent/50"
+        >
+          <Type className="h-3.5 w-3.5 text-primary" /> New Text
         </button>
           <div className="ml-auto flex items-center gap-2">
           <span className="text-[10px] text-muted-foreground">

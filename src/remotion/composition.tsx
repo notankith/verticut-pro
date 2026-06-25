@@ -102,6 +102,7 @@ function KenBurns({
   let kfPosX: number | undefined = undefined;
   let kfPosY: number | undefined = undefined;
   let kfRot: number | undefined = undefined;
+  let kfOpacity: number | undefined = undefined;
   if (clip.keyframes && clip.keyframes.length > 0) {
     const localT = frame / fps;
     const kfs = clip.keyframes
@@ -109,9 +110,7 @@ function KenBurns({
       .filter((k) => k.local >= 0 && k.local <= duration)
       .sort((a, b) => a.local - b.local);
     if (kfs.length > 0) {
-      // for each property interpolate between surrounding keyframes
       function interpProp(prop: keyof typeof kfs[0]) {
-        // find surrounding
         let prev = null as any;
         let next = null as any;
         for (let i = 0; i < kfs.length; i++) {
@@ -131,53 +130,111 @@ function KenBurns({
       kfPosX = interpProp("posX");
       kfPosY = interpProp("posY");
       kfRot = interpProp("rotation");
+      kfOpacity = interpProp("opacity");
     }
   }
 
-  const appliedScale = (kfScale ?? 1) * baseScale;
-  const appliedPosX = Math.max(0, Math.min(100, (kfPosX ?? anchorX) + txPercent));
-  const appliedPosY = Math.max(0, Math.min(100, kfPosY ?? anchorY));
+  const appliedScale = (kfScale ?? clip.scale ?? 1) * baseScale;
+  const appliedPosX = (kfPosX ?? clip.posX ?? anchorX) + txPercent;
+  const appliedPosY = kfPosY ?? clip.posY ?? anchorY;
+  const appliedOpacity = kfOpacity ?? clip.opacity ?? 1;
 
-  if (videoUrl) {
-    const trimStartFrames = Math.round((clip.trimStart ?? 0) * fps);
+  if (clip.kind === "solid") {
     return (
       <AbsoluteFill style={{ 
-        transform: `scale(${appliedScale}) rotate(${kfRot ?? 0}deg)`,
-        filter: `contrast(${CONTRAST_MULTIPLIER})`,
-        willChange: "transform",
+        transform: `translate(-50%, -50%) translate(${appliedPosX}%, ${appliedPosY}%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        opacity: appliedOpacity,
+        backgroundColor: clip.solidColor || "#800000",
+        willChange: "transform, opacity",
+        width: "100%",
+        height: "100%",
+        transformOrigin: "center",
+      }} />
+    );
+  }
+
+  if (clip.kind === "text") {
+    return (
+      <AbsoluteFill style={{ 
+        transform: `translate(-50%, -50%) translate(${appliedPosX}%, ${appliedPosY}%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        opacity: appliedOpacity,
+        willChange: "transform, opacity",
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        transformOrigin: "center",
       }}>
-        <Video
-          src={videoUrl}
-          startFrom={trimStartFrames}
-          muted={clip.muted ?? true}
-          volume={(clip.volume ?? 100) / 100}
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            objectPosition: `${appliedPosX}% ${appliedPosY}%`,
-          }}
-        />
+        <div style={{
+          fontSize: 80,
+          fontWeight: 800,
+          color: "#fff",
+          fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
+          textShadow: "0 2px 10px rgba(0,0,0,0.8)",
+          textAlign: "center",
+          whiteSpace: "pre-wrap",
+        }}>
+          {clip.textContent || ""}
+        </div>
+      </AbsoluteFill>
+    );
+  }
+
+  if (videoUrl) {
+    const trimStartSec = (clip && clip.trimStart) || 0;
+    const trimStartFrames = Math.round(trimStartSec * fps);
+    
+    const vidDurFrames = clip.videoDuration ? Math.max(1, Math.round((clip.videoDuration - trimStartSec) * fps)) : Math.max(1, duration);
+    const loopCount = clip.videoDuration ? Math.ceil(duration / vidDurFrames) : 1;
+    
+    const loops = [];
+    for (let i = 0; i < loopCount; i++) {
+      loops.push(
+        <Sequence from={i * vidDurFrames} durationInFrames={vidDurFrames} key={i}>
+          <Video
+            src={videoUrl}
+            startFrom={trimStartFrames}
+            muted={clip.muted ?? true}
+            volume={(clip.volume ?? 100) / 100}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              objectPosition: `${appliedPosX}% ${appliedPosY}%`,
+            }}
+          />
+        </Sequence>
+      );
+    }
+
+    return (
+      <AbsoluteFill style={{ 
+        transform: `scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        opacity: appliedOpacity,
+        filter: `contrast(${CONTRAST_MULTIPLIER})`,
+        willChange: "transform, opacity",
+      }}>
+        {loops}
       </AbsoluteFill>
     );
   }
 
   return (
-    <AbsoluteFill style={{ 
-      transform: `scale(${appliedScale}) rotate(${kfRot ?? 0}deg)`,
-      filter: `contrast(${CONTRAST_MULTIPLIER})`,
-      willChange: "transform",
-    }}>
-      <Img
-        src={imageUrl || ""}
-        style={{
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",
-          objectPosition: `${appliedPosX}% ${appliedPosY}%`,
-        }}
-      />
-    </AbsoluteFill>
+    <Img
+      src={imageUrl || ""}
+      style={{
+        position: "absolute",
+        inset: 0,
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+        objectPosition: `${appliedPosX}% ${appliedPosY}%`,
+        filter: `contrast(${CONTRAST_MULTIPLIER})`,
+        opacity: appliedOpacity,
+        transform: `scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+      }}
+    />
   );
 }
 
@@ -302,7 +359,7 @@ function ClipLayer({
   }
 
   return (
-    <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
+    <AbsoluteFill style={{ backgroundColor: clip.kind === "text" ? "transparent" : "#000", overflow: clip.kind === "text" ? "visible" : "hidden" }}>
       <AbsoluteFill
         style={{
           transform: `translate3d(${transitionX}%, ${transitionY}%, 0)`,
@@ -427,13 +484,14 @@ const CaptionOverlay: React.FC<{
 
   if (srcT < 0) return null;
 
-  // Group into max 2-word segments
-  const segments: { words: TranscriptWord[]; start: number; end: number }[] = [];
-  for (let i = 0; i < transcript.length; i += 2) {
-    const group = transcript.slice(i, i + 2);
+  // Group into max 3-word segments
+  const segments: { words: TranscriptWord[]; start: number; end: number; text: string }[] = [];
+  for (let i = 0; i < transcript.length; i += 3) {
+    const group = transcript.slice(i, i + 3);
     if (group.length > 0) {
       segments.push({
         words: group,
+        text: group.map(w => w.text).join(" "),
         start: group[0].start,
         end: group[group.length - 1].end,
       });
@@ -489,45 +547,25 @@ const CaptionOverlay: React.FC<{
           }
         `}
       </style>
-      {activeSegment.words.map((word, idx) => {
-        const { scale, bgOpacity } = getWordProgress(
-          activeSegment.words,
-          idx,
-          srcT
-        );
-
-        return (
-          <div
-            key={idx}
-            style={{
-              position: "relative",
-              padding: `${captionFontSize * 0.08}px ${captionFontSize * 0.25}px`,
-              fontSize: `${captionFontSize}px`,
-              fontFamily: "'AcuminProCondensedBlack', ui-sans-serif, system-ui, sans-serif",
-              fontWeight: 900,
-              textTransform: "uppercase",
-              color: captionTextColor,
-              transform: `scale(${scale})`,
-              transformOrigin: "center center",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                backgroundColor: captionBgColor,
-                borderRadius: "9999px",
-                opacity: bgOpacity,
-                zIndex: -1,
-              }}
-            />
-            <span>{word.text}</span>
-          </div>
-        );
-      })}
+      <div
+        style={{
+          position: "relative",
+          padding: `${captionFontSize * 0.15}px ${captionFontSize * 0.4}px`,
+          fontSize: `${captionFontSize}px`,
+          fontFamily: "'AcuminProCondensedBlack', ui-sans-serif, system-ui, sans-serif",
+          fontWeight: 900,
+          textTransform: "uppercase",
+          color: captionTextColor,
+          backgroundColor: captionBgColor,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          whiteSpace: "pre-wrap",
+          textAlign: "center",
+        }}
+      >
+        <span>{activeSegment.text}</span>
+      </div>
     </div>
   );
 };
@@ -554,21 +592,21 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
   showLabels = true,
   transcript = [],
 }) => {
-  const scene = (
+  const renderClips = (subset: { c: typeof clips[0]; originalIndex: number }[]) => (
     <>
-      {clips.map((c, index) => {
+      {subset.map(({ c, originalIndex }) => {
         const from = Math.round(c.start * fps);
         const dur = Math.max(1, Math.round(c.duration * fps));
         return (
           <Sequence key={c.id} from={from} durationInFrames={dur}>
             <ClipLayer
               clip={c}
-              clipIndex={index}
+              clipIndex={originalIndex}
               totalClips={clips.length}
               intensity={intensity}
               defaultLabelText={defaultLabelText}
               fontSize={defaultFontSize}
-              enableTransitions={enableTransitions}
+              enableTransitions={enableTransitions && c.kind !== "text" && c.kind !== "solid"}
               showLabels={showLabels}
             />
           </Sequence>
@@ -576,6 +614,11 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
       })}
     </>
   );
+
+  const clipsWithIndex = clips.map((c, originalIndex) => ({ c, originalIndex }));
+  const solidClips = clipsWithIndex.filter(x => x.c.kind === "solid");
+  const mediaClips = clipsWithIndex.filter(x => !x.c.kind || x.c.kind === "media");
+  const textClips = clipsWithIndex.filter(x => x.c.kind === "text");
 
   const hasTemplate = Boolean(overlayUrl && templateWindow);
 
@@ -585,21 +628,25 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
           (see $id.tsx <PreviewAudio>), so the browser's audio clock is the source
           of truth. Server-side rendering uses worker/composition.jsx which keeps
           its own <Audio> tags. */}
+      {renderClips(solidClips)}
+
       {hasTemplate ? (
         <div
-          className="absolute overflow-hidden"
           style={{
+            position: "absolute",
+            overflow: "hidden",
             left: `${templateWindow!.left}%`,
             top: `${templateWindow!.top}%`,
             width: `${templateWindow!.width}%`,
             height: `${templateWindow!.height}%`,
           }}
         >
-          {scene}
+          {renderClips(mediaClips)}
         </div>
       ) : (
-        scene
+        renderClips(mediaClips)
       )}
+
       {overlayUrl ? (
         <Img
           src={overlayUrl}
@@ -609,12 +656,16 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
             right: 0,
             bottom: 0,
             width: "100%",
-            height: "auto",
+            height: "100%",
+            objectFit: "cover",
             pointerEvents: "none",
             display: "block",
           }}
         />
       ) : null}
+
+      {renderClips(textClips)}
+
       <CaptionOverlay
         transcript={transcript}
         audioSegments={audioSegments}
