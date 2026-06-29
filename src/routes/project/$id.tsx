@@ -54,7 +54,7 @@ function EditorPage() {
   const dragDepthRef = useRef(0);
 
   // Timeline height (resizable)
-  const [timelineHeight, setTimelineHeight] = useState<number>(192);
+  const [timelineHeight, setTimelineHeight] = useState<number>(320);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [durationOpen, setDurationOpen] = useState(false);
   const [sourcingModalOpen, setSourcingModalOpen] = useState(false);
@@ -588,8 +588,8 @@ function EditorPage() {
             updateClips((prev) => [...prev, {
               id: crypto.randomUUID(),
               kind: "solid",
-              start,
-              duration: 2,
+              start: 0,
+              duration: Math.max(1, audioDuration),
               solidColor: "#800000",
               animation: "none",
               labelText: "",
@@ -613,7 +613,7 @@ function EditorPage() {
               labelText: "",
               labelPresetId: "custom",
               posY: 20,
-              scale: 0.5
+              scale: 0.4
             }]);
           }}
           className="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent/50"
@@ -711,6 +711,70 @@ function EditorPage() {
                   controls={false}
                   acknowledgeRemotionLicense
                 />
+                
+                {/* Text drag overlay */}
+                {(() => {
+                  const selectedClip = useEditor.getState().clips.find(c => c.id === useEditor.getState().selectedClipId);
+                  if (selectedClip?.kind === "text") {
+                    const posX = selectedClip.posX ?? 50;
+                    const posY = selectedClip.posY ?? 50;
+                    return (
+                      <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden" style={{ borderRadius: 6 }}>
+                        <div 
+                          className="absolute pointer-events-auto border-2 border-dashed border-primary/50 cursor-grab active:cursor-grabbing hover:border-primary transition-colors flex items-center justify-center group"
+                          style={{
+                            left: `${posX}%`,
+                            top: `${posY}%`,
+                            transform: 'translate(-50%, -50%)',
+                            width: '25%', // Approximate width of text box
+                            height: '10%', // Approximate height of text box
+                            minWidth: '100px',
+                            minHeight: '40px'
+                          }}
+                          title="Drag to reposition text"
+                          onPointerDown={(e) => {
+                            e.preventDefault();
+                            const container = e.currentTarget.parentElement;
+                            if (!container) return;
+                            const rect = container.getBoundingClientRect();
+                            const startX = e.clientX;
+                            const startY = e.clientY;
+                            const startPosX = posX;
+                            const startPosY = posY;
+                            
+                            try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+
+                            const onMove = (me: PointerEvent) => {
+                              const dx = me.clientX - startX;
+                              const dy = me.clientY - startY;
+                              const newPosX = Math.max(0, Math.min(100, startPosX + (dx / rect.width) * 100));
+                              const newPosY = Math.max(0, Math.min(100, startPosY + (dy / rect.height) * 100));
+                              
+                              useEditor.getState().updateClips(prev => 
+                                prev.map(c => c.id === selectedClip.id ? { ...c, posX: newPosX, posY: newPosY } : c),
+                                false // Do not record every frame
+                              );
+                            };
+                            
+                            const onUp = (me: PointerEvent) => {
+                              try { (me.currentTarget as HTMLElement).releasePointerCapture(me.pointerId); } catch {}
+                              window.removeEventListener('pointermove', onMove);
+                              window.removeEventListener('pointerup', onUp);
+                              // Record final state
+                              const currentClips = useEditor.getState().clips;
+                              useEditor.getState().updateClips(currentClips, true);
+                            };
+                            
+                            window.addEventListener('pointermove', onMove);
+                            window.addEventListener('pointerup', onUp);
+                          }}
+                        />
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
                 <TimecodeBadge playerRef={playerRef} fps={FPS} />
               </div>
               {audioUrl ? (

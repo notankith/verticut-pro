@@ -48,88 +48,80 @@ export function matchSourcingToTranscript(
   })).filter(t => t.norm.length > 0);
 
   const results: MatchedSourcing[] = [];
-  let lastMatchIndex = 0;
+  let transcriptPointer = 0;
 
   for (const pair of pairs) {
     const searchWords = normalize(pair.text).split(' ').filter(Boolean);
-    if (searchWords.length === 0) continue;
+    if (searchWords.length === 0) {
+      console.warn(`Skipping empty sourcing text: "${pair.text}"`);
+      continue;
+    }
 
-    let bestScore = -1;
-    let bestStartIdx = -1;
-    let bestEndIdx = -1;
+    const startAnchor = searchWords.slice(0, 2);
+    const endAnchor = searchWords.slice(-2);
+    
+    let matchFound = false;
+    let i = transcriptPointer;
 
-    for (let i = lastMatchIndex; i < normTranscript.length; i++) {
-      let score = 0;
-      let sIdx = 0;
-      let tIdx = i;
-      let lastMatchedTIdx = i;
-
-      while (sIdx < searchWords.length && tIdx < normTranscript.length) {
-        // Don't let it drift too far
-        if (tIdx - i > searchWords.length * 3) break;
-
-        const sWord = searchWords[sIdx];
-        const tWord = normTranscript[tIdx].norm;
-
-        if (sWord === tWord) {
-          score += 2;
-          lastMatchedTIdx = tIdx;
-          sIdx++;
-          tIdx++;
-        } else if (tWord.includes(sWord) || sWord.includes(tWord)) {
-          score += 1;
-          lastMatchedTIdx = tIdx;
-          sIdx++;
-          tIdx++;
-        } else {
-          // Mismatch: try lookahead
-          let foundT = -1;
-          for (let k = 1; k <= 3 && tIdx + k < normTranscript.length; k++) {
-            const lookT = normTranscript[tIdx + k].norm;
-            if (lookT === sWord || lookT.includes(sWord) || sWord.includes(lookT)) {
-              foundT = k;
-              break;
-            }
-          }
-
-          let foundS = -1;
-          for (let k = 1; k <= 3 && sIdx + k < searchWords.length; k++) {
-            const lookS = searchWords[sIdx + k];
-            if (tWord === lookS || tWord.includes(lookS) || lookS.includes(tWord)) {
-              foundS = k;
-              break;
-            }
-          }
-
-          if (foundT !== -1 && (foundS === -1 || foundT <= foundS)) {
-            tIdx += foundT; // skip ahead in transcript
-          } else if (foundS !== -1) {
-            sIdx += foundS; // skip ahead in search
-          } else {
-            // Neither found, advance both
-            sIdx++;
-            tIdx++;
-          }
+    while (i < normTranscript.length) {
+      let startMatchIdx = -1;
+      
+      if (startAnchor.length === 1) {
+        if (normTranscript[i].norm === startAnchor[0]) {
+          startMatchIdx = i;
+        }
+      } else if (startAnchor.length >= 2) {
+        if (i + 1 < normTranscript.length && 
+            normTranscript[i].norm === startAnchor[0] && 
+            normTranscript[i + 1].norm === startAnchor[1]) {
+          startMatchIdx = i;
         }
       }
 
-      if (score > bestScore) {
-        bestScore = score;
-        bestStartIdx = i;
-        bestEndIdx = lastMatchedTIdx; // Use the exact index of the last matched word
+      if (startMatchIdx !== -1) {
+        let endMatchIdx = -1;
+        
+        if (searchWords.length <= 2) {
+          endMatchIdx = startMatchIdx + searchWords.length - 1;
+        } else {
+          // Limit forward search to prevent matching across the entire video
+          const searchLimit = Math.min(normTranscript.length, startMatchIdx + searchWords.length + 30);
+          
+          for (let j = startMatchIdx + 1; j < searchLimit; j++) {
+            if (endAnchor.length === 1) {
+               if (normTranscript[j].norm === endAnchor[0]) {
+                 endMatchIdx = j;
+                 break;
+               }
+            } else if (endAnchor.length >= 2) {
+               if (j + 1 < searchLimit &&
+                   normTranscript[j].norm === endAnchor[0] &&
+                   normTranscript[j + 1].norm === endAnchor[1]) {
+                 endMatchIdx = j + 1; 
+                 break;
+               }
+            }
+          }
+        }
+
+        if (endMatchIdx !== -1) {
+          results.push({
+            link: pair.link,
+            start: normTranscript[startMatchIdx].start,
+            end: normTranscript[endMatchIdx].end,
+            originalText: pair.text
+          });
+          transcriptPointer = endMatchIdx + 1;
+          matchFound = true;
+          break;
+        }
       }
+      
+      i++;
     }
 
-    // We consider it a match if it got at least some decent score (e.g., matched at least 1 word perfectly or 2 partially)
-    if (bestScore >= 2 && bestStartIdx !== -1) {
-      results.push({
-        link: pair.link,
-        start: transcript[bestStartIdx].start,
-        end: transcript[bestEndIdx].end,
-        originalText: pair.text
-      });
-      // Advance so next search starts after this match
-      lastMatchIndex = bestEndIdx + 1;
+    if (!matchFound) {
+      console.warn(`Failed to find match for sourcing text: "${pair.text}"`);
     }
   }
 

@@ -88,11 +88,11 @@ function KenBurns({
   } else if (!hasKeyframes && animation === "zoom-out") {
     baseScale = 1 + range * 0.35 + 0.02 - range * 0.35 * t;
   } else if (!hasKeyframes && animation === "pan-left") {
-    txPercent = Number(interpolate(t, [0, 1], [range * 40, -range * 40]));
-    baseScale = 1;
+    txPercent = Number(interpolate(t, [0, 1], [range * 5, -range * 5]));
+    baseScale = 1.15; // 15% scale to cover the +/- 5% translation safely
   } else if (!hasKeyframes && animation === "pan-right") {
-    txPercent = Number(interpolate(t, [0, 1], [-range * 40, range * 40]));
-    baseScale = 1;
+    txPercent = Number(interpolate(t, [0, 1], [-range * 5, range * 5]));
+    baseScale = 1.15;
   } else if (!hasKeyframes) {
     baseScale = 1;
   }
@@ -135,7 +135,9 @@ function KenBurns({
   }
 
   const appliedScale = (kfScale ?? clip.scale ?? 1) * baseScale;
-  const appliedPosX = (kfPosX ?? clip.posX ?? anchorX) + txPercent;
+  // For panning, we apply txPercent to the entire container transform, not objectPosition
+  // So appliedPosX and appliedPosY only reflect explicit keyframes or anchor positions for objectPosition
+  const appliedPosX = kfPosX ?? clip.posX ?? anchorX;
   const appliedPosY = kfPosY ?? clip.posY ?? anchorY;
   const appliedOpacity = kfOpacity ?? clip.opacity ?? 1;
 
@@ -174,6 +176,7 @@ function KenBurns({
           textShadow: "0 2px 10px rgba(0,0,0,0.8)",
           textAlign: "center",
           whiteSpace: "pre-wrap",
+          lineHeight: 1.1,
         }}>
           {clip.textContent || ""}
         </div>
@@ -212,7 +215,7 @@ function KenBurns({
 
     return (
       <AbsoluteFill style={{ 
-        transform: `scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        transform: `translate(${txPercent}%, 0%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
         opacity: appliedOpacity,
         filter: `contrast(${CONTRAST_MULTIPLIER})`,
         willChange: "transform, opacity",
@@ -234,7 +237,7 @@ function KenBurns({
         objectPosition: `${appliedPosX}% ${appliedPosY}%`,
         filter: `contrast(${CONTRAST_MULTIPLIER})`,
         opacity: appliedOpacity,
-        transform: `scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        transform: `translate(${txPercent}%, 0%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
       }}
     />
   );

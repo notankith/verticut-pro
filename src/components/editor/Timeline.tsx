@@ -188,19 +188,21 @@ export function Timeline({
             }}
           >
             <div className="absolute left-2 top-1 text-[9px] font-semibold tracking-wider text-muted-foreground opacity-60 z-[1]">MEDIA</div>
-            {clips.filter(c => !c.kind || c.kind === "media").map((c) => (
-              <ClipBlock
-                key={c.id}
-                clip={c}
-                zoom={zoom}
-                tint={presetTint(c.labelPresetId)}
-                selected={selectedClipId === c.id}
-                onSelect={() => select(c.id)}
-                onMove={(s) => moveClip(c.id, s)}
-                onTrim={(edge, v) => trimClip(c.id, edge, v)}
-                onKeyframeClick={(t) => onSeek(t)}
-              />
-            ))}
+            {clips.filter(c => c.kind !== "text" && c.kind !== "solid").map((c) => (
+                <ClipBlock
+                  key={c.id}
+                  clip={c}
+                  zoom={zoom}
+                  tint={presetTint(c.labelPresetId)}
+                  selected={selectedClipId === c.id}
+                  onSelect={() => select(c.id)}
+                  onMove={(s, r) => moveClip(c.id, s, r)}
+                  onTrim={(e, v, r) => trimClip(c.id, e, v, r)}
+                  onKeyframeClick={
+                    c.kind === "video" || c.kind === "image" ? (time) => addKeyframeAtTime(c.id, time) : undefined
+                  }
+                />
+              ))}
             {markers
               .slice()
               .sort((a, b) => a.start - b.start)
@@ -350,8 +352,8 @@ function ClipBlock({
   tint: string;
   selected: boolean;
   onSelect: () => void;
-  onMove: (start: number) => void;
-  onTrim: (edge: "start" | "end", v: number) => void;
+  onMove: (start: number, record?: boolean) => void;
+  onTrim: (edge: "start" | "end", v: number, record?: boolean) => void;
   onKeyframeClick?: (time: number) => void;
 }) {
   const [drag, setDrag] = useState<null | { kind: "move" | "left" | "right" | "keyframe"; startX: number; orig: number; keyframeIndex?: number }>(null);
@@ -369,14 +371,14 @@ function ClipBlock({
       const dx = ev.clientX - drag.startX;
       const dt = dx / zoom;
 
-      if (drag.kind === "move") onMove(drag.orig + dt);
-      else if (drag.kind === "left") onTrim("start", drag.orig + dt);
-      else if (drag.kind === "right") onTrim("end", drag.orig + dt);
+      if (drag.kind === "move") onMove(drag.orig + dt, false);
+      else if (drag.kind === "left") onTrim("start", drag.orig + dt, false);
+      else if (drag.kind === "right") onTrim("end", drag.orig + dt, false);
       else if (drag.kind === "keyframe" && drag.keyframeIndex != null && clip.keyframes) {
         const kfs = [...clip.keyframes];
         const newTime = Math.max(clip.start, Math.min(clip.start + clip.duration, drag.orig + dt));
         kfs[drag.keyframeIndex] = { ...kfs[drag.keyframeIndex], time: newTime };
-        updateClip(clip.id, { keyframes: kfs });
+        updateClip(clip.id, { keyframes: kfs }, false);
       }
     }
 
@@ -396,6 +398,10 @@ function ClipBlock({
     <div
       onMouseDown={(e) => {
         onSelect();
+        // Save current state for undo before starting drag
+        const store = useEditor.getState();
+        store.set({ past: [...store.past.slice(-50), store.clips] });
+
         if ((e.target as HTMLElement).dataset.handle === "left") {
           setDrag({ kind: "left", startX: e.clientX, orig: clip.start });
         } else if ((e.target as HTMLElement).dataset.handle === "right") {

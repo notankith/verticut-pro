@@ -1,237 +1,213 @@
-import json
+"""
+Link Resolver & Video Clipper - GUI version
+=============================================
+
+What this does:
+ - Lets you paste raw text that has "text ... link ... text ... link ..." mixed
+   together (no JSON needed - it's parsed automatically).
+ - For share.google links and other google.* links (e.g. /imgres), it resolves
+   the actual underlying image URL.
+ - For YouTube links followed by a "MM:SS-MM:SS" trim range on the same line,
+   it downloads only that section, converts to a <=720p mp4, and uploads it to
+   R2, returning a hosted URL.
+ - Anything it can't confidently resolve (Instagram, random unknown sites,
+   scrape failures) is flagged as a warning in the GUI instead of silently
+   guessing.
+ - Final output is plain text in the exact format:
+
+     text: ...
+     image: ...
+
+   with nothing else mixed in.
+
+Setup (one-time):
+    pip install boto3 python-dotenv playwright
+    playwright install chromium
+
+.env (same as before) needs, only if you use YouTube clipping:
+    R2_PUBLIC_BASE_URL=...
+    R2_BUCKET=...
+    R2_ACCOUNT_ID=...
+    R2_ACCESS_KEY_ID=...
+    R2_SECRET_ACCESS_KEY=...
+
+Optional env overrides:
+    YTDLP_PATH=C:\\path\\to\\yt-dlp.exe
+    FFMPEG_PATH=C:\\path\\to\\ffmpeg.exe   (ffprobe.exe is expected next to it)
+"""
+
 import os
 import re
+import queue
 import subprocess
 import tempfile
+import threading
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs, unquote
 
-import boto3
+import tkinter as tk
+from tkinter import ttk, scrolledtext, messagebox
+
 from dotenv import load_dotenv
-from playwright.sync_api import sync_playwright
 
-load_dotenv()  # reads .env in cwd
+load_dotenv()
 
-# ---------- Config ----------
+# ---------------- Config ----------------
 YTDLP_PATH = os.environ.get("YTDLP_PATH", r"C:\Users\ankit\Downloads\yt-dlp.exe")
 FFMPEG_PATH = os.environ.get("FFMPEG_PATH", r"C:\Users\ankit\Downloads\ffmpeg.exe")
 FFMPEG_DIR = str(Path(FFMPEG_PATH).parent)
+FFPROBE_PATH = str(
+    Path(FFMPEG_PATH).with_name(
+        "ffprobe.exe" if Path(FFMPEG_PATH).suffix.lower() == ".exe" else "ffprobe"
+    )
+)
 
-R2_PUBLIC_BASE_URL = os.environ["R2_PUBLIC_BASE_URL"].rstrip("/")
-R2_BUCKET = os.environ["R2_BUCKET"]
-R2_ACCOUNT_ID = os.environ["R2_ACCOUNT_ID"]
-R2_ACCESS_KEY_ID = os.environ["R2_ACCESS_KEY_ID"]
-R2_SECRET_ACCESS_KEY = os.environ["R2_SECRET_ACCESS_KEY"]
+R2_PUBLIC_BASE_URL = os.environ.get("R2_PUBLIC_BASE_URL", "").rstrip("/")
+R2_BUCKET = os.environ.get("R2_BUCKET", "")
+R2_ACCOUNT_ID = os.environ.get("R2_ACCOUNT_ID", "")
+R2_ACCESS_KEY_ID = os.environ.get("R2_ACCESS_KEY_ID", "")
+R2_SECRET_ACCESS_KEY = os.environ.get("R2_SECRET_ACCESS_KEY", "")
 
-YOUTUBE_RE = re.compile(r"(?:youtube\.com|youtu\.be)", re.IGNORECASE)
+URL_RE = re.compile(r"https?://\S+")
 TRIM_RE = re.compile(r"(\d{1,2}:\d{2}(?::\d{2})?)\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?)")
-
-items = [
-  {
-    "text": "Ex-NFL star Doug Martin's parents",
-    "image": "https://share.google/QxG0QXG7GbjsJkDU9"
-  },
-  {
-    "text": "filed a federal wrongful-death lawsuit",
-    "image": "https://share.google/Y3wI0M977mYQ74fMZ"
-  },
-  {
-    "text": "against the city of Oakland,",
-    "image": "https://share.google/fSqaPzj4EsmBCQVAm"
-  },
-  {
-    "text": "alleging police",
-    "image": "https://share.google/K2yeeB7tCcTKYs49e"
-  },
-  {
-    "text": "pinned the former Buccaneers running back face-first into the ground during a mental health crisis last October.",
-    "image": "https://share.google/md9Vdc8RRG9fpesN0"
-  },
-  {
-    "text": "An independent pathologist concluded",
-    "image": "https://share.google/08U3EUqYXLD93VcQ8"
-  },
-  {
-    "text": "he likely died from restrained asphyxia.",
-    "image": "https://share.google/hwgOaHPXvKE3Qw2rl"
-  },
-  {
-    "text": "The official autopsy",
-    "image": "https://share.google/K1XuCeTz1zclDmkRS"
-  },
-  {
-    "text": "still has not been released.",
-    "image": "https://share.google/uN2VyaDwrtonte64b"
-  },
-  {
-    "text": "The WNBA",
-    "image": "https://share.google/6XWm3L5MfOEQeJ4M4"
-  },
-  {
-    "text": "suspended Phoenix Mercury forward Alyssa Thomas",
-    "image": "https://share.google/l97d0QOVXjJP45sve"
-  },
-  {
-    "text": "one game after she drove her fist into Caitlin Clark's throat",
-    "image": "https://www.instagram.com/p/DaCcZx_kpyh/?igsh=eHIzbjlteHBoaThm"
-  },
-  {
-    "text": "during a second-quarter scramble, a hit referees never called live.",
-    "image": "https://share.google/WDU3XoI4wTfY5FleX"
-  },
-  {
-    "text": "Clark scored 19 in 20 minutes, left with a back injury,",
-    "image": "https://share.google/iqNofY3tv6PJBuw8m"
-  },
-  {
-    "text": "and the Fever still lost 111-109. Google this and screenshot the scoreline: phoenix mercury vs indiana fever. Then ex-NFL safety TJ Ward went on a podcast and blamed Clark herself, calling her privileged and a brat,",
-    "image": "https://share.google/KGzD1NazZOM5DMLUZ"
-  },
-  {
-    "text": "saying she needs to be nicer if she cannot physically protect herself.",
-    "image": "https://sports.ndtv.com/us/nba/ex-nfl-star-tj-ward-rips-caitlin-clark-after-wnba-suspends-alyssa-thomas-shes-privileged-and-a-brat-11692365"
-  },
-  {
-    "text": "Highlight this part: \"And if you can't fight, you better be a nice person.\" Seven of the eleven NFL stadiums hosting World Cup games this summer",
-    "image": "https://share.google/l6pLrWOZ3qEswvdq4"
-  },
-  {
-    "text": "normally run on artificial turf have",
-    "image": "https://share.google/lUOGBbyUFu1Yuti0p"
-  },
-  {
-    "text": "FIFA came in and replaced all of it with natural grass.",
-    "image": "https://share.google/rZc19QFd6cUzsIqO3"
-  },
-  {
-    "text": "A 2023 NFLPA survey showed 92% of players prefer grass,",
-    "image": "https://www.shutterstock.com/video/clip-1046966686-progress-loading-bar-0-100-transparent-background-alpha"
-  },
-  {
-    "text": "stop at 92% and George Kittle watched the US score at SoFi Stadium",
-    "image": "https://share.google/hZikAmvTTPIXMYWgi"
-  },
-  {
-    "text": "and immediately posted asking if the 49ers could have that all season.",
-    "image": "https://www.instagram.com/p/DaD2V4ykrg3/?igsh=MXNzejl5ZTZpYWVrOA=="
-  },
-  {
-    "text": "Zaire Wade,",
-    "image": "https://share.google/YrLiuKvrUuKDzgbA8"
-  },
-  {
-    "text": "24-year-old son of Hall of Famer Dwyane Wade,",
-    "image": "https://share.google/Rwp3vMCxmUXqRPZZP"
-  },
-  {
-    "text": "was arrested in Burbank at",
-    "image": "https://share.google/7kklzEegT2duFVW5g"
-  },
-  {
-    "text": "5:30 in the morning on",
-    "image": "https://share.google/ymPK6BDn9gL8LaFUP"
-  },
-  {
-    "text": "three felony counts: domestic violence,",
-    "image": "https://share.google/8bZGgGraH9PxGiSwG"
-  },
-  {
-    "text": "criminal threats",
-    "image": "https://share.google/VwIWePqqaWsiCJ8xR"
-  },
-  {
-    "text": "and false imprisonment.",
-    "image": "https://share.google/aNxbIOLwKXpSbahsw"
-  },
-  {
-    "text": "Officers found a woman with lacerations at the scene",
-    "image": "https://share.google/jXCiPganvwWUD5tSl"
-  },
-  {
-    "text": "and recovered a handgun from the home.",
-    "image": "https://share.google/eMHNaPY0AfA6SuPl4"
-  },
-  {
-    "text": "He posted $50,000 bond the same day with no formal charges filed, no statement from either Wade.",
-    "image": "https://share.google/2baPdFlv7WVn5ZKgL"
-  },
-  {
-    "text": "Michigan State's Carson Cooper",
-    "image": "https://share.google/7B6wX1h0OmRNnjZVU"
-  },
-  {
-    "text": "signed a two-way deal with the Memphis Grizzlies",
-    "image": "https://share.google/yRxKkrGqwsgIbvtQu"
-  },
-  {
-    "text": "after going undrafted, while teammate Jaxon Kohler landed an Exhibit 10 contract",
-    "image": "https://share.google/s29iRNZAMr0i4k2Fd"
-  },
-  {
-    "text": "with the Utah Jazz.",
-    "image": "https://share.google/UIdqS2GsKaIRqBfoU"
-  },
-  {
-    "text": "Cooper's deal is the stronger signal",
-    "image": "https://www.instagram.com/p/DaA3cw6ltXG/?igsh=aTRtMWIxN3JqdGJr"
-  },
-  {
-    "text": "as Memphis sees a realistic path",
-    "image": "https://share.google/7i2FDsqI6JD5zC0Gk"
-  },
-  {
-    "text": "to NBA minutes for him this season.",
-    "image": "https://share.google/rr9FdzjB9lpULvTsO"
-  },
-  {
-    "text": "Kohler's road is harder, but he shot nearly",
-    "image": "https://share.google/Dh84sDMNzBvPcwstO"
-  },
-  {
-    "text": "40% from three as a senior and consistently knows where to be on the floor.",
-    "image": "https://share.google/dghbv1CuxhlWh2Fjc"
-  },
-  {
-    "text": "The NBA",
-    "image": "https://share.google/5F44Yyd9ZelQV4ixK"
-  },
-  {
-    "text": "is pushing into Asia",
-    "image": "https://www.instagram.com/p/DUbklo-Ffjm/?img_index=1&igsh=cDd5Nzg2MDdtdm05"
-  },
-  {
-    "text": "Image 2 with a renewed focus on technology partnerships and talent development,",
-    "image": "https://youtu.be/59tSU9DdUpQ?si=pjua6j1_GRxFTgb9"
-  },
-  {
-    "text": "00:00-00:02 targeting a resurgence in a market that drove massive global growth",
-    "image": "https://youtu.be/zf0xFmtWNVY?si=lcEJQZaJr_ejqOB1"
-  },
-  {
-    "text": "00:00-00:02 during the Yao Ming era.",
-    "image": "https://youtu.be/lhgvaO7o3lE?si=s8eg6OHchDtL7td-"
-  },
-  {
-    "text": "00:00-00:01 The league is leaning on streaming deals and grassroots scouting pipelines to rebuild its footprint across China, Japan, and Southeast Asia.",
-    "image": "https://share.google/5Q7ScHtWzGguy0LHN"
-  },
-  {
-    "text": "The bet is that the next homegrown Asian star does for that market what Yao did two decades ago.",
-    "image": "https://share.google/B6OmXHUUxsNkEnDli"
-  }
-]
+YOUTUBE_RE = re.compile(r"(?:youtube\.com|youtu\.be)", re.IGNORECASE)
+DIRECT_MEDIA_RE = re.compile(
+    r"\.(jpe?g|png|gif|webp|bmp|mp4|mov|webm|avi)(\?.*)?$", re.IGNORECASE
+)
+INSTAGRAM_RE = re.compile(r"instagram\.com", re.IGNORECASE)
 
 
+# ---------------- Free-form text parsing ----------------
+def parse_freeform_text(raw_text: str):
+    """
+    Splits text like:
+        "Some text https://link1 more text https://link2 00:19-00:26 trailing"
+    into a list of {"text": ..., "url": ..., "trim": (start, end) or None}.
+    Text before a URL belongs to that URL. A trim range right after a URL on
+    the same line is captured and removed from the text stream.
+    """
+    items = []
+    pos = 0
+    matches = list(URL_RE.finditer(raw_text))
 
-# ---------- R2 client ----------
+    for m in matches:
+        text_segment = raw_text[pos:m.start()].strip()
+        url = m.group(0).rstrip(".,;:!?")  # strip stray trailing punctuation
+
+        line_end = raw_text.find("\n", m.end())
+        if line_end == -1:
+            line_end = len(raw_text)
+
+        trim = None
+        trim_match = TRIM_RE.search(raw_text, m.end(), line_end)
+        if trim_match:
+            trim = (trim_match.group(1), trim_match.group(2))
+            pos = trim_match.end()
+        else:
+            pos = m.end()
+
+        items.append({"text": text_segment, "url": url, "trim": trim})
+
+    leftover = raw_text[pos:].strip()
+    if leftover:
+        items.append({"text": leftover, "url": None, "trim": None})
+
+    return items
+
+
+# ---------------- URL classification ----------------
+def is_youtube_url(url: str) -> bool:
+    return bool(YOUTUBE_RE.search(url))
+
+
+def is_share_google(url: str) -> bool:
+    return "share.google" in url
+
+
+def is_google_domain(url: str) -> bool:
+    try:
+        host = urlparse(url).netloc.lower()
+    except Exception:
+        return False
+    return host == "google.com" or host.endswith(".google.com") or "google." in host
+
+
+def is_instagram(url: str) -> bool:
+    return bool(INSTAGRAM_RE.search(url))
+
+
+def is_direct_media(url: str) -> bool:
+    return bool(DIRECT_MEDIA_RE.search(url))
+
+
+# ---------------- Google / share.google resolution ----------------
+def extract_imgurl_param(url: str):
+    """Google's /imgres links carry the real image URL in ?imgurl=... - use it directly."""
+    try:
+        q = parse_qs(urlparse(url).query)
+        if q.get("imgurl"):
+            return unquote(q["imgurl"][0])
+    except Exception:
+        pass
+    return None
+
+
+def scrape_page_for_image(page, url: str):
+    """Same heuristic used for share.google: load the page, grab <img> srcs,
+    prefer the second image (the first is usually a generic icon/logo)."""
+    page.goto(url, wait_until="networkidle", timeout=30000)
+    page.wait_for_function("() => document.querySelectorAll('img').length >= 1", timeout=10000)
+    imgs = page.locator("img").evaluate_all("(els) => els.map(e => e.src)")
+    imgs = [i for i in imgs if i and i.startswith("http")]
+    if not imgs:
+        return None
+    return imgs[1] if len(imgs) > 1 else imgs[0]
+
+
+def resolve_google_link(page, url: str):
+    if is_share_google(url):
+        return scrape_page_for_image(page, url)
+    # plain google.com links (e.g. /imgres) - try the fast, reliable path first
+    direct = extract_imgurl_param(url)
+    if direct:
+        return direct
+    # fall back to the exact same scraping approach as share.google
+    return scrape_page_for_image(page, url)
+
+
+# ---------------- R2 ----------------
+_r2_client_holder = {}
+
+
 def get_r2_client():
-    return boto3.client(
+    if "client" in _r2_client_holder:
+        return _r2_client_holder["client"]
+    missing = [
+        name
+        for name, val in [
+            ("R2_PUBLIC_BASE_URL", R2_PUBLIC_BASE_URL),
+            ("R2_BUCKET", R2_BUCKET),
+            ("R2_ACCOUNT_ID", R2_ACCOUNT_ID),
+            ("R2_ACCESS_KEY_ID", R2_ACCESS_KEY_ID),
+            ("R2_SECRET_ACCESS_KEY", R2_SECRET_ACCESS_KEY),
+        ]
+        if not val
+    ]
+    if missing:
+        raise RuntimeError(f"Missing R2 env vars: {', '.join(missing)}")
+
+    import boto3  # imported lazily so the GUI still opens without boto3 installed
+
+    client = boto3.client(
         "s3",
         endpoint_url=f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
         aws_access_key_id=R2_ACCESS_KEY_ID,
         aws_secret_access_key=R2_SECRET_ACCESS_KEY,
         region_name="auto",
     )
+    _r2_client_holder["client"] = client
+    return client
 
 
 def upload_to_r2(client, local_path: str, key: str) -> str:
@@ -239,37 +215,36 @@ def upload_to_r2(client, local_path: str, key: str) -> str:
     return f"{R2_PUBLIC_BASE_URL}/{key}"
 
 
-# ---------- Parsing helpers ----------
-def split_url_and_note(image_field: str):
-    match = re.match(r"(\S+)\s*(.*)", image_field.strip())
-    if not match:
-        return image_field.strip(), ""
-    return match.group(1), match.group(2).strip()
+# ---------------- Time helpers ----------------
+def to_seconds(ts: str) -> float:
+    parts = [int(p) for p in ts.split(":")]
+    while len(parts) < 3:
+        parts.insert(0, 0)
+    h, m, s = parts
+    return h * 3600 + m * 60 + s
 
 
-def extract_trim(note: str):
-    """Pull a start-end trim range out of the note, if present."""
-    m = TRIM_RE.search(note)
-    if not m:
-        return None, None
-    return m.group(1), m.group(2)
+def get_duration_seconds(path: str):
+    try:
+        proc = subprocess.run(
+            [
+                FFPROBE_PATH,
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                path,
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return float(proc.stdout.strip())
+    except Exception:
+        return None
 
 
-def is_youtube_url(url: str) -> bool:
-    return bool(YOUTUBE_RE.search(url))
-
-
-# ---------- share.google ----------
-def resolve_share_google_image(page, url: str) -> str:
-    page.goto(url, wait_until="networkidle")
-    page.wait_for_function("() => document.querySelectorAll('img').length >= 2")
-    images = page.locator("img").evaluate_all("(imgs) => imgs.map(img => img.src)")
-    return images[1] if len(images) > 1 else (images[0] if images else None)
-
-
-# ---------- YouTube download + convert + upload ----------
-def download_youtube_clip(url: str, start: str, end: str, tmpdir: str) -> str:
-    """Downloads (trimmed if start/end given) <=720p video into tmpdir, returns local path."""
+# ---------------- YouTube download + trim + convert + upload ----------------
+def download_youtube_clip(url: str, start, end, tmpdir: str, log) -> str:
     out_template = os.path.join(tmpdir, "source.%(ext)s")
     cmd = [
         YTDLP_PATH,
@@ -281,7 +256,11 @@ def download_youtube_clip(url: str, start: str, end: str, tmpdir: str) -> str:
         cmd += ["--download-sections", f"*{start}-{end}", "--force-keyframes-at-cuts"]
     cmd.append(url)
 
-    subprocess.run(cmd, check=True)
+    log(f"  yt-dlp: {' '.join(cmd)}")
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        log(f"  yt-dlp stderr (tail): {proc.stderr[-600:]}")
+        raise RuntimeError(f"yt-dlp failed (exit {proc.returncode})")
 
     downloaded = list(Path(tmpdir).glob("source.*"))
     if not downloaded:
@@ -289,73 +268,276 @@ def download_youtube_clip(url: str, start: str, end: str, tmpdir: str) -> str:
     return str(downloaded[0])
 
 
-def convert_to_mp4_720p(input_path: str, tmpdir: str) -> str:
+def convert_to_mp4_720p(input_path: str, tmpdir: str, start=None, end=None, log=print) -> str:
+    """Converts to <=720p mp4. If start/end are given, applies a guaranteed
+    -ss/-t trim here using ffmpeg directly (see note in process_youtube_item
+    about why this is needed)."""
     output_path = os.path.join(tmpdir, "final.mp4")
-    cmd = [
-        FFMPEG_PATH, "-y",
-        "-i", input_path,
+    cmd = [FFMPEG_PATH, "-y"]
+
+    if start:
+        cmd += ["-ss", start]  # input-side seek = fast + accurate with re-encode below
+
+    cmd += ["-i", input_path]
+
+    if start and end:
+        duration = to_seconds(end) - to_seconds(start)
+        if duration > 0:
+            cmd += ["-t", str(duration)]
+
+    cmd += [
         "-vf", "scale=-2:'min(720,ih)'",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
         "-c:a", "aac", "-b:a", "128k",
         output_path,
     ]
-    subprocess.run(cmd, check=True)
+
+    log(f"  ffmpeg: {' '.join(cmd)}")
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        log(f"  ffmpeg stderr (tail): {proc.stderr[-600:]}")
+        raise RuntimeError(f"ffmpeg failed (exit {proc.returncode})")
     return output_path
 
 
-def process_youtube_item(url: str, start, end, r2_client) -> dict:
+def process_youtube_item(url: str, start, end, log) -> dict:
     with tempfile.TemporaryDirectory() as tmpdir:
-        local_src = download_youtube_clip(url, start, end, tmpdir)
-        local_mp4 = convert_to_mp4_720p(local_src, tmpdir)
+        local_src = download_youtube_clip(url, start, end, tmpdir, log)
+
+        trim_start, trim_end = None, None
+        if start and end:
+            expected_dur = to_seconds(end) - to_seconds(start)
+            actual_dur = get_duration_seconds(local_src)
+            # If yt-dlp's own --download-sections trim didn't actually take
+            # effect (older yt-dlp builds / some sites silently ignore it and
+            # hand back the full video), the downloaded file will be much
+            # longer than the requested clip. In that case we re-cut it for
+            # real with ffmpeg's -ss/-t during conversion. If yt-dlp's trim
+            # DID work, the file is already short, so we skip re-cutting
+            # (re-applying -ss on an already-trimmed file would seek past it).
+            if actual_dur is None or actual_dur > expected_dur + 3:
+                log(
+                    f"  trim safety net: source is "
+                    f"{'unknown' if actual_dur is None else f'{actual_dur:.1f}s'}, "
+                    f"expected ~{expected_dur:.0f}s -> re-cutting with ffmpeg"
+                )
+                trim_start, trim_end = start, end
+            else:
+                log(f"  yt-dlp section trim already applied ({actual_dur:.1f}s) - no re-cut needed")
+
+        local_mp4 = convert_to_mp4_720p(local_src, tmpdir, trim_start, trim_end, log)
+
+        r2_client = get_r2_client()
         key = f"videos/{uuid.uuid4().hex}.mp4"
         hosted_url = upload_to_r2(r2_client, local_mp4, key)
-        return {"hosted_url": hosted_url, "r2_key": key}
+        return {"hosted_url": hosted_url}
 
 
-# ---------- Main ----------
-def main():
+# ---------------- Main resolution pipeline ----------------
+def process_all(raw_text: str, log, progress_cb):
+    from playwright.sync_api import sync_playwright
+
+    parsed = parse_freeform_text(raw_text)
     results = []
-    r2_client = get_r2_client()
+    warnings = []
+    total = len(parsed)
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
-        for item in items:
-            url, note = split_url_and_note(item["image"])
-            entry = {"text": item["text"], "original_image_field": item["image"]}
+        for idx, entry in enumerate(parsed, start=1):
+            text, url, trim = entry["text"], entry["url"], entry["trim"]
+            progress_cb(idx, total, text[:60] if text else "(trailing text)")
 
-            if "share.google" in url:
-                try:
-                    resolved = resolve_share_google_image(page, url)
-                    entry["resolved_image_url"] = resolved
-                except Exception as e:
-                    entry["resolved_image_url"] = None
-                    entry["error"] = str(e)
+            if not url:
+                results.append({"text": text, "image": ""})
+                continue
 
-            elif is_youtube_url(url):
-                start, end = extract_trim(note)
-                entry["trim"] = f"{start}-{end}" if start else None
-                try:
-                    yt_result = process_youtube_item(url, start, end, r2_client)
-                    entry.update(yt_result)
-                except Exception as e:
-                    entry["hosted_url"] = None
-                    entry["error"] = str(e)
+            resolved = None
+            try:
+                if is_direct_media(url):
+                    resolved = url
 
-            else:
-                entry["resolved_image_url"] = None
-                entry["skipped_reason"] = "unrecognized link type"
+                elif is_instagram(url):
+                    warnings.append((text, url, "Instagram links can't be scraped"))
 
-            results.append(entry)
-            print(f"Processed: {item['text'][:50]!r} -> {entry}")
+                elif is_youtube_url(url):
+                    start, end = trim if trim else (None, None)
+                    if not (start and end):
+                        log(f"  no trim range found for {url}, downloading full video")
+                    yt_result = process_youtube_item(url, start, end, log)
+                    resolved = yt_result["hosted_url"]
+
+                elif is_share_google(url) or is_google_domain(url):
+                    resolved = resolve_google_link(page, url)
+                    if not resolved:
+                        warnings.append((text, url, "Could not find an image on this Google page"))
+
+                else:
+                    warnings.append((text, url, "Unsupported link type - couldn't scrape, check manually"))
+
+            except Exception as e:
+                warnings.append((text, url, f"Error: {e}"))
+                log(f"  ERROR resolving {url}: {e}")
+
+            results.append({"text": text, "image": resolved or url})
 
         browser.close()
 
-    with open("resolved_images.json", "w") as f:
-        json.dump(results, f, indent=2)
+    return results, warnings
 
-    print("\nDone. Results written to resolved_images.json")
+
+def build_output_text(results) -> str:
+    lines = []
+    for r in results:
+        lines.append(f"text: {r['text']}")
+        lines.append(f"image: {r['image']}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+# ==================== GUI ====================
+class App:
+    def __init__(self, root):
+        self.root = root
+        root.title("Link Resolver & Video Clipper")
+        root.geometry("950x850")
+
+        ttk.Label(root, text="Paste your text with links below (no JSON needed):").pack(
+            anchor="w", padx=8, pady=(8, 0)
+        )
+        self.input_box = scrolledtext.ScrolledText(root, height=10, wrap="word")
+        self.input_box.pack(fill="both", expand=False, padx=8, pady=4)
+
+        btn_frame = ttk.Frame(root)
+        btn_frame.pack(fill="x", padx=8)
+        self.process_btn = ttk.Button(btn_frame, text="Process", command=self.start_processing)
+        self.process_btn.pack(side="left")
+        self.progress_label = ttk.Label(btn_frame, text="Idle")
+        self.progress_label.pack(side="left", padx=12)
+
+        self.progress_bar = ttk.Progressbar(root, mode="determinate")
+        self.progress_bar.pack(fill="x", padx=8, pady=4)
+
+        ttk.Label(root, text="Progress log:").pack(anchor="w", padx=8)
+        self.log_box = scrolledtext.ScrolledText(root, height=7, wrap="word", state="disabled")
+        self.log_box.pack(fill="both", expand=False, padx=8, pady=4)
+
+        ttk.Label(root, text="Warnings (links that couldn't be resolved):").pack(anchor="w", padx=8)
+        self.warn_box = scrolledtext.ScrolledText(
+            root, height=5, wrap="word", state="disabled", foreground="#b00020"
+        )
+        self.warn_box.pack(fill="both", expand=False, padx=8, pady=4)
+
+        out_header = ttk.Frame(root)
+        out_header.pack(fill="x", padx=8)
+        ttk.Label(out_header, text="Output:").pack(side="left")
+        ttk.Button(out_header, text="Copy to Clipboard", command=self.copy_output).pack(side="right")
+
+        self.output_box = scrolledtext.ScrolledText(root, height=14, wrap="word")
+        self.output_box.pack(fill="both", expand=True, padx=8, pady=4)
+
+        self.msg_queue = queue.Queue()
+        self.root.after(150, self.poll_queue)
+
+    # --- callbacks passed into the worker thread ---
+    def log(self, msg):
+        self.msg_queue.put(("log", msg))
+
+    def progress_cb(self, idx, total, label):
+        self.msg_queue.put(("progress", idx, total, label))
+
+    # --- button handlers ---
+    def start_processing(self):
+        raw_text = self.input_box.get("1.0", "end").strip()
+        if not raw_text:
+            messagebox.showwarning("No input", "Please paste some text with links first.")
+            return
+
+        self.process_btn.config(state="disabled")
+        self._clear(self.log_box)
+        self._clear(self.warn_box)
+        self._clear(self.output_box)
+        self.progress_bar["value"] = 0
+        self.progress_label.config(text="Starting...")
+
+        threading.Thread(target=self._run, args=(raw_text,), daemon=True).start()
+
+    def _run(self, raw_text):
+        try:
+            results, warnings = process_all(raw_text, self.log, self.progress_cb)
+            output = build_output_text(results)
+            self.msg_queue.put(("done", output, warnings))
+        except Exception as e:
+            self.msg_queue.put(("fatal", str(e)))
+
+    def copy_output(self):
+        text = self.output_box.get("1.0", "end").strip()
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.progress_label.config(text="Output copied to clipboard.")
+
+    # --- queue polling (runs on the main/GUI thread) ---
+    def poll_queue(self):
+        try:
+            while True:
+                msg = self.msg_queue.get_nowait()
+                kind = msg[0]
+                if kind == "log":
+                    self._append(self.log_box, msg[1])
+                elif kind == "progress":
+                    _, idx, total, label = msg
+                    self.progress_bar["maximum"] = max(total, 1)
+                    self.progress_bar["value"] = idx
+                    self.progress_label.config(text=f"Processing {idx}/{total}: {label}")
+                elif kind == "done":
+                    _, output, warnings = msg
+                    self._set(self.output_box, output)
+                    if warnings:
+                        wtext = "\n".join(
+                            f"- [{url}]\n  reason: {reason}\n  text: {text}\n"
+                            for text, url, reason in warnings
+                        )
+                    else:
+                        wtext = "No warnings — everything resolved cleanly."
+                    self._set(self.warn_box, wtext)
+                    self.progress_label.config(text="Done.")
+                    self.process_btn.config(state="normal")
+                elif kind == "fatal":
+                    messagebox.showerror("Error", msg[1])
+                    self.progress_label.config(text="Failed.")
+                    self.process_btn.config(state="normal")
+        except queue.Empty:
+            pass
+        self.root.after(150, self.poll_queue)
+
+    # --- small text-widget helpers ---
+    @staticmethod
+    def _clear(box):
+        box.config(state="normal")
+        box.delete("1.0", "end")
+        box.config(state="disabled")
+
+    @staticmethod
+    def _append(box, text):
+        box.config(state="normal")
+        box.insert("end", text + "\n")
+        box.see("end")
+        box.config(state="disabled")
+
+    @staticmethod
+    def _set(box, text):
+        box.config(state="normal")
+        box.delete("1.0", "end")
+        box.insert("end", text)
+        box.config(state="disabled")
+
+
+def main():
+    root = tk.Tk()
+    App(root)
+    root.mainloop()
 
 
 if __name__ == "__main__":

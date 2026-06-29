@@ -89,9 +89,17 @@ export const useEditor = create<EditorState>((set, get) => ({
       past: [],
       future: [],
       // Initialize audioSegments: if they exist on project, use them, otherwise fallback to one mapping of full audio
-      audioSegments: (p.audioSegments && p.audioSegments.length > 0)
-        ? p.audioSegments
-        : [{ id: crypto.randomUUID(), srcStart: 0, duration: p.audioDuration ?? 0, projStart: 0 }],
+      audioSegments: (() => {
+        if (p.audioSegments && p.audioSegments.length > 0) {
+          // If the project was created but audioDuration was 0 (pending transcript),
+          // the single segment might still have duration 0. We should update it here.
+          if (p.audioSegments.length === 1 && p.audioSegments[0].duration === 0 && p.audioDuration > 0) {
+            return [{ ...p.audioSegments[0], duration: p.audioDuration }];
+          }
+          return p.audioSegments;
+        }
+        return [{ id: crypto.randomUUID(), srcStart: 0, duration: p.audioDuration ?? 0, projStart: 0 }];
+      })(),
     }),
   updateClips: (next, record = true) => {
     const prev = get().clips;

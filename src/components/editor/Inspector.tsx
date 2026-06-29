@@ -366,93 +366,90 @@ export function Inspector() {
                   </>
                 )}
               </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <label className="text-[11px] text-muted-foreground">Position X (%)</label>
-              <div className="flex items-center gap-1.5">
-                <div className="w-16">
-                  <DraggableNumberInput
-                    min={-100}
-                    max={200}
-                    step={1}
-                    value={interpClipProp(clip, "posX", currentTime) ?? clip.posX ?? 50}
-                    onChange={(v) => handlePropChange("posX", v)}
-                  />
+          </div>
+          
+          { (clip.kind === "text" || clip.kind === "solid") && (
+            <>
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] text-muted-foreground">Position X (%)</label>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-16">
+                    <DraggableNumberInput
+                      min={-100}
+                      max={200}
+                      step={1}
+                      value={interpClipProp(clip, "posX", currentTime) ?? clip.posX ?? 50}
+                      onChange={(v) => handlePropChange("posX", v)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => addRemoveKeyframe("posX")}
+                    className={`rounded p-1 transition-colors ${
+                      hasKeyframeAtCurrentTime("posX")
+                        ? "text-primary hover:bg-primary/20"
+                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    }`}
+                    disabled={!clip.keyframedProps?.includes("posX")}
+                    title="Add/Remove Keyframe at Playhead"
+                  >
+                    <Diamond className="h-3.5 w-3.5 fill-current" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleKeyframe("posX")}
+                    className={`rounded p-1 transition-colors ${
+                      clip.keyframedProps?.includes("posX")
+                        ? "text-yellow-500 bg-yellow-500/20 hover:bg-yellow-500/30"
+                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    }`}
+                    title="Toggle Position X Keyframing"
+                  >
+                    <Star className="h-3.5 w-3.5 fill-current" />
+                  </button>
                 </div>
-                {clip.kind !== "text" && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => addRemoveKeyframe("posX")}
-                      className={`rounded p-1 transition-colors ${
-                        hasKeyframeAtCurrentTime("posX")
-                          ? "text-primary hover:bg-primary/20"
-                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                      }`}
-                      disabled={!clip.keyframedProps?.includes("posX")}
-                      title="Add/Remove Keyframe at Playhead"
-                    >
-                      <Diamond className="h-3.5 w-3.5 fill-current" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => toggleKeyframe("posX")}
-                      className={`rounded p-1 transition-colors ${
-                        clip.keyframedProps?.includes("posX")
-                          ? "text-yellow-500 bg-yellow-500/20 hover:bg-yellow-500/30"
-                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                      }`}
-                      title="Toggle Position X Keyframing"
-                    >
-                      <Star className="h-3.5 w-3.5 fill-current" />
-                    </button>
-                  </>
-                )}
               </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <label className="text-[11px] text-muted-foreground">Position Y (%)</label>
-              <div className="flex items-center gap-1.5">
-                <div className="w-16">
-                  <DraggableNumberInput
-                    min={-100}
-                    max={200}
-                    step={1}
-                    value={interpClipProp(clip, "posY", currentTime) ?? clip.posY ?? 50}
-                    onChange={(v) => handlePropChange("posY", v)}
-                  />
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] text-muted-foreground">Position Y (%)</label>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-16">
+                    <DraggableNumberInput
+                      min={-100}
+                      max={200}
+                      step={1}
+                      value={interpClipProp(clip, "posY", currentTime) ?? clip.posY ?? 50}
+                      onChange={(v) => handlePropChange("posY", v)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => addRemoveKeyframe("posY")}
+                    className={`rounded p-1 transition-colors ${
+                      hasKeyframeAtCurrentTime("posY")
+                        ? "text-primary hover:bg-primary/20"
+                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    }`}
+                    disabled={!clip.keyframedProps?.includes("posY")}
+                    title="Add/Remove Keyframe at Playhead"
+                  >
+                    <Diamond className="h-3.5 w-3.5 fill-current" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleKeyframe("posY")}
+                    className={`rounded p-1 transition-colors ${
+                      clip.keyframedProps?.includes("posY")
+                        ? "text-yellow-500 bg-yellow-500/20 hover:bg-yellow-500/30"
+                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    }`}
+                    title="Toggle Position Y Keyframing"
+                  >
+                    <Star className="h-3.5 w-3.5 fill-current" />
+                  </button>
                 </div>
-                {clip.kind !== "text" && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => addRemoveKeyframe("posY")}
-                      className={`rounded p-1 transition-colors ${
-                        hasKeyframeAtCurrentTime("posY")
-                          ? "text-primary hover:bg-primary/20"
-                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                      }`}
-                      disabled={!clip.keyframedProps?.includes("posY")}
-                      title="Add/Remove Keyframe at Playhead"
-                    >
-                      <Diamond className="h-3.5 w-3.5 fill-current" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => toggleKeyframe("posY")}
-                      className={`rounded p-1 transition-colors ${
-                        clip.keyframedProps?.includes("posY")
-                          ? "text-yellow-500 bg-yellow-500/20 hover:bg-yellow-500/30"
-                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                      }`}
-                      title="Toggle Position Y Keyframing"
-                    >
-                      <Star className="h-3.5 w-3.5 fill-current" />
-                    </button>
-                  </>
-                )}
               </div>
-            </div>
+            </>
+          )}
           </div>
         </div>
       )}
@@ -486,7 +483,7 @@ export function Inspector() {
         </div>
       )}
 
-      {clip.kind !== "text" && (
+      {clip.kind !== "text" && clip.kind !== "solid" && (
         <>
           <div>
         <label className="mb-1 block text-muted-foreground">Animation</label>
