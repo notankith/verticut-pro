@@ -161,12 +161,12 @@ export function useTimelineActions() {
       let cursor = findNextStart(clipsRef.current);
       const newClips: ClipDoc[] = [];
       for (const img of images) {
+        const isVideo = img.url.match(/\.(mp4|webm|mov|mkv)$/i) || img.url.includes("/video/");
         const c: ClipDoc = {
           id: crypto.randomUUID(),
           start: cursor,
           duration: 3.5,
-          imageUrl: img.url,
-          imageKey: img.key,
+          ...(isVideo ? { videoUrl: img.url, videoKey: img.key } : { imageUrl: img.url, imageKey: img.key }),
           animation: "zoom-in",
           intensity: settings.animationIntensity,
           labelText: preset?.text ?? settings.defaultLabelText,
@@ -190,53 +190,63 @@ export function useTimelineActions() {
   const moveClip = useCallback(
     (id: string, newStart: number) => {
       updateClips((prev) => {
-        const list = [...prev].sort((a, b) => a.start - b.start);
-        const idx = list.findIndex((c) => c.id === id);
+        const idx = prev.findIndex((c) => c.id === id);
         if (idx < 0) return prev;
-        const c = list[idx];
+        const c = prev[idx];
         const dur = c.duration;
-        let s = Math.max(0, newStart);
-        const before = list[idx - 1];
-        const after = list[idx + 1];
-        const beforeEnd = before ? before.start + before.duration : 0;
-        const afterStart = after ? after.start : Math.max(audioDuration, s + dur);
-        // Snap
+        
+        const othersToSnap = prev.filter(o => o.id !== id);
+        
+        let target = Math.max(0, newStart);
         const SNAP = 8 / (useEditor.getState().zoom || 60);
-        if (Math.abs(s - beforeEnd) < SNAP) s = beforeEnd;
-        if (Math.abs(s + dur - afterStart) < SNAP) s = afterStart - dur;
-        // Clamp to no overlap
-        if (s < beforeEnd) s = beforeEnd;
-        if (s + dur > afterStart) s = afterStart - dur;
-        list[idx] = { ...c, start: s };
+
+        let snappedPos = target;
+        let nearestSnapDist = SNAP;
+        for (const o of othersToSnap) {
+          const d1 = Math.abs(target - (o.start + o.duration));
+          if (d1 < nearestSnapDist) { snappedPos = o.start + o.duration; nearestSnapDist = d1; }
+          const d2 = Math.abs((target + dur) - o.start);
+          if (d2 < nearestSnapDist) { snappedPos = o.start - dur; nearestSnapDist = d2; }
+          const d3 = Math.abs(target - o.start);
+          if (d3 < nearestSnapDist) { snappedPos = o.start; nearestSnapDist = d3; }
+          const d4 = Math.abs((target + dur) - (o.start + o.duration));
+          if (d4 < nearestSnapDist) { snappedPos = o.start + o.duration - dur; nearestSnapDist = d4; }
+        }
+        
+        target = Math.max(0, snappedPos);
+        
+        const list = [...prev];
+        list[idx] = { ...c, start: target };
         return list;
       });
     },
-    [updateClips, audioDuration],
+    [updateClips],
   );
 
   const trimClip = useCallback(
     (id: string, edge: "start" | "end", newValue: number) => {
       updateClips((prev) => {
-        const list = [...prev].sort((a, b) => a.start - b.start);
-        const idx = list.findIndex((c) => c.id === id);
-        if (idx < 0) return prev;
-        const c = list[idx];
-        const before = list[idx - 1];
-        const after = list[idx + 1];
-        const beforeEnd = before ? before.start + before.duration : 0;
-        const afterStart = after ? after.start : Math.max(audioDuration || 9999, c.start + c.duration);
+        const c = prev.find((x) => x.id === id);
+        if (!c) return prev;
+        
+        let newStart = c.start;
+        let newDur = c.duration;
+        
         if (edge === "start") {
-          let s = Math.max(beforeEnd, Math.min(c.start + c.duration - 0.5, newValue));
-          const dur = c.start + c.duration - s;
-          list[idx] = { ...c, start: s, duration: dur };
+          newStart = Math.max(0, Math.min(c.start + c.duration - 0.5, newValue));
+          newDur = c.start + c.duration - newStart;
         } else {
-          const end = Math.min(afterStart, Math.max(c.start + 0.5, newValue));
-          list[idx] = { ...c, duration: end - c.start };
+          const end = Math.max(c.start + 0.5, newValue);
+          newDur = end - c.start;
         }
+        
+        const list = [...prev];
+        const globalIdx = list.findIndex(x => x.id === id);
+        list[globalIdx] = { ...c, start: newStart, duration: newDur };
         return list;
       });
     },
-    [updateClips, audioDuration],
+    [updateClips],
   );
 
   const deleteClip = useCallback(

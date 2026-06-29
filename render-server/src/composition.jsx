@@ -130,7 +130,9 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
     );
   }
 
-  if (videoUrl) {
+  const actualVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
+
+  if (actualVideoUrl) {
     const trimStartSec = (clip && clip.trimStart) || 0;
     const trimStartFrames = Math.round(trimStartSec * (fps || 30));
     
@@ -142,7 +144,7 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
       loops.push(
         <Sequence from={i * vidDurFrames} durationInFrames={vidDurFrames} key={i}>
           <OffthreadVideo
-            src={videoUrl}
+            src={actualVideoUrl}
             startFrom={trimStartFrames}
             muted={clip.muted ?? true}
             volume={(clip.volume ?? 100) / 100}

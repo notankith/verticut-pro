@@ -181,7 +181,9 @@ function KenBurns({
     );
   }
 
-  if (videoUrl) {
+  const actualVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
+
+  if (actualVideoUrl) {
     const trimStartSec = (clip && clip.trimStart) || 0;
     const trimStartFrames = Math.round(trimStartSec * fps);
     
@@ -193,7 +195,7 @@ function KenBurns({
       loops.push(
         <Sequence from={i * vidDurFrames} durationInFrames={vidDurFrames} key={i}>
           <Video
-            src={videoUrl}
+            src={actualVideoUrl}
             startFrom={trimStartFrames}
             muted={clip.muted ?? true}
             volume={(clip.volume ?? 100) / 100}

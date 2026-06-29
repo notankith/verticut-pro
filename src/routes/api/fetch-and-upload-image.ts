@@ -6,11 +6,14 @@ export const Route = createFileRoute("/api/fetch-and-upload-image")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        let body: { url: string };
+        let body: Partial<{ url: string }> = {};
         try {
-          body = await request.json();
-        } catch {
-          return new Response("Bad JSON", { status: 400 });
+          const text = await request.text();
+          if (text) {
+            body = JSON.parse(text);
+          }
+        } catch (err) {
+          return new Response(`Bad JSON Error: ${err}`, { status: 400 });
         }
         if (!body?.url || !/^https?:\/\//i.test(body.url)) return new Response("Invalid URL", { status: 400 });
         const resp = await fetch(body.url);

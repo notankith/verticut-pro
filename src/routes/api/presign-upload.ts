@@ -6,16 +6,20 @@ export const Route = createFileRoute("/api/presign-upload")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        let body: { kind: string; ext: string; contentType: string };
+        let body: Partial<{ kind: string; ext: string; contentType: string }> = {};
         try {
-          body = await request.json();
-        } catch {
-          return new Response("Bad JSON", { status: 400 });
+          // In some serverless environments, if request.json() fails, we might want to know why.
+          const text = await request.text();
+          if (text) {
+            body = JSON.parse(text);
+          }
+        } catch (err) {
+          return new Response(`Bad JSON Error: ${err}`, { status: 400 });
         }
 
         const { kind, ext, contentType } = body;
         if (!kind || !ext || !contentType) {
-          return new Response("Missing fields: kind, ext, contentType", { status: 400 });
+          return new Response(`Missing fields: kind=${kind}, ext=${ext}, contentType=${contentType}`, { status: 400 });
         }
 
         const id = randomUUID();

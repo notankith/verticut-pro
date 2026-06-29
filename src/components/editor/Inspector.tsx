@@ -56,6 +56,18 @@ export function Inspector() {
   const splitBottomRef = useRef<HTMLInputElement>(null);
   const clip = clips.find((c) => c.id === selectedClipId);
   const audioSegment = audioSegments.find((s) => s.id === selectedClipId);
+  const [timingError, setTimingError] = useState<string | null>(null);
+
+  const handleTimingChange = (newStart: number, newEnd: number) => {
+    setTimingError(null);
+    if (!clip) return;
+    if (newEnd <= newStart) {
+      setTimingError("Invalid (duration <= 0)");
+      return;
+    }
+    
+    updateClip(clip.id, { start: newStart, duration: newEnd - newStart });
+  };
 
   const interpClipProp = (clip: ClipDoc, prop: "posX" | "posY" | "scale" | "rotation" | "opacity", time: number) => {
     if (!clip.keyframes || clip.keyframes.length === 0) return undefined;
@@ -251,32 +263,36 @@ export function Inspector() {
     <div className="h-full overflow-y-auto space-y-4 p-3 text-xs">
       <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Clip Inspector</h3>
 
-      <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">
-        <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Timing</div>
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="mb-0.5 block text-muted-foreground">Start Time (s)</label>
-            <DraggableNumberInput
-              step={0.1}
-              min={0}
-              max={999}
-              value={clip.start}
-              onChange={(v) => updateClip(clip.id, { start: v })}
-            />
+      {clip.kind === "text" && (
+        <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Layer Duration</div>
+            {timingError && <span className="text-[10px] text-destructive font-semibold truncate ml-2">{timingError}</span>}
           </div>
-          <div>
-            <label className="mb-0.5 block text-muted-foreground">Duration (s)</label>
-            <input
-              type="number"
-              min={0.1}
-              step={0.1}
-              value={Number(clip.duration.toFixed(2))}
-              onChange={(e) => updateClip(clip.id, { duration: Math.max(0.1, Number(e.target.value)) })}
-              className="w-full rounded border border-border bg-panel-3 px-2 py-1 font-mono text-[10px]"
-            />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="mb-0.5 block text-muted-foreground">Start Time (s)</label>
+              <DraggableNumberInput
+                step={0.1}
+                min={0}
+                max={999}
+                value={clip.start}
+                onChange={(v) => handleTimingChange(v, clip.start + clip.duration)}
+              />
+            </div>
+            <div>
+              <label className="mb-0.5 block text-muted-foreground">End Time (s)</label>
+              <DraggableNumberInput
+                step={0.1}
+                min={clip.start + 0.1}
+                max={999}
+                value={clip.start + clip.duration}
+                onChange={(v) => handleTimingChange(clip.start, v)}
+              />
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {clip.kind === "text" && (
         <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">

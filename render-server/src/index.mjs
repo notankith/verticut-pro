@@ -827,7 +827,6 @@ async function recoverOrphanedJobs() {
     const orphaned = await db.collection('render_jobs')
       .find({ status: { $in: ['queued', 'rendering'] } })
       .sort({ created_at: 1 })
-      .limit(20)
       .toArray();
     
     if (orphaned.length === 0) {
@@ -835,70 +834,24 @@ async function recoverOrphanedJobs() {
       return;
     }
     
-    log('RECOVERY', `Found ${orphaned.length} orphaned job(s), re-queuing...`);
+    log('RECOVERY', `Found ${orphaned.length} orphaned job(s), marking as failed...`);
     
     for (const job of orphaned) {
       const jobId = String(job._id);
-      let params;
-
-      if (job.kind === 'verticut') {
-        if (!job.input?.project || !Array.isArray(job.input?.clips)) {
-          log('RECOVERY', `Skipping verticut job ${jobId} — missing input`);
-          await db.collection('render_jobs').updateOne(
-            { _id: jobId },
-            { $set: { status: 'failed', error: 'Missing verticut input (orphan recovery)', failed_at: new Date() } }
-          );
-          continue;
-        }
-        params = {
-          kind: 'verticut',
-          filename: job.filename || `${jobId}.mp4`,
-          project: job.input.project,
-          clips: job.input.clips,
-          settings: job.input.settings || {},
-          overlayUrl: job.input.overlayUrl || null,
-        };
-      } else {
-        params = {
-          uploadId: job.upload_id,
-          videoUrl: job.input?.videoUrl || job.source_media_url,
-          words: job.input?.words || [],
-          template: job.input?.template || 'velar',
-          compositionId: TEMPLATE_TO_COMPOSITION[job.input?.template || 'velar'] || 'CaptionedVideo',
-          templateStyle: job.input?.templateStyle || getDefaultStyleForTemplate(job.input?.template || 'velar'),
-          sourceMediaUrl: job.source_media_url || job.input?.videoUrl,
-        };
-        if (!params.words || params.words.length === 0) {
-          log('RECOVERY', `Skipping job ${jobId} — no words data`);
-          await db.collection('render_jobs').updateOne(
-            { _id: jobId },
-            { $set: { status: 'failed', error: 'No words data (orphan recovery)', failed_at: new Date() } }
-          );
-          continue;
-        }
-      }
-
-      jobQueue.set(jobId, {
-        jobId,
-        uploadId: job.upload_id || job.project_id || jobId,
-        status: 'queued',
-        progress: 0,
-        outputUrl: null,
-        error: null,
-        createdAt: job.created_at,
-      });
-
       await db.collection('render_jobs').updateOne(
         { _id: jobId },
-        { $set: { status: 'queued' } }
+        { $set: { status: 'failed', error: 'Render server restarted', failed_at: new Date() } }
       );
-
-      renderQueue.push({ jobId, params });
-      log('RECOVERY', `Re-queued ${job.kind || 'caption'} job ${jobId}`);
+      if (job.upload_id) {
+        try {
+          await db.collection('uploads').updateOne(
+            { _id: new ObjectId(job.upload_id) },
+            { $set: { caption_status: 'render_failed', render_error: 'Render server restarted' } }
+          );
+        } catch { /* ignore */ }
+      }
+      log('RECOVERY', `Marked ${job.kind || 'caption'} job ${jobId} as failed`);
     }
-    
-    // Kick off processing
-    setImmediate(processNextJob);
   } catch (err) {
     log('RECOVERY_ERROR', err.message);
   }
