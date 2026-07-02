@@ -56,72 +56,84 @@ export function matchSourcingToTranscript(
       console.warn(`Skipping empty sourcing text: "${pair.text}"`);
       continue;
     }
-
-    const startAnchor = searchWords.slice(0, 2);
-    const endAnchor = searchWords.slice(-2);
-    
+    // Try to find a contiguous or near-contiguous match of the search words
     let matchFound = false;
-    let i = transcriptPointer;
+    const maxExtraWindow = 30; // allow some slack for longer phrases
+    const maxGapPerWord = 3; // allow small gaps between words when necessary
 
-    while (i < normTranscript.length) {
-      let startMatchIdx = -1;
-      
-      if (startAnchor.length === 1) {
-        if (normTranscript[i].norm === startAnchor[0]) {
-          startMatchIdx = i;
-        }
-      } else if (startAnchor.length >= 2) {
-        if (i + 1 < normTranscript.length && 
-            normTranscript[i].norm === startAnchor[0] && 
-            normTranscript[i + 1].norm === startAnchor[1]) {
-          startMatchIdx = i;
-        }
-      }
+    for (let i = transcriptPointer; i < normTranscript.length && !matchFound; i++) {
+      if (normTranscript[i].norm !== searchWords[0]) continue;
 
-      if (startMatchIdx !== -1) {
-        let endMatchIdx = -1;
-        
-        if (searchWords.length <= 2) {
-          endMatchIdx = startMatchIdx + searchWords.length - 1;
+      // Attempt to match subsequent words allowing small gaps
+      let lastIdx = i;
+      let matched = 1;
+      let j = i + 1;
+      const windowLimit = Math.min(normTranscript.length, i + searchWords.length + maxExtraWindow);
+
+      while (matched < searchWords.length && j < windowLimit) {
+        if (normTranscript[j].norm === searchWords[matched]) {
+          lastIdx = j;
+          matched++;
+          j++;
         } else {
-          // Limit forward search to prevent matching across the entire video
-          const searchLimit = Math.min(normTranscript.length, startMatchIdx + searchWords.length + 30);
-          
-          for (let j = startMatchIdx + 1; j < searchLimit; j++) {
-            if (endAnchor.length === 1) {
-               if (normTranscript[j].norm === endAnchor[0]) {
-                 endMatchIdx = j;
-                 break;
-               }
-            } else if (endAnchor.length >= 2) {
-               if (j + 1 < searchLimit &&
-                   normTranscript[j].norm === endAnchor[0] &&
-                   normTranscript[j + 1].norm === endAnchor[1]) {
-                 endMatchIdx = j + 1; 
-                 break;
-               }
-            }
+          // allow skipping a few non-matching words
+          let k = j + 1;
+          let foundAhead = -1;
+          while (k < Math.min(windowLimit, j + maxGapPerWord + 1)) {
+            if (normTranscript[k].norm === searchWords[matched]) { foundAhead = k; break; }
+            k++;
+          }
+          if (foundAhead !== -1) {
+            lastIdx = foundAhead;
+            matched++;
+            j = foundAhead + 1;
+          } else {
+            j++;
           }
         }
-
-        if (endMatchIdx !== -1) {
-          results.push({
-            link: pair.link,
-            start: normTranscript[startMatchIdx].start,
-            end: normTranscript[endMatchIdx].end,
-            originalText: pair.text
-          });
-          transcriptPointer = endMatchIdx + 1;
-          matchFound = true;
-          break;
-        }
       }
-      
-      i++;
+
+      if (matched === searchWords.length) {
+        results.push({
+          link: pair.link,
+          start: normTranscript[i].start,
+          end: normTranscript[lastIdx].end,
+          originalText: pair.text,
+        });
+        transcriptPointer = lastIdx + 1;
+        matchFound = true;
+        break;
+      }
     }
 
     if (!matchFound) {
-      console.warn(`Failed to find match for sourcing text: "${pair.text}"`);
+      // As a fallback, try a loose substring search on the joined normalized transcript
+      const joined = normTranscript.map((t) => t.norm).join(' ');
+      const needle = searchWords.join(' ');
+      const idx = joined.indexOf(needle);
+      if (idx !== -1) {
+        // Map character index back to word indices
+        let charCursor = 0;
+        let startWord = -1;
+        let endWord = -1;
+        for (let w = 0; w < normTranscript.length; w++) {
+          const token = normTranscript[w].norm;
+          if (charCursor === idx) startWord = w;
+          charCursor += token.length + 1; // token + space
+          if (charCursor > idx && startWord === -1) startWord = w; // fallback
+          if (charCursor >= idx + needle.length) { endWord = w; break; }
+        }
+        if (startWord !== -1 && endWord === -1) endWord = normTranscript.length - 1;
+        if (startWord !== -1 && endWord !== -1) {
+          results.push({ link: pair.link, start: normTranscript[startWord].start, end: normTranscript[endWord].end, originalText: pair.text });
+          transcriptPointer = endWord + 1;
+          matchFound = true;
+        }
+      }
+
+      if (!matchFound) {
+        console.warn(`Failed to find match for sourcing text: "${pair.text}"`);
+      }
     }
   }
 

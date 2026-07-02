@@ -245,6 +245,15 @@ def get_duration_seconds(path: str):
 
 # ---------------- YouTube download + trim + convert + upload ----------------
 def download_youtube_clip(url: str, start, end, tmpdir: str, log) -> str:
+    """
+    Downloads only the requested segment.
+    --download-sections tells yt-dlp to fetch just that byte range (fast).
+    We deliberately omit --force-keyframes-at-cuts because that flag causes
+    yt-dlp to download the ENTIRE video and re-encode it just to insert
+    keyframes — that's what makes it 5+ minutes. Without it, yt-dlp grabs
+    only a small keyframe-aligned chunk around the requested window in
+    seconds. Any slight overrun at the start/end is handled by ffmpeg's -t.
+    """
     out_template = os.path.join(tmpdir, "source.%(ext)s")
     cmd = [
         YTDLP_PATH,
@@ -253,7 +262,7 @@ def download_youtube_clip(url: str, start, end, tmpdir: str, log) -> str:
         "-o", out_template,
     ]
     if start and end:
-        cmd += ["--download-sections", f"*{start}-{end}", "--force-keyframes-at-cuts"]
+        cmd += ["--download-sections", f"*{start}-{end}"]
     cmd.append(url)
 
     log(f"  yt-dlp: {' '.join(cmd)}")
@@ -268,22 +277,18 @@ def download_youtube_clip(url: str, start, end, tmpdir: str, log) -> str:
     return str(downloaded[0])
 
 
-def convert_to_mp4_720p(input_path: str, tmpdir: str, start=None, end=None, log=print) -> str:
-    """Converts to <=720p mp4. If start/end are given, applies a guaranteed
-    -ss/-t trim here using ffmpeg directly (see note in process_youtube_item
-    about why this is needed)."""
+def convert_to_mp4_720p(input_path: str, tmpdir: str, clip_duration_s=None, log=print) -> str:
+    """
+    Re-encodes to <=720p h264/aac mp4.
+    clip_duration_s: if set, caps the output at exactly that many seconds via
+    ffmpeg -t. This trims any extra frames yt-dlp included due to keyframe
+    alignment without needing a second seek pass.
+    """
     output_path = os.path.join(tmpdir, "final.mp4")
-    cmd = [FFMPEG_PATH, "-y"]
+    cmd = [FFMPEG_PATH, "-y", "-i", input_path]
 
-    if start:
-        cmd += ["-ss", start]  # input-side seek = fast + accurate with re-encode below
-
-    cmd += ["-i", input_path]
-
-    if start and end:
-        duration = to_seconds(end) - to_seconds(start)
-        if duration > 0:
-            cmd += ["-t", str(duration)]
+    if clip_duration_s and clip_duration_s > 0:
+        cmd += ["-t", str(clip_duration_s)]
 
     cmd += [
         "-vf", "scale=-2:'min(720,ih)'",
@@ -304,28 +309,12 @@ def process_youtube_item(url: str, start, end, log) -> dict:
     with tempfile.TemporaryDirectory() as tmpdir:
         local_src = download_youtube_clip(url, start, end, tmpdir, log)
 
-        trim_start, trim_end = None, None
+        clip_duration_s = None
         if start and end:
-            expected_dur = to_seconds(end) - to_seconds(start)
-            actual_dur = get_duration_seconds(local_src)
-            # If yt-dlp's own --download-sections trim didn't actually take
-            # effect (older yt-dlp builds / some sites silently ignore it and
-            # hand back the full video), the downloaded file will be much
-            # longer than the requested clip. In that case we re-cut it for
-            # real with ffmpeg's -ss/-t during conversion. If yt-dlp's trim
-            # DID work, the file is already short, so we skip re-cutting
-            # (re-applying -ss on an already-trimmed file would seek past it).
-            if actual_dur is None or actual_dur > expected_dur + 3:
-                log(
-                    f"  trim safety net: source is "
-                    f"{'unknown' if actual_dur is None else f'{actual_dur:.1f}s'}, "
-                    f"expected ~{expected_dur:.0f}s -> re-cutting with ffmpeg"
-                )
-                trim_start, trim_end = start, end
-            else:
-                log(f"  yt-dlp section trim already applied ({actual_dur:.1f}s) - no re-cut needed")
+            clip_duration_s = to_seconds(end) - to_seconds(start)
+            log(f"  clip duration: {clip_duration_s:.1f}s — ffmpeg will cap output to this")
 
-        local_mp4 = convert_to_mp4_720p(local_src, tmpdir, trim_start, trim_end, log)
+        local_mp4 = convert_to_mp4_720p(local_src, tmpdir, clip_duration_s, log)
 
         r2_client = get_r2_client()
         key = f"videos/{uuid.uuid4().hex}.mp4"
@@ -388,13 +377,10 @@ def process_all(raw_text: str, log, progress_cb):
     return results, warnings
 
 
-def build_output_text(results) -> str:
-    lines = []
-    for r in results:
-        lines.append(f"text: {r['text']}")
-        lines.append(f"image: {r['image']}")
-        lines.append("")
-    return "\n".join(lines).rstrip() + "\n"
+def build_output_json(results) -> str:
+    import json
+    payload = [{"text": r["text"], "image": r["image"]} for r in results]
+    return json.dumps(payload, indent=2, ensure_ascii=False)
 
 
 # ==================== GUI ====================
@@ -438,6 +424,7 @@ class App:
         self.output_box = scrolledtext.ScrolledText(root, height=14, wrap="word")
         self.output_box.pack(fill="both", expand=True, padx=8, pady=4)
 
+        self._last_results = []  # stored for copy-as-JSON
         self.msg_queue = queue.Queue()
         self.root.after(150, self.poll_queue)
 
@@ -467,16 +454,24 @@ class App:
     def _run(self, raw_text):
         try:
             results, warnings = process_all(raw_text, self.log, self.progress_cb)
-            output = build_output_text(results)
-            self.msg_queue.put(("done", output, warnings))
+            output = build_output_json(results)
+            self.msg_queue.put(("done", output, warnings, results))
         except Exception as e:
             self.msg_queue.put(("fatal", str(e)))
 
     def copy_output(self):
-        text = self.output_box.get("1.0", "end").strip()
+        import json
+        if not self._last_results:
+            self.progress_label.config(text="Nothing to copy yet.")
+            return
+        payload = json.dumps(
+            [{"text": r["text"], "image": r["image"]} for r in self._last_results],
+            indent=2,
+            ensure_ascii=False,
+        )
         self.root.clipboard_clear()
-        self.root.clipboard_append(text)
-        self.progress_label.config(text="Output copied to clipboard.")
+        self.root.clipboard_append(payload)
+        self.progress_label.config(text="Copied JSON to clipboard.")
 
     # --- queue polling (runs on the main/GUI thread) ---
     def poll_queue(self):
@@ -492,7 +487,8 @@ class App:
                     self.progress_bar["value"] = idx
                     self.progress_label.config(text=f"Processing {idx}/{total}: {label}")
                 elif kind == "done":
-                    _, output, warnings = msg
+                    _, output, warnings, results = msg
+                    self._last_results = results
                     self._set(self.output_box, output)
                     if warnings:
                         wtext = "\n".join(

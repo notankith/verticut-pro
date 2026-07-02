@@ -42,7 +42,7 @@ export function ImportSourcingModal({ open, onOpenChange }: ImportSourcingModalP
 
         let key = "";
         let url = match.link; // fallback to direct URL
-        let isVideo = match.link.match(/\.(mp4|webm|mov)$/i);
+        let isVideo = /\.(mp4|webm|mov)$/i.test(match.link || "");
         
         try {
           const res = await fetchAndUploadImageUrl(match.link);
@@ -106,7 +106,7 @@ export function ImportSourcingModal({ open, onOpenChange }: ImportSourcingModalP
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] bg-panel border-border text-foreground">
+      <DialogContent className="w-full sm:max-w-[600px] bg-panel border-border text-foreground">
         <DialogHeader>
           <DialogTitle>Import Sourcing</DialogTitle>
         </DialogHeader>
@@ -119,7 +119,7 @@ export function ImportSourcingModal({ open, onOpenChange }: ImportSourcingModalP
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            className="w-full h-[300px] bg-panel-2 border border-border rounded-md p-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+            className="w-full h-[200px] sm:h-[300px] bg-panel-2 border border-border rounded-md p-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary resize-y"
             placeholder={`[\n  {\n    "text": "Diawara Signs Four-Year Deal",\n    "image": null\n  },\n  {\n    "text": "Restricted free agent",\n    "image": "https://example.com/img.jpg"\n  }\n]`}
             disabled={processing}
           />
