@@ -17,9 +17,17 @@ export const Route = createFileRoute("/api/presign-upload")({
           return new Response(`Bad JSON Error: ${err}`, { status: 400 });
         }
 
-        const { kind, ext, contentType } = body;
-        if (!kind || !ext || !contentType) {
-          return new Response(`Missing fields: kind=${kind}, ext=${ext}, contentType=${contentType}`, { status: 400 });
+        let { kind, ext, contentType } = body as Partial<{ kind: string; ext: string; contentType: string }>;
+        if (!kind) {
+          return new Response(JSON.stringify({ error: `Missing field: kind` }), { status: 400, headers: { "content-type": "application/json" } });
+        }
+
+        // Provide sensible defaults if ext or contentType are omitted by some clients
+        contentType = typeof contentType === "string" && contentType ? contentType : "application/octet-stream";
+        ext = typeof ext === "string" && ext ? ext.replace(/[^a-z0-9]/gi, "").toLowerCase() : (contentType.split("/").pop() || "bin").replace(/[^a-z0-9]/gi, "");
+
+        if (!['audio', 'image', 'music', 'video'].includes(kind)) {
+          return new Response(JSON.stringify({ error: `Invalid upload kind: ${kind}` }), { status: 400, headers: { "content-type": "application/json" } });
         }
 
         const id = randomUUID();
@@ -32,7 +40,10 @@ export const Route = createFileRoute("/api/presign-upload")({
           return Response.json({ uploadUrl, key, publicUrl: pub });
         } catch (err) {
           console.error("Error generating presigned URL:", err);
-          return new Response(`Presign error: ${err}`, { status: 500 });
+          return new Response(
+            JSON.stringify({ error: String(err) }),
+            { status: 500, headers: { "content-type": "application/json" } },
+          );
         }
       },
     },

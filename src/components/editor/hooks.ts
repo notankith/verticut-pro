@@ -27,6 +27,7 @@ export function useTimelineActions() {
         const isVideo = img.url.match(/\.(mp4|webm|mov|mkv)$/i) || img.url.includes("/video/");
         const c: ClipDoc = {
           id: crypto.randomUUID(),
+          kind: isVideo ? "video" : "image",
           start: cursor,
           duration: 3.5,
           ...(isVideo ? { videoUrl: img.url, videoKey: img.key } : { imageUrl: img.url, imageKey: img.key }),

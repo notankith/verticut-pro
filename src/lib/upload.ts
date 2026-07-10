@@ -4,7 +4,10 @@ async function presignUpload(opts: { kind: string; ext: string; contentType: str
     headers: { "content-type": "application/json" },
     body: JSON.stringify(opts),
   });
-  if (!res.ok) throw new Error(`Presign failed: ${res.statusText}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Presign failed: ${res.statusText}${body ? ` - ${body}` : ""}`);
+  }
   return res.json() as Promise<{ uploadUrl: string; key: string; publicUrl: string }>;
 }
 
@@ -53,7 +56,10 @@ export async function fetchAndUploadImageUrl(url: string) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ url }),
   });
-  if (!res.ok) throw new Error(`Fetch and upload failed: ${res.statusText}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Fetch and upload failed: ${res.status} ${body}`);
+  }
   return res.json() as Promise<{ key: string; publicUrl: string }>;
 }
 

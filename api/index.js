@@ -379,8 +379,8 @@ async function handlePresignUpload(req, res) {
     const kind = data?.kind;
     const ext = String(data?.ext || '').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'bin';
     const contentType = String(data?.contentType || 'application/octet-stream');
-    if (!['audio', 'image', 'music'].includes(kind)) {
-      return sendJson(res, 400, { error: 'Invalid upload kind' });
+    if (!['audio', 'image', 'music', 'video'].includes(kind)) {
+      return sendJson(res, 400, { error: `Invalid upload kind: ${kind}` });
     }
     const id = crypto.randomUUID();
     const key = `${kind}/${id}.${ext}`;

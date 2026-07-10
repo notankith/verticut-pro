@@ -25,24 +25,26 @@ function getTransitionTransform(kind, progress, mode) {
   return mode === "in" ? { x: 0, y: interpolate(p, [0, 1], [-100, 0]) } : { x: 0, y: interpolate(p, [0, 1], [0, 100]) };
 }
 
-function KenBurns({ frame, duration, animation, intensity, imageUrl, anchorX, anchorY }) {
+function KenBurns({ frame, duration, animation, intensity, imageUrl, anchorX, anchorY, clip = {} }) {
   const t = interpolate(frame, [0, duration], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const range = ANIM_SHIFT * intensity;
-  let scale = 1.05;
+  let baseScale = 1.05;
   let txPercent = 0;
+  let ty = 0;
+
   if (animation === "zoom-in") {
-    scale = 1 + range * 0.35 * t + 0.02;
+    baseScale = 1 + range * 0.35 * t + 0.02;
   } else if (animation === "zoom-out") {
-    scale = 1 + range * 0.35 + 0.02 - range * 0.35 * t;
+    baseScale = 1 + range * 0.35 + 0.02 - range * 0.35 * t;
   } else if (animation === "pan-left") {
-    txPercent = interpolate(t, [0, 1], [range * 40, -range * 40]);
-    scale = 1;
+    txPercent = Number(interpolate(t, [0, 1], [range * 5, -range * 5]));
+    baseScale = 1.15;
   } else if (animation === "pan-right") {
-    txPercent = interpolate(t, [0, 1], [-range * 40, range * 40]);
-    scale = 1;
+    txPercent = Number(interpolate(t, [0, 1], [-range * 5, range * 5]));
+    baseScale = 1.15;
   }
 
-  const posX = Math.max(0, Math.min(100, anchorX + txPercent));
+  const posX = Math.max(0, Math.min(100, anchorX));
   return (
     <Img
       src={imageUrl}
@@ -54,7 +56,7 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, anchorX, an
         objectFit: "cover",
         objectPosition: `${posX}% ${anchorY}%`,
         filter: `contrast(${CONTRAST_MULTIPLIER})`,
-        transform: `scale(${scale}) translate(0px, 0px)`,
+        transform: `translate(${txPercent}%, ${ty}%) scale(${baseScale})`,
       }}
     />
   );

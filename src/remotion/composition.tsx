@@ -622,7 +622,7 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
 
   const clipsWithIndex = clips.map((c, originalIndex) => ({ c, originalIndex }));
   const solidClips = clipsWithIndex.filter(x => x.c.kind === "solid");
-  const mediaClips = clipsWithIndex.filter(x => !x.c.kind || x.c.kind === "media");
+  const mediaClips = clipsWithIndex.filter(x => x.c.kind !== "solid" && x.c.kind !== "text");
   const textClips = clipsWithIndex.filter(x => x.c.kind === "text");
 
   const hasTemplate = Boolean(overlayUrl && templateWindow);

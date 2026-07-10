@@ -1112,6 +1112,7 @@ function EditorPage() {
                       const preset = settings.presets[0];
                       const newClip: ClipDoc = {
                         id: crypto.randomUUID(),
+                        kind: "video",
                         start: cursor,
                         duration: duration,
                         videoUrl: res.url,

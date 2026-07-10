@@ -356,7 +356,7 @@ function ClipBlock({
   onTrim: (edge: "start" | "end", v: number, record?: boolean) => void;
   onKeyframeClick?: (time: number) => void;
 }) {
-  const [drag, setDrag] = useState<null | { kind: "move" | "left" | "right" | "keyframe"; startX: number; orig: number; keyframeIndex?: number }>(null);
+  const [drag, setDrag] = useState<null | { kind: "move" | "left" | "right" | "keyframe"; startX: number; orig: number; keyframeIndex?: number; multiOrig?: Record<string, number>; multiIds?: string[] }>(null);
   const { updateClip } = useTimelineActions();
 
   const latest = useRef({ zoom, onMove, onTrim, updateClip, clip });
@@ -371,6 +371,37 @@ function ClipBlock({
       const dx = ev.clientX - drag.startX;
       const dt = dx / zoom;
 
+      // If this drag started as a multi-drag, update all involved clips together
+      if (drag.kind === "move" && drag.multiOrig && drag.multiIds) {
+        const ids = drag.multiIds;
+        // compute tentative new starts
+        const newStarts: Record<string, number> = {};
+        let minStart = Infinity;
+        for (const id of ids) {
+          const orig = drag.multiOrig[id] ?? 0;
+          const val = Math.max(0, orig + dt);
+          newStarts[id] = val;
+          if (val < minStart) minStart = val;
+        }
+
+        // snapping: compute last end among other clips and audioSegments
+        const state = useEditor.getState();
+        const otherClips = state.clips.filter((c) => !ids.includes(c.id));
+        const otherAudio = state.audioSegments || [];
+        let lastEnd = 0;
+        for (const o of otherClips) lastEnd = Math.max(lastEnd, o.start + o.duration);
+        for (const a of otherAudio) lastEnd = Math.max(lastEnd, a.projStart + a.duration);
+        const SNAP = 8 / (state.zoom || 60);
+        if (Math.abs(minStart - lastEnd) < SNAP) {
+          const delta = lastEnd - minStart;
+          for (const id of ids) newStarts[id] = Math.max(0, newStarts[id] + delta);
+        }
+
+        // Apply transient update without recording history
+        useEditor.getState().updateClips((prev) => prev.map((c) => (ids.includes(c.id) ? { ...c, start: newStarts[c.id] ?? c.start } : c)), false);
+        return;
+      }
+
       if (drag.kind === "move") onMove(drag.orig + dt, false);
       else if (drag.kind === "left") onTrim("start", drag.orig + dt, false);
       else if (drag.kind === "right") onTrim("end", drag.orig + dt, false);
@@ -383,6 +414,19 @@ function ClipBlock({
     }
 
     function up() {
+      // If it was a multi-drag, finalize and record history once
+      if (drag && drag.kind === "move" && drag.multiOrig && drag.multiIds) {
+        const ids = drag.multiIds;
+        const finalMap: Record<string, number> = {};
+        const state = useEditor.getState();
+        const cur = state.clips;
+        for (const id of ids) {
+          const c = cur.find((x) => x.id === id);
+          if (c) finalMap[id] = c.start;
+        }
+        // apply as single recorded update
+        state.updateClips((prev) => prev.map((c) => (ids.includes(c.id) ? { ...c, start: finalMap[c.id] ?? c.start } : c)), true);
+      }
       setDrag(null);
     }
 
@@ -460,7 +504,6 @@ function ClipBlock({
     </div>
   );
 }
-
 function AudioSegmentBlock({
   segment,
   zoom,
@@ -476,7 +519,7 @@ function AudioSegmentBlock({
   onMove: (projStart: number) => void;
   onTrim: (edge: "start" | "end", v: number) => void;
 }) {
-  const [drag, setDrag] = useState<null | { kind: "move" | "left" | "right"; startX: number; orig: number }>(null);
+  const [drag, setDrag] = useState<null | { kind: "move" | "left" | "right"; startX: number; orig: number; multiOrig?: Record<string, number>; multiIds?: string[] }>(null);
 
   useEffect(() => {
     if (!drag) return;
@@ -484,6 +527,32 @@ function AudioSegmentBlock({
       if (!drag) return;
       const dx = ev.clientX - drag.startX;
       const dt = dx / zoom;
+      if (drag.kind === "move" && drag.multiOrig && drag.multiIds) {
+        const ids = drag.multiIds;
+        const state = useEditor.getState();
+        const segs = state.audioSegments.map((s) => ({ ...s }));
+        let minStart = Infinity;
+        for (const id of ids) {
+          const orig = drag.multiOrig[id] ?? 0;
+          const val = Math.max(0, orig + dt);
+          const idx = segs.findIndex((x) => x.id === id);
+          if (idx >= 0) segs[idx].projStart = val;
+          if (val < minStart) minStart = val;
+        }
+        // snapping to last end of others
+        const otherEnds = state.clips.map((c) => c.start + c.duration).concat(state.audioSegments.filter(s => !ids.includes(s.id)).map(s => s.projStart + s.duration));
+        const lastEnd = otherEnds.length ? Math.max(...otherEnds) : 0;
+        const SNAP = 8 / (state.zoom || 60);
+        if (Math.abs(minStart - lastEnd) < SNAP) {
+          const delta = lastEnd - minStart;
+          for (const id of ids) {
+            const idx = segs.findIndex((x) => x.id === id);
+            if (idx >= 0) segs[idx].projStart = Math.max(0, segs[idx].projStart + delta);
+          }
+        }
+        state.set({ audioSegments: segs });
+        return;
+      }
       if (drag.kind === "move") onMove(drag.orig + dt);
       else if (drag.kind === "left") onTrim("start", drag.orig + dt);
       else if (drag.kind === "right") onTrim("end", drag.orig + dt);
@@ -504,12 +573,32 @@ function AudioSegmentBlock({
       onMouseDown={(e) => {
         e.stopPropagation();
         onSelect();
+        const state = useEditor.getState();
         if ((e.target as HTMLElement).dataset.handle === "left") {
           setDrag({ kind: "left", startX: e.clientX, orig: segment.projStart });
         } else if ((e.target as HTMLElement).dataset.handle === "right") {
           setDrag({ kind: "right", startX: e.clientX, orig: segment.projStart + segment.duration });
         } else {
-          setDrag({ kind: "move", startX: e.clientX, orig: segment.projStart });
+          // Multi-select toggle for audio segments
+          let sel = state.selectedClipIds || [];
+          if (e.shiftKey || e.ctrlKey || e.metaKey) {
+            if (sel.includes(segment.id)) sel = sel.filter((x) => x !== segment.id);
+            else sel = [...sel, segment.id];
+            state.set({ selectedClipId: sel[sel.length - 1] ?? null, selectedClipIds: sel });
+          } else {
+            state.set({ selectedClipId: segment.id, selectedClipIds: [segment.id] });
+          }
+
+          const finalSel = state.selectedClipIds.length > 0 ? state.selectedClipIds : [segment.id];
+          if (finalSel.length > 1) {
+            const map: Record<string, number> = {};
+            for (const s of state.audioSegments) map[s.id] = s.projStart;
+            const multiOrig: Record<string, number> = {};
+            for (const id of finalSel) if (map[id] != null) multiOrig[id] = map[id];
+            setDrag({ kind: "move", startX: e.clientX, orig: segment.projStart, multiOrig, multiIds: finalSel });
+          } else {
+            setDrag({ kind: "move", startX: e.clientX, orig: segment.projStart });
+          }
         }
       }}
       className={`absolute top-0.5 h-5 rounded border cursor-grab overflow-hidden select-none ${

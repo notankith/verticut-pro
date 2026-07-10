@@ -454,7 +454,7 @@ export function Inspector() {
         </div>
       )}
 
-      {(!clip.kind || clip.kind === "media") && clip.videoUrl && (
+      {clip.kind !== "text" && clip.kind !== "solid" && clip.videoUrl && (
         <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">
           <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Audio</div>
           <div className="flex items-center gap-3">

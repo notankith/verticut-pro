@@ -16,12 +16,28 @@ export interface MatchedSourcing {
 export function parseSourcingText(input: string): SourcingPair[] {
   try {
     const data = JSON.parse(input);
-    if (!Array.isArray(data)) return [];
-    
-    return data.map((item: any) => ({
-      text: String(item.text || ""),
-      link: item.image || null,
-    }));
+    const items = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.items)
+      ? data.items
+      : Array.isArray(data?.data)
+      ? data.data
+      : [];
+
+    return items
+      .filter((item: any) => item && typeof item === "object")
+      .map((item: any) => ({
+        text: String(item.text ?? item.caption ?? item.title ?? ""),
+        link:
+          item.image ??
+          item.link ??
+          item.url ??
+          item.video ??
+          item.videoUrl ??
+          item.imageUrl ??
+          item.src ??
+          null,
+      }));
   } catch (err) {
     console.error("Failed to parse sourcing JSON", err);
     return [];

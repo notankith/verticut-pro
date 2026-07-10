@@ -24,15 +24,74 @@ export function ImportSourcingModal({ open, onOpenChange }: ImportSourcingModalP
     setError(null);
 
     try {
-      const pairs = parseSourcingText(input);
-      if (pairs.length === 0) {
-        throw new Error("No valid text-link pairs found. Make sure links start with http.");
+      // Accept multiple JSON shapes:
+      // - [{ text, image }] → match text to transcript
+      // - [{ start, end, image }] → use provided timestamps directly
+      // - Mixed arrays containing both shapes
+      let raw: any[] = [];
+      try {
+        raw = JSON.parse(input);
+        if (!Array.isArray(raw)) throw new Error("Not an array");
+      } catch (e) {
+        throw new Error("Failed to parse JSON sourcing input. Make sure it's an array of objects.");
       }
 
-      const matches = matchSourcingToTranscript(pairs, transcript, audioDuration);
-      if (matches.length === 0) {
-        throw new Error("Could not find any matches in the transcript.");
+      const timed: { start: number; end: number; link: string | null; originalText?: string }[] = [];
+      const textPairs: { text: string; link: string | null }[] = [];
+
+      for (const item of raw) {
+        if (!item) continue;
+        // Normalize common image field names
+        const link = item.image ?? item.imageUrl ?? item.url ?? item.link ?? null;
+        const hasStart = typeof item.start === "number" && Number.isFinite(item.start);
+        const hasEnd = typeof item.end === "number" && Number.isFinite(item.end);
+        const hasText = typeof item.text === "string" && item.text.trim().length > 0;
+
+        if (hasStart && hasEnd && link) {
+          timed.push({ start: Number(item.start), end: Number(item.end), link, originalText: item.text ?? "" });
+        } else if (hasText) {
+          textPairs.push({ text: String(item.text), link });
+        } else if (link && !hasStart && !hasText) {
+          // image-only without timestamps: treat as sequential placeholder — map later if transcript matching available
+          textPairs.push({ text: "", link });
+        }
       }
+
+      let matches: { link: string | null; start: number; end: number; originalText: string }[] = [];
+
+      // Direct timed entries are trusted as-is
+      if (timed.length > 0) {
+        for (const t of timed) {
+          matches.push({ link: t.link, start: t.start, end: t.end, originalText: t.originalText ?? "" });
+        }
+      }
+
+      // For text-based pairs, run the matcher; if there are any textPairs
+      const textOnlyPairs = textPairs.filter(p => p.text && p.text.trim().length > 0);
+      if (textOnlyPairs.length > 0) {
+        const matched = matchSourcingToTranscript(textOnlyPairs, transcript, audioDuration);
+        matches.push(...matched);
+      }
+
+      // For image-only pairs (no text, no timestamps), attempt to place them sequentially across transcript
+      const imageOnly = textPairs.filter(p => !(p.text && p.text.trim().length > 0));
+      if (imageOnly.length > 0 && transcript.length > 0) {
+        // Divide transcript duration into equal segments for each image-only entry
+        const dur = audioDuration || (transcript[transcript.length - 1]?.end ?? 0);
+        const per = dur / imageOnly.length;
+        for (let i = 0; i < imageOnly.length; i++) {
+          const s = Math.max(0, per * i);
+          const e = Math.min(dur, per * (i + 1));
+          matches.push({ link: imageOnly[i].link, start: s, end: e, originalText: "" });
+        }
+      }
+
+      if (matches.length === 0) {
+        throw new Error("No valid sourcing items found. Provide objects with `text`+`image` or `start`+`end`+`image`.");
+      }
+
+      // Sort matches by start time
+      matches.sort((a, b) => a.start - b.start);
 
       const newClips: ClipDoc[] = [];
 
@@ -57,11 +116,14 @@ export function ImportSourcingModal({ open, onOpenChange }: ImportSourcingModalP
 
         const preset = settings.presets[0];
         
+        const ANIMS = ["zoom-in", "zoom-out", "pan-left", "pan-right"] as const;
+
         const clipBase = {
           id: crypto.randomUUID(),
+          kind: isVideo ? "video" : "image",
           start: match.start,
           duration: match.end - match.start,
-          animation: settings.animationIntensity > 0 ? "pan-left" : "none",
+          animation: settings.animationIntensity > 0 ? ANIMS[Math.floor(Math.random() * ANIMS.length)] : "none",
           labelText: settings.defaultLabelText || "",
           labelPresetId: preset?.id ?? "custom",
           intensity: settings.animationIntensity || 1,

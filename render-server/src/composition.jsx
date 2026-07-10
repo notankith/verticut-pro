@@ -31,18 +31,20 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
   const range = ANIM_SHIFT * intensity;
   let baseScale = 1.05;
   let txPercent = 0;
+  let ty = 0;
+
   const hasKeyframes = clip.keyframes && clip.keyframes.length > 0;
-  
+
   if (!hasKeyframes && animation === "zoom-in") {
     baseScale = 1 + range * 0.35 * t + 0.02;
   } else if (!hasKeyframes && animation === "zoom-out") {
     baseScale = 1 + range * 0.35 + 0.02 - range * 0.35 * t;
   } else if (!hasKeyframes && animation === "pan-left") {
-    txPercent = interpolate(t, [0, 1], [range * 40, -range * 40]);
-    baseScale = 1;
+    txPercent = Number(interpolate(t, [0, 1], [range * 5, -range * 5]));
+    baseScale = 1.15;
   } else if (!hasKeyframes && animation === "pan-right") {
-    txPercent = interpolate(t, [0, 1], [-range * 40, range * 40]);
-    baseScale = 1;
+    txPercent = Number(interpolate(t, [0, 1], [-range * 5, range * 5]));
+    baseScale = 1.15;
   } else if (!hasKeyframes) {
     baseScale = 1;
   }
@@ -84,7 +86,7 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
   }
 
   const appliedScale = (kfScale ?? clip.scale ?? 1) * baseScale;
-  const appliedPosX = (kfPosX ?? clip.posX ?? anchorX) + txPercent;
+  const appliedPosX = kfPosX ?? clip.posX ?? anchorX;
   const appliedPosY = kfPosY ?? clip.posY ?? anchorY;
   const appliedOpacity = kfOpacity ?? clip.opacity ?? 1;
 
@@ -123,6 +125,7 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
           textShadow: "0 2px 10px rgba(0,0,0,0.8)",
           textAlign: "center",
           whiteSpace: "pre-wrap",
+          lineHeight: 1.1,
         }}>
           {clip.textContent || ""}
         </div>
@@ -135,10 +138,10 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
   if (actualVideoUrl) {
     const trimStartSec = (clip && clip.trimStart) || 0;
     const trimStartFrames = Math.round(trimStartSec * (fps || 30));
-    
+
     const vidDurFrames = clip.videoDuration ? Math.max(1, Math.round((clip.videoDuration - trimStartSec) * (fps || 30))) : Math.max(1, duration);
     const loopCount = clip.videoDuration ? Math.ceil(duration / vidDurFrames) : 1;
-    
+
     const loops = [];
     for (let i = 0; i < loopCount; i++) {
       loops.push(
@@ -161,10 +164,10 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
 
     return (
       <AbsoluteFill style={{
-        transform: `scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        transform: `translate(${txPercent}%, ${ty}%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
         opacity: appliedOpacity,
         filter: `contrast(${CONTRAST_MULTIPLIER})`,
-        willChange: "transform",
+        willChange: "transform, opacity",
       }}>
         {loops}
       </AbsoluteFill>
@@ -183,7 +186,7 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
         objectPosition: `${appliedPosX}% ${appliedPosY}%`,
         filter: `contrast(${CONTRAST_MULTIPLIER})`,
         opacity: appliedOpacity,
-        transform: `scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        transform: `translate(${txPercent}%, ${ty}%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
       }}
     />
   );
@@ -474,7 +477,7 @@ export const VertiCutComposition = ({
 
   const clipsWithIndex = (clips || []).map((c, originalIndex) => ({ c, originalIndex }));
   const solidClips = clipsWithIndex.filter(x => x.c.kind === "solid");
-  const mediaClips = clipsWithIndex.filter(x => !x.c.kind || x.c.kind === "media");
+  const mediaClips = clipsWithIndex.filter(x => x.c.kind !== "solid" && x.c.kind !== "text");
   const textClips = clipsWithIndex.filter(x => x.c.kind === "text");
 
   const hasTemplate = Boolean(overlayUrl && templateWindow);

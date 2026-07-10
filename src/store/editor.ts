@@ -20,6 +20,7 @@ export type EditorState = {
   markers: MarkerDoc[];
   settings: SettingsDoc;
   selectedClipId: string | null; // "VOICEOVER" reserved for audio track
+  selectedClipIds: string[];
   zoom: number; // pixels per second
   saving: "idle" | "saving" | "saved";
   // history
@@ -63,6 +64,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     templateWindow: DEFAULT_TEMPLATE_WINDOW,
   },
   selectedClipId: null,
+  selectedClipIds: [],
   zoom: 60,
   saving: "idle",
   past: [],
@@ -111,7 +113,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     }
   },
   updateSettings: (next) => set({ settings: { ...get().settings, ...next } }),
-  select: (id) => set({ selectedClipId: id }),
+  select: (id) => set({ selectedClipId: id, selectedClipIds: id ? [id] : [] }),
   undo: () => {
     const { past, clips, future } = get();
     if (past.length === 0) return;
