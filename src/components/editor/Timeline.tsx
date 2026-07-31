@@ -81,8 +81,8 @@ export function Timeline({
 
   return (
     <div className="flex h-full flex-col bg-track">
-      <div className="flex items-center gap-3 border-b border-border bg-panel px-3 py-1.5">
-        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Timeline</span>
+      <div className="flex items-center gap-3 border-b border-border bg-panel/80 px-3 py-1.5 backdrop-blur">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Timeline</span>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-[10px] text-muted-foreground">Zoom</span>
           <input
@@ -459,8 +459,8 @@ function ClipBlock({
           setDrag({ kind: "move", startX: e.clientX, orig: clip.start });
         }
       }}
-      className={`absolute top-2 bottom-2 cursor-grab overflow-visible rounded border ${
-        selected ? "border-primary ring-1 ring-primary" : "border-border"
+      className={`absolute top-2 bottom-2 cursor-grab overflow-visible rounded-md border transition-smooth ${
+        selected ? "border-primary ring-2 ring-primary/40" : "border-border hover:border-muted-foreground"
       }`}
       style={{
         left: clip.start * zoom,
@@ -601,8 +601,8 @@ function AudioSegmentBlock({
           }
         }
       }}
-      className={`absolute top-0.5 h-5 rounded border cursor-grab overflow-hidden select-none ${
-        selected ? "border-primary bg-primary/20 ring-1 ring-primary" : "border-border bg-panel-2 hover:bg-panel-2/90"
+      className={`absolute top-0.5 h-5 rounded-md border cursor-grab overflow-hidden select-none transition-smooth ${
+        selected ? "border-primary bg-primary/20 ring-2 ring-primary/40" : "border-border bg-panel-2 hover:bg-panel-2/80"
       }`}
       style={{
         left: segment.projStart * zoom,

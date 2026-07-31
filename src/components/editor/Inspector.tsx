@@ -44,7 +44,7 @@ function DraggableNumberInput({
       value={Number(Number(value).toFixed(2))}
       onChange={(e) => onChange(Number(e.target.value))}
       onPointerDown={handlePointerDown}
-      className="w-full rounded border border-border bg-panel-3 px-2 py-0.5 font-mono text-[10px] cursor-ew-resize"
+      className="w-full rounded-md border border-border bg-input px-2 py-1 font-mono text-[10px] tabular-nums cursor-ew-resize transition-smooth focus:border-primary focus-glow"
     />
   );
 }
@@ -183,10 +183,10 @@ export function Inspector() {
 
   if (audioSegment) {
     return (
-      <div className="h-full overflow-y-auto space-y-4 p-3 text-xs">
-        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Audio Segment Inspector</h3>
+      <div className="h-full overflow-y-auto space-y-3 p-3 text-xs">
+        <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Audio Segment</h3>
         
-        <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">
+        <div className="rounded-lg border border-border bg-panel p-3 space-y-2">
           <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Properties</div>
           <div className="grid grid-cols-2 gap-2">
             <div>
@@ -214,7 +214,7 @@ export function Inspector() {
           </div>
         </div>
 
-        <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">    
+        <div className="rounded-lg border border-border bg-panel p-3 space-y-2">
           <div>
             <label className="mb-0.5 block text-muted-foreground">Source Start Offset (s)</label>
             <input
@@ -228,14 +228,14 @@ export function Inspector() {
           </div>
         </div>
 
-        <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">
+        <div className="rounded-lg border border-border bg-panel p-3 space-y-2">
           <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Actions</div>
           
           <button
             type="button"
             onClick={() => splitAudioAt(currentTime)}
             disabled={currentTime <= audioSegment.projStart || currentTime >= audioSegment.projStart + audioSegment.duration}
-            className="w-full flex items-center justify-center gap-1.5 rounded border border-border bg-panel-3 py-1.5 hover:bg-accent disabled:opacity-50 disabled:hover:bg-panel-3"
+            className="w-full flex items-center justify-center gap-1.5 rounded-md border border-border bg-input py-1.5 transition-smooth hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Split at Playhead ({currentTime.toFixed(2)}s)
           </button>
@@ -243,7 +243,7 @@ export function Inspector() {
 
         <button
           onClick={() => deleteAudioSegment(audioSegment.id)}
-          className="flex w-full items-center justify-center gap-1.5 rounded border border-destructive/50 bg-destructive/10 py-1.5 text-destructive hover:bg-destructive/20"
+          className="flex w-full items-center justify-center gap-1.5 rounded-md border border-destructive/30 bg-destructive/10 py-1.5 text-destructive transition-smooth hover:bg-destructive/20 btn-press"
         >
           <Trash2 className="h-3 w-3" /> Delete Audio Segment
         </button>
@@ -253,15 +253,21 @@ export function Inspector() {
 
   if (!clip) {
     return (
-      <div className="flex h-full items-center justify-center p-4 text-center text-xs text-muted-foreground">
-        Select a clip on the timeline to edit properties.
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted">
+          <ImageIcon className="h-6 w-6 text-muted-foreground" />
+        </div>
+        <div>
+          <p className="text-xs font-medium text-foreground">No clip selected</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">Select a clip on the timeline to edit its properties.</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full overflow-y-auto space-y-4 p-3 text-xs">
-      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Clip Inspector</h3>
+    <div className="h-full overflow-y-auto space-y-3 p-3 text-xs">
+      <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Clip Inspector</h3>
 
       {clip.kind === "text" && (
         <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">

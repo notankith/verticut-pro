@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 import { usePlayerFrame } from "@/components/editor/usePlayerFrame";
-import { Film, Settings, Undo2, Redo2, Loader2, Image as ImageIcon, Play, Pause, Rewind, Clock, Plus, Minus, FileText, Square, Type } from "lucide-react";
+import { Film, Settings, Undo2, Redo2, Loader2, Image as ImageIcon, Play, Pause, Rewind, Clock, Plus, Minus, FileText, Square, Type, CheckCircle2, AlertCircle, Download, X } from "lucide-react";
 import {
   enqueueRender,
   getProject,
@@ -537,54 +537,74 @@ function EditorPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background text-foreground">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-background text-foreground">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
+          <Loader2 className="h-7 w-7 animate-spin text-primary" />
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-medium">Loading project…</p>
+          <p className="mt-1 text-xs text-muted-foreground">Preparing editor workspace</p>
+        </div>
       </div>
     );
   }
-  if (error) return <div className="p-6 text-destructive">{error}</div>;
+  if (error) return (
+    <div className="flex h-screen items-center justify-center bg-background">
+      <div className="max-w-md rounded-xl border border-destructive/30 bg-destructive/5 p-6 text-center">
+        <p className="text-sm font-medium text-destructive">Failed to load project</p>
+        <p className="mt-2 text-xs text-muted-foreground">{error}</p>
+        <Link to="/" className="mt-4 inline-flex items-center gap-1.5 text-xs text-primary hover:underline">
+          ← Back to dashboard
+        </Link>
+      </div>
+    </div>
+  );
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
       {/* Header */}
-      <header className="flex items-center gap-2 border-b border-border bg-panel px-3 py-1.5">
-        <Link to="/" className="flex items-center gap-1.5 text-xs hover:text-primary">
-          <Film className="h-4 w-4 text-primary" />
-          <span className="font-semibold tracking-wide">VERTICUT</span>
+      <header className="flex items-center gap-1.5 border-b border-border bg-panel/80 px-3 py-2 backdrop-blur-xl">
+        <Link to="/" className="flex items-center gap-2 rounded-md px-2 py-1 text-xs transition-smooth hover:bg-accent">
+          <div className="flex h-5 w-5 items-center justify-center rounded bg-primary/10">
+            <Film className="h-3 w-3 text-primary" />
+          </div>
+          <span className="font-bold tracking-tight">VERTICUT</span>
         </Link>
-        <div className="mx-3 h-4 w-px bg-border" />
-        <span className="truncate max-w-[280px] text-xs text-muted-foreground" title={name}>
+        <div className="mx-1 h-4 w-px bg-border" />
+        <span className="truncate max-w-[200px] text-xs font-medium text-muted-foreground" title={name}>
           {name}
         </span>
-        <div className="mx-2 h-4 w-px bg-border" />
-        <button
-          onClick={() => setTab("editor")}
-          className={`rounded px-2.5 py-1 text-xs ${tab === "editor" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}
-        >
-          Editor
-        </button>
-        <button
-          onClick={() => setTab("settings")}
-          className={`flex items-center gap-1 rounded px-2.5 py-1 text-xs ${tab === "settings" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}
-        >
-          <Settings className="h-3 w-3" /> Settings
-        </button>
+        <div className="mx-1 h-4 w-px bg-border" />
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => setTab("editor")}
+            className={`rounded-md px-2.5 py-1 text-xs font-medium transition-smooth ${tab === "editor" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"}`}
+          >
+            Editor
+          </button>
+          <button
+            onClick={() => setTab("settings")}
+            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-smooth ${tab === "settings" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"}`}
+          >
+            <Settings className="h-3 w-3" /> Settings
+          </button>
+        </div>
+        <div className="mx-1 h-4 w-px bg-border" />
         <button
           onClick={() => setSourcingModalOpen(true)}
-          className="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent/50"
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-smooth hover:bg-accent/50 hover:text-foreground"
         >
-          <FileText className="h-3.5 w-3.5 text-primary" /> Import Sourcing
+          <FileText className="h-3.5 w-3.5" /> Sourcing
         </button>
         <button
           onClick={() => setDurationOpen(true)}
-          className="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent/50"
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-smooth hover:bg-accent/50 hover:text-foreground"
         >
-          <Clock className="h-3.5 w-3.5 text-primary" /> Duration ({audioDuration.toFixed(1)}s)
+          <Clock className="h-3.5 w-3.5" /> {audioDuration.toFixed(1)}s
         </button>
         <div className="mx-1 h-4 w-px bg-border" />
         <button
           onClick={() => {
-            const start = playerRef.current?.getCurrentFrame() ? playerRef.current.getCurrentFrame() / FPS : 0;
             updateClips((prev) => [...prev, {
               id: crypto.randomUUID(),
               kind: "solid",
@@ -596,9 +616,9 @@ function EditorPage() {
               labelPresetId: "custom"
             }]);
           }}
-          className="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent/50"
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-smooth hover:bg-accent/50 hover:text-foreground"
         >
-          <Square className="h-3.5 w-3.5 text-primary" /> New Solid
+          <Square className="h-3.5 w-3.5" /> Solid
         </button>
         <button
           onClick={() => {
@@ -616,38 +636,38 @@ function EditorPage() {
               scale: 0.4
             }]);
           }}
-          className="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent/50"
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-smooth hover:bg-accent/50 hover:text-foreground"
         >
-          <Type className="h-3.5 w-3.5 text-primary" /> New Text
+          <Type className="h-3.5 w-3.5" /> Text
         </button>
           <div className="ml-auto flex items-center gap-2">
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-[10px] text-muted-foreground min-w-[60px] text-right">
             {pasteError ? (
-              <span className="text-destructive" title={pasteError}>Paste failed: {pasteError}</span>
+              <span className="text-destructive" title={pasteError}>Paste failed</span>
             ) : pasting ? (
               "Pasting…"
             ) : saving === "saving" ? (
-              "Saving…"
+              <span className="flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Saving…</span>
             ) : saving === "saved" ? (
-              "Saved"
+              <span className="text-success">✓ Saved</span>
             ) : (
               ""
             )}
           </span>
           <GlobalLabelPresetSelect />
           <div className="h-4 w-px bg-border" />
-          <button onClick={() => undo()} title="Undo (Ctrl+Z)" className="rounded p-1 hover:bg-accent">
-            <Undo2 className="h-4 w-4" />
+          <button onClick={() => undo()} title="Undo (Ctrl+Z)" className="rounded-md p-1.5 text-muted-foreground transition-smooth hover:bg-accent hover:text-foreground">
+            <Undo2 className="h-3.5 w-3.5" />
           </button>
-          <button onClick={() => redo()} title="Redo (Ctrl+Shift+Z)" className="rounded p-1 hover:bg-accent">
-            <Redo2 className="h-4 w-4" />
+          <button onClick={() => redo()} title="Redo (Ctrl+Shift+Z)" className="rounded-md p-1.5 text-muted-foreground transition-smooth hover:bg-accent hover:text-foreground">
+            <Redo2 className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={onExport}
             disabled={enqueuing || clips.length === 0}
-            className="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground transition-smooth hover:bg-primary/90 btn-press disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {enqueuing ? "Queueing…" : "Export"}
+            {enqueuing ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Queueing…</> : "Export"}
           </button>
         </div>
       </header>
@@ -686,17 +706,17 @@ function EditorPage() {
               )}
               <button
                 onClick={() => setTemplatesOpen(true)}
-                className="absolute right-40 top-2 z-10 flex items-center gap-1.5 rounded border border-border bg-panel/90 px-2.5 py-1 text-[11px] backdrop-blur hover:bg-accent"
+                className="absolute right-36 top-2 z-10 flex items-center gap-1.5 rounded-lg border border-border bg-panel/80 px-2.5 py-1 text-[11px] font-medium backdrop-blur transition-smooth hover:bg-accent"
                 title="Templates"
               >
                 Templates
               </button>
               <button
                 onClick={() => fileImportRef.current?.click()}
-                className="absolute right-2 top-2 z-10 flex items-center gap-1.5 rounded border border-border bg-panel/90 px-2.5 py-1 text-[11px] backdrop-blur hover:bg-accent"
+                className="absolute right-2 top-2 z-10 flex items-center gap-1.5 rounded-lg border border-border bg-panel/80 px-2.5 py-1 text-[11px] font-medium backdrop-blur transition-smooth hover:bg-accent"
                 title="Import images (Ctrl+I)"
               >
-                <ImageIcon className="h-3 w-3" /> Import images
+                <ImageIcon className="h-3 w-3" /> Import
               </button>
               <div className="relative" style={{ aspectRatio: "9 / 16", height: "min(100%, 88vh)" }}>
                 <Player
@@ -1185,35 +1205,41 @@ function RenderProgressToast({
           : "Render failed";
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 w-80 rounded-lg border border-border bg-panel p-3 shadow-lg">
+    <div className="fixed bottom-4 right-4 z-50 w-80 rounded-xl border border-border bg-panel/90 p-3.5 shadow-2xl backdrop-blur-xl animate-slide-in-right">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          {!isTerminal ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" /> : null}
+          {!isTerminal ? (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+          ) : job.status === "done" ? (
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
+          ) : (
+            <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
+          )}
           <span className="truncate text-xs font-medium" title={job.filename}>
             {job.filename}
           </span>
         </div>
         {isTerminal ? (
-          <button onClick={onDismiss} className="text-[10px] text-muted-foreground hover:text-foreground">
+          <button onClick={onDismiss} className="text-[10px] text-muted-foreground transition-smooth hover:text-foreground">
             Dismiss
           </button>
         ) : null}
       </div>
-      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-accent">
+      <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
         <div
-          className={`h-full transition-all ${job.status === "error" ? "bg-destructive" : "bg-primary"}`}
+          className={`h-full rounded-full transition-all duration-500 ease-out ${job.status === "error" ? "bg-destructive" : "bg-primary"}`}
           style={{ width: `${job.status === "done" ? 100 : Math.max(2, job.progress)}%` }}
         />
       </div>
-      <div className="mt-1.5 flex items-center justify-between text-[10px] text-muted-foreground">
+      <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
         <span>{label}</span>
         {job.status === "done" && job.url ? (
           <a
             href={job.url}
             download={job.filename}
-            className="font-medium text-primary hover:underline"
+            className="inline-flex items-center gap-1 font-medium text-primary transition-smooth hover:underline"
           >
-            Download
+            <Download className="h-3 w-3" /> Download
           </a>
         ) : null}
       </div>
@@ -1323,15 +1349,19 @@ function Transport({
   }, [playerRef]);
 
   return (
-    <div className="flex w-full max-w-xl items-center gap-2 rounded border border-border bg-panel px-3 py-1.5 text-xs">
-      <button onClick={() => onSeek(0)} className="rounded p-1 hover:bg-accent" title="Rewind">
+    <div className="flex w-full max-w-xl items-center gap-2 rounded-lg border border-border bg-panel/80 px-3 py-2 text-xs backdrop-blur">
+      <button onClick={() => onSeek(0)} className="rounded-md p-1.5 text-muted-foreground transition-smooth hover:bg-accent hover:text-foreground" title="Rewind to start">
         <Rewind className="h-3.5 w-3.5" />
       </button>
-      <button onClick={() => playerRef.current?.toggle()} className="rounded p-1 hover:bg-accent" title="Play/Pause (Space)">
+      <button
+        onClick={() => playerRef.current?.toggle()}
+        className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary transition-smooth hover:bg-primary/20"
+        title="Play/Pause (Space)"
+      >
         {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
       </button>
-      <span className="font-mono text-[11px] text-muted-foreground">
-        {fmtTC(currentTime)} / {fmtTC(duration)}
+      <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+        {fmtTC(currentTime)} <span className="text-muted-foreground/50">/</span> {fmtTC(duration)}
       </span>
       <input
         type="range"
@@ -1340,9 +1370,9 @@ function Transport({
         step={1 / fps}
         value={currentTime}
         onChange={(e) => onSeek(Number(e.target.value))}
-        className="ml-2 flex-1"
+        className="ml-1 flex-1"
       />
-      <span className="text-[10px] text-muted-foreground">J K L</span>
+      <span className="text-[10px] font-medium text-muted-foreground/60">J K L</span>
     </div>
   );
 }
