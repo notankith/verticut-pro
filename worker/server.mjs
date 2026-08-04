@@ -91,6 +91,8 @@ app.post("/render", async (req, res) => {
         durationInFrames,
         fps,
         overlayUrl: APP_URL ? `${APP_URL.replace(/\/$/, "")}/GradientOverlay.png` : undefined,
+        enableGradientOverlay: settings.enableGradientOverlay ?? true,
+        gradientOverlayUrl: "https://i.ibb.co/C5phXbpz/Gradient-Overlay.png",
         audioSegments: audioSegments || project.audioSegments || [],
         captionTextColor: settings.captionTextColor,
         captionBgColor: settings.captionBgColor,

@@ -716,6 +716,8 @@ async function processVerticutRender(jobId, params) {
       captionFontSize: settings.captionFontSize,
       transcript: project.transcript || [],
       enableTransitions: settings.transitionAnimation ?? true,
+      enableGradientOverlay: settings.enableGradientOverlay ?? true,
+      gradientOverlayUrl: "https://i.ibb.co/C5phXbpz/Gradient-Overlay.png",
     };
 
     const composition = await selectComposition({

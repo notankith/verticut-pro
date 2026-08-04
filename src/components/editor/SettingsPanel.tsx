@@ -264,6 +264,18 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs
                   Transition animation
                 </label>
               </div>
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  id="enableGradientOverlay"
+                  type="checkbox"
+                  checked={settings.enableGradientOverlay ?? true}
+                  onChange={(e) => onChange({ enableGradientOverlay: e.target.checked })}
+                  className="h-4 w-4"
+                />
+                <label htmlFor="enableGradientOverlay" className="text-xs text-muted-foreground">
+                  Gradient overlay
+                </label>
+              </div>
             </div>
           </section>
         </>

@@ -7,6 +7,7 @@ const ANIM_SHIFT = 0.6;
 const TRANSITION_FRAMES = 8;
 const CONTRAST_MULTIPLIER = 1.3;
 const TRANSITION_DIRECTIONS = ["slide-left", "slide-right", "slide-up", "slide-down"];
+const DEFAULT_GRADIENT_OVERLAY_URL = "https://i.ibb.co/C5phXbpz/Gradient-Overlay.png";
 
 function getBoundaryTransition(index) {
   return index >= 0 && index < TRANSITION_DIRECTIONS.length ? TRANSITION_DIRECTIONS[index] : null;
@@ -460,6 +461,8 @@ export const VertiCutComposition = ({
   captionFontSize = 36,
   showLabels = true,
   transcript = [],
+  enableGradientOverlay = true,
+  gradientOverlayUrl = DEFAULT_GRADIENT_OVERLAY_URL,
 }) => {
   const renderClips = (subset) => (
     <>
@@ -515,7 +518,23 @@ export const VertiCutComposition = ({
         renderClips(mediaClips)
       )}
 
-      {renderClips(textClips)}
+      {enableGradientOverlay ? (
+        <Img
+          src={gradientOverlayUrl || DEFAULT_GRADIENT_OVERLAY_URL}
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition: "center bottom",
+            pointerEvents: "none",
+            display: "block",
+          }}
+        />
+      ) : null}
       {overlayUrl ? (
         <Img
           src={overlayUrl}
@@ -532,6 +551,7 @@ export const VertiCutComposition = ({
           }}
         />
       ) : null}
+      {renderClips(textClips)}
       <CaptionOverlay
         transcript={transcript}
         audioSegments={audioSegments}

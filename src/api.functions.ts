@@ -57,6 +57,7 @@ function defaultSettings(id: string = GLOBAL_SETTINGS_ID): SettingsDoc {
     captionPosY: 75,
     captionFontSize: 36,
     showLabels: true,
+    enableGradientOverlay: true,
   };
 }
 
@@ -420,7 +421,7 @@ export const enqueueRender = createServerFn({ method: "POST" })
         let templateOverlayUrl = getTemplateById(settings.activeTemplateId)?.overlayUrl;
         // Override the ES1 template overlayUrl to use the hosted URL
         if (settings.activeTemplateId === "ES1") {
-          templateOverlayUrl = "https://raw.githubusercontent.com/notankith/verticut-pro/refs/heads/main/public/NBA%20copy_00000.png";
+          templateOverlayUrl = "https://i.ibb.co/hJL674t8/Gradient-Overlay.png";
         }
         const r = await fetch(url + "/render/verticut", {
           method: "POST",

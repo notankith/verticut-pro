@@ -183,7 +183,7 @@ export function Inspector() {
 
   if (audioSegment) {
     return (
-      <div className="h-full overflow-y-auto space-y-4 p-3 text-xs">
+      <div className="h-full overflow-y-auto space-y-4 p-4 text-xs">
         <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Audio Segment Inspector</h3>
         
         <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">
@@ -260,7 +260,7 @@ export function Inspector() {
   }
 
   return (
-    <div className="h-full overflow-y-auto space-y-4 p-3 text-xs">
+    <div className="h-full overflow-y-auto space-y-4 p-4 text-xs">
       <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Clip Inspector</h3>
 
       {clip.kind === "text" && (

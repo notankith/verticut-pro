@@ -1,8 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 import { usePlayerFrame } from "@/components/editor/usePlayerFrame";
-import { Film, Settings, Undo2, Redo2, Loader2, Image as ImageIcon, Play, Pause, Rewind, Clock, Plus, Minus, FileText, Square, Type } from "lucide-react";
+import { Film, Settings, Undo2, Redo2, Loader2, Image as ImageIcon, Play, Pause, Rewind, Clock, Plus, Minus, FileText, Square, Type, DownloadCloud, Search as SearchIcon } from "lucide-react";
 import {
   enqueueRender,
   getProject,
@@ -19,7 +19,7 @@ import { Inspector } from "@/components/editor/Inspector";
 import { WordTranscript } from "@/components/editor/WordTranscript";
 import { SettingsPanel } from "@/components/editor/SettingsPanel";
 import { useAutoSave, useTimelineActions, findNextStart } from "@/components/editor/hooks";
-import { extractAndUploadImagesFromClipboard, extractAndUploadPastedImages, uploadToR2 } from "@/lib/upload";
+import { extractAndUploadImagesFromClipboard, extractAndUploadPastedImages, fetchAndUploadImageUrl, uploadToR2 } from "@/lib/upload";
 import { getTemplateById, TEMPLATES } from "@/lib/templates";
 import type { AudioSegment, ClipDoc } from "@/server/mongo.server";
 
@@ -27,6 +27,9 @@ import type { AudioSegment, ClipDoc } from "@/server/mongo.server";
 const FPS = 30;
 const COMP_WIDTH = 1080;
 const COMP_HEIGHT = 1920;
+const GRADIENT_OVERLAY_URL = "https://i.ibb.co/C5phXbpz/Gradient-Overlay.png";
+const MediaDownloadModal = lazy(() => import("@/components/editor/MediaDownloadModal"));
+const SearchMediaPanel = lazy(() => import("@/components/editor/SearchMediaPanel"));
 
 export const Route = createFileRoute("/project/$id")({
   component: EditorPage,
@@ -54,10 +57,12 @@ function EditorPage() {
   const dragDepthRef = useRef(0);
 
   // Timeline height (resizable)
-  const [timelineHeight, setTimelineHeight] = useState<number>(320);
+  const [timelineHeight, setTimelineHeight] = useState<number>(380);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [durationOpen, setDurationOpen] = useState(false);
   const [sourcingModalOpen, setSourcingModalOpen] = useState(false);
+  const [mediaDownloadOpen, setMediaDownloadOpen] = useState(false);
+  const [searchMediaOpen, setSearchMediaOpen] = useState(false);
 
   // Sync player frame -> editor currentTime
   const setEditorState = useEditor((s) => s.set);
@@ -148,6 +153,9 @@ function EditorPage() {
     if (tpl?.overlayUrl) {
       urls.add(tpl.overlayUrl);
     }
+    if (settings.enableGradientOverlay ?? true) {
+      urls.add(GRADIENT_OVERLAY_URL);
+    }
     const imgs: HTMLImageElement[] = [];
     for (const u of urls) {
       const img = new Image();
@@ -158,7 +166,7 @@ function EditorPage() {
     return () => {
       for (const i of imgs) i.src = "";
     };
-  }, [clips, settings.activeTemplateId]);
+  }, [clips, settings.activeTemplateId, settings.enableGradientOverlay]);
 
   const totalFrames = Math.max(1, Math.round(audioDuration * FPS));
 
@@ -253,6 +261,16 @@ function EditorPage() {
       document.removeEventListener("paste", onPaste, { capture: true });
     };
   }, [addImageClips]);
+
+  const onSearchMediaImport = useCallback(async (imageUrl: string) => {
+    const uploaded = await fetchAndUploadImageUrl(imageUrl);
+    addImageClips([{ key: uploaded.key, url: uploaded.publicUrl }]);
+    const selectedId = useEditor.getState().selectedClipId;
+    const inserted = useEditor.getState().clips.find((c) => c.id === selectedId);
+    if (inserted) {
+      seekTo(inserted.start);
+    }
+  }, [addImageClips, seekTo]);
 
   // Keyboard shortcuts — read currentFrame from the player ref so we don't need parent state.
   useEffect(() => {
@@ -511,6 +529,8 @@ function EditorPage() {
       captionFontSize: settings.captionFontSize,
       showLabels: settings.showLabels ?? true,
       transcript,
+      enableGradientOverlay: settings.enableGradientOverlay ?? true,
+      gradientOverlayUrl: GRADIENT_OVERLAY_URL,
     }),
     [
       audioUrl,
@@ -528,6 +548,7 @@ function EditorPage() {
       settings.captionPosY,
       settings.captionFontSize,
       settings.showLabels,
+      settings.enableGradientOverlay,
       clips,
       totalFrames,
       audioSegments,
@@ -547,7 +568,7 @@ function EditorPage() {
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
       {/* Header */}
-      <header className="flex items-center gap-2 border-b border-border bg-panel px-3 py-1.5">
+      <header className="flex items-center gap-2.5 border-b border-border bg-panel/95 px-4 py-2 backdrop-blur-xl">
         <Link to="/" className="flex items-center gap-1.5 text-xs hover:text-primary">
           <Film className="h-4 w-4 text-primary" />
           <span className="font-semibold tracking-wide">VERTICUT</span>
@@ -559,25 +580,37 @@ function EditorPage() {
         <div className="mx-2 h-4 w-px bg-border" />
         <button
           onClick={() => setTab("editor")}
-          className={`rounded px-2.5 py-1 text-xs ${tab === "editor" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}
+          className={`rounded-md px-3 py-1.5 text-[12px] ${tab === "editor" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}
         >
           Editor
         </button>
         <button
           onClick={() => setTab("settings")}
-          className={`flex items-center gap-1 rounded px-2.5 py-1 text-xs ${tab === "settings" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}
+          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] ${tab === "settings" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}
         >
           <Settings className="h-3 w-3" /> Settings
         </button>
         <button
           onClick={() => setSourcingModalOpen(true)}
-          className="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent/50"
+          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:bg-accent/50"
         >
           <FileText className="h-3.5 w-3.5 text-primary" /> Import Sourcing
         </button>
         <button
+          onClick={() => setMediaDownloadOpen(true)}
+          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:bg-accent/50"
+        >
+          <DownloadCloud className="h-3.5 w-3.5 text-primary" /> Media Download
+        </button>
+        <button
+          onClick={() => setSearchMediaOpen(true)}
+          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:bg-accent/50"
+        >
+          <SearchIcon className="h-3.5 w-3.5 text-primary" /> Search Media
+        </button>
+        <button
           onClick={() => setDurationOpen(true)}
-          className="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent/50"
+          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:bg-accent/50"
         >
           <Clock className="h-3.5 w-3.5 text-primary" /> Duration ({audioDuration.toFixed(1)}s)
         </button>
@@ -596,7 +629,7 @@ function EditorPage() {
               labelPresetId: "custom"
             }]);
           }}
-          className="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent/50"
+          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:bg-accent/50"
         >
           <Square className="h-3.5 w-3.5 text-primary" /> New Solid
         </button>
@@ -616,7 +649,7 @@ function EditorPage() {
               scale: 0.4
             }]);
           }}
-          className="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent/50"
+          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:bg-accent/50"
         >
           <Type className="h-3.5 w-3.5 text-primary" /> New Text
         </button>
@@ -636,16 +669,16 @@ function EditorPage() {
           </span>
           <GlobalLabelPresetSelect />
           <div className="h-4 w-px bg-border" />
-          <button onClick={() => undo()} title="Undo (Ctrl+Z)" className="rounded p-1 hover:bg-accent">
+          <button onClick={() => undo()} title="Undo (Ctrl+Z)" className="rounded-md p-1.5 hover:bg-accent">
             <Undo2 className="h-4 w-4" />
           </button>
-          <button onClick={() => redo()} title="Redo (Ctrl+Shift+Z)" className="rounded p-1 hover:bg-accent">
+          <button onClick={() => redo()} title="Redo (Ctrl+Shift+Z)" className="rounded-md p-1.5 hover:bg-accent">
             <Redo2 className="h-4 w-4" />
           </button>
           <button
             onClick={onExport}
             disabled={enqueuing || clips.length === 0}
-            className="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            className="rounded-md bg-primary px-4 py-1.5 text-[12px] font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
           >
             {enqueuing ? "Queueing…" : "Export"}
           </button>
@@ -665,16 +698,16 @@ function EditorPage() {
         </div>
       ) : (
         <>
-          <div className="flex flex-1 min-h-0">
+          <div className="flex flex-1 min-h-0 gap-2 px-2 pb-2 pt-2">
             {/* Left: Clip Inspector */}
-            <aside className="w-72 shrink-0 overflow-hidden border-r border-border bg-panel">
+            <aside className="w-80 shrink-0 overflow-hidden rounded-md border border-border bg-panel">
               <Inspector />
             </aside>
 
             {/* Center preview */}
             <main
               ref={previewDropRef}
-              className={`relative flex flex-1 min-w-0 flex-col items-center justify-center gap-2 bg-track p-2 transition-colors ${dragOver ? "bg-primary/10 ring-2 ring-primary" : ""}`}
+              className={`relative flex flex-1 min-w-0 flex-col items-center justify-center gap-4 rounded-md border border-border bg-track p-4 transition-colors ${dragOver ? "bg-primary/10 ring-2 ring-primary" : ""}`}
             >
               {dragOver && (
                 <div className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-primary/5 backdrop-blur-sm">
@@ -686,19 +719,19 @@ function EditorPage() {
               )}
               <button
                 onClick={() => setTemplatesOpen(true)}
-                className="absolute right-40 top-2 z-10 flex items-center gap-1.5 rounded border border-border bg-panel/90 px-2.5 py-1 text-[11px] backdrop-blur hover:bg-accent"
+                className="absolute right-44 top-3 z-10 flex items-center gap-1.5 rounded-md border border-border bg-panel/90 px-3 py-1.5 text-[11px] backdrop-blur hover:bg-accent"
                 title="Templates"
               >
                 Templates
               </button>
               <button
                 onClick={() => fileImportRef.current?.click()}
-                className="absolute right-2 top-2 z-10 flex items-center gap-1.5 rounded border border-border bg-panel/90 px-2.5 py-1 text-[11px] backdrop-blur hover:bg-accent"
+                className="absolute right-3 top-3 z-10 flex items-center gap-1.5 rounded-md border border-border bg-panel/90 px-3 py-1.5 text-[11px] backdrop-blur hover:bg-accent"
                 title="Import images (Ctrl+I)"
               >
                 <ImageIcon className="h-3 w-3" /> Import images
               </button>
-              <div className="relative" style={{ aspectRatio: "9 / 16", height: "min(100%, 88vh)" }}>
+              <div className="relative" style={{ aspectRatio: "9 / 16", height: "min(100%, 90vh)" }}>
                 <Player
                   ref={playerRef}
                   component={VertiCutComposition}
@@ -810,16 +843,13 @@ function EditorPage() {
             </main>
 
             {/* Right: word-level transcript */}
-            <aside className="w-72 shrink-0 border-l border-border bg-panel">
+            <aside className="w-80 shrink-0 overflow-hidden rounded-md border border-border bg-panel">
               <WordTranscript playerRef={playerRef} fps={FPS} onSeek={seekTo} />
             </aside>
           </div>
 
           {/* Timeline: resizable */}
-          <div
-            className="border-t border-border"
-            style={{ height: timelineHeight }}
-          >
+          <div className="mx-2 mb-2 overflow-hidden rounded-md border border-border" style={{ height: timelineHeight }}>
             {/* Divider / handle */}
             <div
               onPointerDown={(e) => {
@@ -829,7 +859,7 @@ function EditorPage() {
                 try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch {}
                 const move = (ev: PointerEvent) => {
                   const dy = ev.clientY - startY;
-                  const next = Math.max(80, Math.min(window.innerHeight * 0.8, startH - dy));
+                  const next = Math.max(120, Math.min(window.innerHeight * 0.82, startH - dy));
                   setTimelineHeight(next);
                 };
                 const up = (ev: PointerEvent) => {
@@ -840,7 +870,7 @@ function EditorPage() {
                 window.addEventListener("pointermove", move);
                 window.addEventListener("pointerup", up);
               }}
-              className="cursor-row-resize bg-panel/60 h-2 w-full"
+              className="h-2.5 w-full cursor-row-resize bg-panel/70"
             />
             <Timeline playerRef={playerRef} fps={FPS} onSeek={seekTo} />
           </div>
@@ -1156,6 +1186,12 @@ function EditorPage() {
       ) : null}
 
       <ImportSourcingModal open={sourcingModalOpen} onOpenChange={setSourcingModalOpen} />
+      <Suspense fallback={null}>
+        <MediaDownloadModal open={mediaDownloadOpen} onOpenChange={setMediaDownloadOpen} />
+      </Suspense>
+      <Suspense fallback={null}>
+        <SearchMediaPanel open={searchMediaOpen} onOpenChange={setSearchMediaOpen} onImport={onSearchMediaImport} />
+      </Suspense>
     </div>
   );
 }
@@ -1323,7 +1359,7 @@ function Transport({
   }, [playerRef]);
 
   return (
-    <div className="flex w-full max-w-xl items-center gap-2 rounded border border-border bg-panel px-3 py-1.5 text-xs">
+    <div className="flex w-full max-w-2xl items-center gap-2 rounded-md border border-border bg-panel/95 px-3.5 py-2 text-xs backdrop-blur">
       <button onClick={() => onSeek(0)} className="rounded p-1 hover:bg-accent" title="Rewind">
         <Rewind className="h-3.5 w-3.5" />
       </button>
@@ -1627,4 +1663,3 @@ function PreviewAudioSegment({
     />
   );
 }
-

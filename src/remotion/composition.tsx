@@ -24,12 +24,15 @@ export type CompositionProps = {
   captionFontSize?: number;
   showLabels?: boolean;
   transcript?: { text: string; start: number; end: number }[];
+  enableGradientOverlay?: boolean;
+  gradientOverlayUrl?: string;
 };
 
 const ANIM_SHIFT = 0.6; // base scale/translate range (increased for stronger pan)
 const TRANSITION_FRAMES = 8;
 const CONTRAST_MULTIPLIER = 1.3;
 const TRANSITION_DIRECTIONS = ["slide-left", "slide-right", "slide-up", "slide-down"] as const;
+const DEFAULT_GRADIENT_OVERLAY_URL = "https://i.ibb.co/C5phXbpz/Gradient-Overlay.png";
 
 type TransitionKind = (typeof TRANSITION_DIRECTIONS)[number];
 
@@ -596,6 +599,8 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
   captionFontSize = 36,
   showLabels = true,
   transcript = [],
+  enableGradientOverlay = true,
+  gradientOverlayUrl = DEFAULT_GRADIENT_OVERLAY_URL,
 }) => {
   const renderClips = (subset: { c: typeof clips[0]; originalIndex: number }[]) => (
     <>
@@ -651,6 +656,24 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
       ) : (
         renderClips(mediaClips)
       )}
+
+      {enableGradientOverlay ? (
+        <Img
+          src={gradientOverlayUrl || DEFAULT_GRADIENT_OVERLAY_URL}
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition: "center bottom",
+            pointerEvents: "none",
+            display: "block",
+          }}
+        />
+      ) : null}
 
       {overlayUrl ? (
         <Img

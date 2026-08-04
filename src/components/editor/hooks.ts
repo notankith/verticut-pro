@@ -6,8 +6,7 @@ const ANIMS: ClipDoc["animation"][] = ["zoom-in", "zoom-out", "pan-left", "pan-r
 
 function findNextStart(clips: ClipDoc[]) {
   if (clips.length === 0) return 0;
-  const last = clips[clips.length - 1];
-  return last.start + last.duration;
+  return clips.reduce((max, clip) => Math.max(max, clip.start + clip.duration), 0);
 }
 
 export { findNextStart };

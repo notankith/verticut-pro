@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProjectIdRouteImport } from './routes/project/$id'
+import { Route as ApiSearchMediaRouteImport } from './routes/api/search-media'
 import { Route as ApiPresignUploadRouteImport } from './routes/api/presign-upload'
 import { Route as ApiFetchAndUploadImageRouteImport } from './routes/api/fetch-and-upload-image'
 import { Route as ApiPublicRenderCompleteRouteImport } from './routes/api/public/render-complete'
@@ -23,6 +24,11 @@ const IndexRoute = IndexRouteImport.update({
 const ProjectIdRoute = ProjectIdRouteImport.update({
   id: '/project/$id',
   path: '/project/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSearchMediaRoute = ApiSearchMediaRouteImport.update({
+  id: '/api/search-media',
+  path: '/api/search-media',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPresignUploadRoute = ApiPresignUploadRouteImport.update({
@@ -45,6 +51,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/fetch-and-upload-image': typeof ApiFetchAndUploadImageRoute
   '/api/presign-upload': typeof ApiPresignUploadRoute
+  '/api/search-media': typeof ApiSearchMediaRoute
   '/project/$id': typeof ProjectIdRoute
   '/api/public/render-complete': typeof ApiPublicRenderCompleteRoute
 }
@@ -52,6 +59,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/fetch-and-upload-image': typeof ApiFetchAndUploadImageRoute
   '/api/presign-upload': typeof ApiPresignUploadRoute
+  '/api/search-media': typeof ApiSearchMediaRoute
   '/project/$id': typeof ProjectIdRoute
   '/api/public/render-complete': typeof ApiPublicRenderCompleteRoute
 }
@@ -60,6 +68,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/api/fetch-and-upload-image': typeof ApiFetchAndUploadImageRoute
   '/api/presign-upload': typeof ApiPresignUploadRoute
+  '/api/search-media': typeof ApiSearchMediaRoute
   '/project/$id': typeof ProjectIdRoute
   '/api/public/render-complete': typeof ApiPublicRenderCompleteRoute
 }
@@ -69,6 +78,7 @@ export interface FileRouteTypes {
     | '/'
     | '/api/fetch-and-upload-image'
     | '/api/presign-upload'
+    | '/api/search-media'
     | '/project/$id'
     | '/api/public/render-complete'
   fileRoutesByTo: FileRoutesByTo
@@ -76,6 +86,7 @@ export interface FileRouteTypes {
     | '/'
     | '/api/fetch-and-upload-image'
     | '/api/presign-upload'
+    | '/api/search-media'
     | '/project/$id'
     | '/api/public/render-complete'
   id:
@@ -83,6 +94,7 @@ export interface FileRouteTypes {
     | '/'
     | '/api/fetch-and-upload-image'
     | '/api/presign-upload'
+    | '/api/search-media'
     | '/project/$id'
     | '/api/public/render-complete'
   fileRoutesById: FileRoutesById
@@ -91,6 +103,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiFetchAndUploadImageRoute: typeof ApiFetchAndUploadImageRoute
   ApiPresignUploadRoute: typeof ApiPresignUploadRoute
+  ApiSearchMediaRoute: typeof ApiSearchMediaRoute
   ProjectIdRoute: typeof ProjectIdRoute
   ApiPublicRenderCompleteRoute: typeof ApiPublicRenderCompleteRoute
 }
@@ -109,6 +122,13 @@ declare module '@tanstack/react-router' {
       path: '/project/$id'
       fullPath: '/project/$id'
       preLoaderRoute: typeof ProjectIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/search-media': {
+      id: '/api/search-media'
+      path: '/api/search-media'
+      fullPath: '/api/search-media'
+      preLoaderRoute: typeof ApiSearchMediaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/presign-upload': {
@@ -139,6 +159,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiFetchAndUploadImageRoute: ApiFetchAndUploadImageRoute,
   ApiPresignUploadRoute: ApiPresignUploadRoute,
+  ApiSearchMediaRoute: ApiSearchMediaRoute,
   ProjectIdRoute: ProjectIdRoute,
   ApiPublicRenderCompleteRoute: ApiPublicRenderCompleteRoute,
 }

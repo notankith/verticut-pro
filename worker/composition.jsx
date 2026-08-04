@@ -1,11 +1,12 @@
 // Mirror of src/remotion/composition.tsx in plain JSX so the worker can bundle without TS.
 import React from "react";
-import { AbsoluteFill, Audio, Img, Sequence, staticFile, useCurrentFrame, useVideoConfig, interpolate } from "remotion";
+import { AbsoluteFill, Audio, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate } from "remotion";
 
 const ANIM_SHIFT = 0.6;
 const TRANSITION_FRAMES = 8;
 const CONTRAST_MULTIPLIER = 1.3;
 const TRANSITION_DIRECTIONS = ["slide-left", "slide-right", "slide-up", "slide-down"];
+const DEFAULT_GRADIENT_OVERLAY_URL = "https://i.ibb.co/C5phXbpz/Gradient-Overlay.png";
 
 function getBoundaryTransition(index) {
   return index >= 0 && index < TRANSITION_DIRECTIONS.length ? TRANSITION_DIRECTIONS[index] : null;
@@ -307,6 +308,8 @@ export const VertiCutComposition = ({
   captionPosY,
   captionFontSize,
   transcript = [],
+  enableGradientOverlay = true,
+  gradientOverlayUrl = DEFAULT_GRADIENT_OVERLAY_URL,
 }) => {
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
@@ -361,19 +364,23 @@ export const VertiCutComposition = ({
         );
       })}
 
-      <Img
-        src={overlayUrl || staticFile("GradientOverlay.png")}
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          width: "100%",
-          height: "auto",
-          pointerEvents: "none",
-          display: "block",
-        }}
-      />
+      {enableGradientOverlay ? (
+        <Img
+          src={gradientOverlayUrl || overlayUrl || DEFAULT_GRADIENT_OVERLAY_URL}
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition: "center bottom",
+            pointerEvents: "none",
+            display: "block",
+          }}
+        />
+      ) : null}
       <CaptionOverlay
         transcript={transcript}
         audioSegments={audioSegments}

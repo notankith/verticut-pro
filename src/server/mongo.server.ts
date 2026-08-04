@@ -105,6 +105,7 @@ export type SettingsDoc = {
   captionPosY?: number;
   captionFontSize?: number;
   showLabels?: boolean;
+  enableGradientOverlay?: boolean;
 };
 
 export type RenderDoc = {

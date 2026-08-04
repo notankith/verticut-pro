@@ -81,8 +81,8 @@ export function Timeline({
 
   return (
     <div className="flex h-full flex-col bg-track">
-      <div className="flex items-center gap-3 border-b border-border bg-panel px-3 py-1.5">
-        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Timeline</span>
+      <div className="flex items-center gap-3 border-b border-border bg-panel/95 px-4 py-2 backdrop-blur">
+        <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Timeline</span>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-[10px] text-muted-foreground">Zoom</span>
           <input
@@ -91,7 +91,7 @@ export function Timeline({
             max={200}
             value={zoom}
             onChange={(e) => set({ zoom: Number(e.target.value) })}
-            className="w-32"
+            className="w-36"
           />
         </div>
       </div>
@@ -100,14 +100,14 @@ export function Timeline({
           {/* Ruler */}
           <div
             onPointerDown={startScrubFromEvent}
-            className="sticky top-0 z-10 h-6 shrink-0 cursor-ew-resize select-none border-b border-border bg-panel"
+            className="sticky top-0 z-10 h-7 shrink-0 cursor-ew-resize select-none border-b border-border bg-panel"
             style={{ width: totalWidth, touchAction: "none" }}
           >
             <Ruler totalWidth={totalWidth} zoom={zoom} duration={projectDuration} />
           </div>
 
           {/* Audio track */}
-          <div className="relative h-7 shrink-0 border-b border-border bg-panel px-2 text-[11px] text-muted-foreground">
+          <div className="relative h-8 shrink-0 border-b border-border bg-panel px-2 text-[11px] text-muted-foreground">
             <div className="absolute left-2 top-0.5 text-[9px] opacity-60">Audio</div>
             <div
               className="absolute left-0 top-0 h-full"
@@ -130,7 +130,7 @@ export function Timeline({
 
           {/* Solids track */}
           <div
-            className="relative h-14 shrink-0 border-b border-border bg-panel"
+            className="relative h-16 shrink-0 border-b border-border bg-panel"
             style={{ width: totalWidth }}
             onPointerDown={(e) => {
               if (e.target !== e.currentTarget) return;
@@ -155,7 +155,7 @@ export function Timeline({
 
           {/* Texts track */}
           <div
-            className="relative h-14 shrink-0 border-b border-border bg-panel"
+            className="relative h-16 shrink-0 border-b border-border bg-panel"
             style={{ width: totalWidth }}
             onPointerDown={(e) => {
               if (e.target !== e.currentTarget) return;
@@ -180,7 +180,7 @@ export function Timeline({
 
           {/* Media track */}
           <div
-            className="relative flex-1 min-h-[48px]"
+            className="relative flex-1 min-h-[56px]"
             style={{ width: totalWidth }}
             onPointerDown={(e) => {
               if (e.target !== e.currentTarget) return;
@@ -459,8 +459,8 @@ function ClipBlock({
           setDrag({ kind: "move", startX: e.clientX, orig: clip.start });
         }
       }}
-      className={`absolute top-2 bottom-2 cursor-grab overflow-visible rounded border ${
-        selected ? "border-primary ring-1 ring-primary" : "border-border"
+      className={`absolute top-2 bottom-2 cursor-grab overflow-visible rounded border transition-shadow duration-200 ${
+        selected ? "border-primary ring-1 ring-primary shadow-lg" : "border-border"
       }`}
       style={{
         left: clip.start * zoom,
@@ -618,4 +618,3 @@ function AudioSegmentBlock({
     </div>
   );
 }
-

@@ -84,8 +84,8 @@ export function WordTranscript({
   }, [activeIndex]);
 
   return (
-    <div className="flex h-full flex-col p-3 text-xs">
-      <div className="mb-2 flex items-center justify-between">
+    <div className="flex h-full flex-col p-4 text-xs">
+      <div className="mb-3 flex items-center justify-between">
         <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           Transcript
         </h3>
@@ -93,13 +93,13 @@ export function WordTranscript({
           <span className="text-[10px] text-muted-foreground">{transcript.length} words</span>
         )}
       </div>
-      <div className="flex-1 min-h-0 rounded border border-border bg-panel-2">
+      <div className="flex-1 min-h-0 rounded-md border border-border bg-panel-2">
         {transcript.length === 0 ? (
           <div className="flex h-full items-center justify-center px-3 text-center text-[11px] text-muted-foreground">
             Transcript will appear here once ready…
           </div>
         ) : (
-          <div ref={scrollRef} className="h-full overflow-y-auto px-3 py-2 leading-relaxed">
+          <div ref={scrollRef} className="h-full overflow-y-auto px-3 py-3 leading-relaxed">
             {transcript.map((w, i) => {
               const isActive = i === activeIndex;
               const isPast = i < activeIndex;
