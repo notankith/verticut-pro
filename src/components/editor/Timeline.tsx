@@ -550,8 +550,8 @@ function ClipBlock({
         zIndex: drag ? 50 : undefined,
       }}
     >
-      <div data-handle="left" className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-white/20 hover:bg-white/40" />
-      <div data-handle="right" className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-white/20 hover:bg-white/40" />
+      <div data-handle="left" className="absolute left-0 top-0 bottom-0 w-3 z-20 cursor-ew-resize bg-white/10 hover:bg-white/30 border-r border-white/25 transition-colors" title="Drag to trim start" />
+      <div data-handle="right" className="absolute right-0 top-0 bottom-0 w-3 z-20 cursor-ew-resize bg-white/10 hover:bg-white/30 border-l border-white/25 transition-colors" title="Drag to trim end" />
 
       {/* Keyframe markers */}
       {clip.keyframes?.map((k, idx) => (

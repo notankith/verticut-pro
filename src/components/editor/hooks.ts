@@ -93,12 +93,51 @@ export function useTimelineActions() {
         let newStart = c.start;
         let newDur = c.duration;
 
+        const others = prev.filter((o) => o.id !== id);
+        const audio = useEditor.getState().audioSegments || [];
+        const SNAP = 8 / (useEditor.getState().zoom || 60);
+
         if (edge === "start") {
-          newStart = Math.max(0, Math.min(c.start + c.duration - 0.5, newValue));
+          const limitStart = c.start + c.duration - 0.5;
+          let target = Math.max(0, Math.min(limitStart, newValue));
+          let snappedPos = target;
+          let nearestSnapDist = SNAP;
+
+          for (const o of others) {
+            const d1 = Math.abs(target - (o.start + o.duration));
+            if (d1 < nearestSnapDist) { snappedPos = o.start + o.duration; nearestSnapDist = d1; }
+            const d2 = Math.abs(target - o.start);
+            if (d2 < nearestSnapDist) { snappedPos = o.start; nearestSnapDist = d2; }
+          }
+          for (const a of audio) {
+            const d1 = Math.abs(target - (a.projStart + a.duration));
+            if (d1 < nearestSnapDist) { snappedPos = a.projStart + a.duration; nearestSnapDist = d1; }
+            const d2 = Math.abs(target - a.projStart);
+            if (d2 < nearestSnapDist) { snappedPos = a.projStart; nearestSnapDist = d2; }
+          }
+
+          newStart = Math.max(0, Math.min(limitStart, snappedPos));
           newDur = c.start + c.duration - newStart;
         } else {
-          const end = Math.max(c.start + 0.5, newValue);
-          newDur = end - c.start;
+          const limitEnd = c.start + 0.5;
+          let target = Math.max(limitEnd, newValue);
+          let snappedPos = target;
+          let nearestSnapDist = SNAP;
+
+          for (const o of others) {
+            const d1 = Math.abs(target - o.start);
+            if (d1 < nearestSnapDist) { snappedPos = o.start; nearestSnapDist = d1; }
+            const d2 = Math.abs(target - (o.start + o.duration));
+            if (d2 < nearestSnapDist) { snappedPos = o.start + o.duration; nearestSnapDist = d2; }
+          }
+          for (const a of audio) {
+            const d1 = Math.abs(target - a.projStart);
+            if (d1 < nearestSnapDist) { snappedPos = a.projStart; nearestSnapDist = d1; }
+            const d2 = Math.abs(target - (a.projStart + a.duration));
+            if (d2 < nearestSnapDist) { snappedPos = a.projStart + a.duration; nearestSnapDist = d2; }
+          }
+
+          newDur = Math.max(0.5, snappedPos - c.start);
         }
 
         const list = [...prev];

@@ -446,32 +446,181 @@ export function MediaPanel({
   onImportMedia?: () => void;
   onDownloadMedia?: () => void;
 }) {
+  const { selectedClipId, clips } = useEditor();
+  const { updateClip, deleteClip } = useTimelineActions();
+  const replaceRef = useRef<HTMLInputElement>(null);
+  const splitBottomRef = useRef<HTMLInputElement>(null);
+
+  const clip = clips.find((c) => c.id === selectedClipId);
+  const isMediaClip = clip && clip.kind === "media";
+
   return (
-    <div className="h-full flex flex-col p-4 text-xs bg-panel">
-      <header className="border-b border-border pb-2.5 mb-4 shrink-0">
+    <div className="h-full flex flex-col p-4 text-xs bg-panel overflow-y-auto space-y-4">
+      <header className="border-b border-border pb-2.5 mb-2 shrink-0">
         <h3 className="text-xs font-semibold">Media Manager</h3>
-        <p className="text-[10px] text-muted-foreground">Manage and download project media assets</p>
+        <p className="text-[10px] text-muted-foreground mr-1">Manage, download, and configure media tracks</p>
       </header>
 
-      <div className="space-y-3 flex-1 flex flex-col justify-center max-w-xs mx-auto w-full">
-        <button
-          type="button"
-          onClick={onImportMedia}
-          className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-border bg-panel-2 py-3.5 hover:bg-accent text-sm font-semibold transition-all shadow-sm hover:scale-[1.01]"
-        >
-          <Film className="h-4.5 w-4.5 text-primary" />
-          Import Media
-        </button>
+      {/* Project Media Actions */}
+      <div className="bg-panel-2 p-3 rounded border border-border space-y-2">
+        <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-1.5">Project Assets</div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onImportMedia}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded border border-border bg-panel py-2 hover:bg-accent font-semibold text-[11px]"
+          >
+            <Film className="h-3.5 w-3.5 text-primary" />
+            Import Media
+          </button>
 
-        <button
-          type="button"
-          onClick={onDownloadMedia}
-          className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-border bg-panel-2 py-3.5 hover:bg-accent text-sm font-semibold transition-all shadow-sm hover:scale-[1.01]"
-        >
-          <Sparkles className="h-4.5 w-4.5 text-yellow-500" />
-          Download Media
-        </button>
+          <button
+            type="button"
+            onClick={onDownloadMedia}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded border border-border bg-panel py-2 hover:bg-accent font-semibold text-[11px]"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-yellow-500" />
+            Download Media
+          </button>
+        </div>
       </div>
+
+      {/* Selected Media Item Actions */}
+      {isMediaClip ? (
+        <div className="bg-panel-2 p-3 rounded border border-border space-y-3.5">
+          <div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-1">Selected Media Properties</div>
+            <p className="text-[9.5px] text-muted-foreground">Modify settings for the selected track element</p>
+          </div>
+
+          {/* Replace Main Media */}
+          <div>
+            <button
+              type="button"
+              onClick={() => replaceRef.current?.click()}
+              className="w-full flex items-center justify-center gap-1.5 rounded border border-border bg-panel py-2.5 text-[11px] font-semibold hover:bg-accent"
+            >
+              <RefreshCw className="h-3.5 w-3.5 text-primary" />
+              Replace Main Media
+            </button>
+          </div>
+
+          {/* Split Screen Control */}
+          <div className="border-t border-border/60 pt-3">
+            <button
+              type="button"
+              onClick={() =>
+                updateClip(clip.id, {
+                  splitScreen: clip.splitScreen?.enabled
+                    ? { ...clip.splitScreen, enabled: false }
+                    : { ...(clip.splitScreen ?? {}), enabled: true },
+                })
+              }
+              className={`w-full rounded border py-2 text-[11.5px] font-semibold transition-all ${clip.splitScreen?.enabled
+                  ? "border-primary bg-primary/10 text-primary shadow-sm"
+                  : "border-border bg-panel text-muted-foreground hover:bg-accent"
+                }`}
+            >
+              Split Screen Interface: {clip.splitScreen?.enabled ? "ON" : "OFF"}
+            </button>
+
+            {clip.splitScreen?.enabled && (
+              <div className="mt-2.5 space-y-2 rounded border border-border bg-panel/40 p-2">
+                <div className="text-[9px] font-medium text-muted-foreground">
+                  Layout: main media (top half) · bottom image (bottom half)
+                </div>
+                {clip.splitScreen.bottomImageUrl ? (
+                  <div className="relative group rounded border border-border overflow-hidden">
+                    <img
+                      src={clip.splitScreen.bottomImageUrl}
+                      alt="Bottom half preview"
+                      className="w-full h-16 object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className="h-10 rounded border border-dashed border-border/80 flex items-center justify-center text-[10px] text-muted-foreground bg-panel/30">
+                    Bottom half is empty
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => splitBottomRef.current?.click()}
+                  className="flex w-full items-center justify-center gap-1.5 rounded border border-border bg-panel py-1.5 text-[10.5px] hover:bg-accent font-semibold"
+                >
+                  <ImageIcon className="h-3.5 w-3.5 text-primary" />
+                  {clip.splitScreen.bottomImageUrl ? "Replace Bottom Image" : "Import Bottom Image"}
+                </button>
+                <p className="text-center text-[9px] text-muted-foreground font-medium italic">
+                  Tip: Or hit Ctrl+V with this media clip selected
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Delete Clip */}
+          <div className="border-t border-border/60 pt-3">
+            <button
+              type="button"
+              onClick={() => deleteClip(clip.id)}
+              className="w-full flex items-center justify-center gap-1.5 rounded border border-destructive/35 bg-destructive/10 py-2.5 text-destructive hover:bg-destructive/15 text-[11px] font-semibold transition"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete Media Clip
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex items-center justify-center text-center p-3 text-[10.5px] text-muted-foreground border border-dashed border-border/80 rounded bg-panel-2/30">
+          Select any media clip on the timeline to configure split screen, replace, or delete.
+        </div>
+      )}
+
+      {/* Hidden inputs */}
+      <input
+        ref={replaceRef}
+        type="file"
+        accept="image/*,video/*"
+        className="hidden"
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (!f || !clip) return;
+          try {
+            const isVideo = f.type.startsWith("video/");
+            const { key, url } = await uploadToR2(f, isVideo ? "video" : "image");
+            updateClip(clip.id, {
+              videoUrl: isVideo ? url : undefined,
+              videoKey: isVideo ? key : undefined,
+              imageUrl: !isVideo ? url : undefined,
+              imageKey: !isVideo ? key : undefined,
+            });
+          } catch (err) {
+            console.error("Replacement failed", err);
+          } finally {
+            e.target.value = "";
+          }
+        }}
+      />
+
+      <input
+        ref={splitBottomRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (!f || !clip) return;
+          try {
+            const { key, url } = await uploadToR2(f, "image");
+            updateClip(clip.id, {
+              splitScreen: { enabled: true, bottomImageKey: key, bottomImageUrl: url },
+            });
+          } catch (err) {
+            console.error("Split screen bottom import failed:", err);
+          } finally {
+            e.target.value = "";
+          }
+        }}
+      />
     </div>
   );
 }

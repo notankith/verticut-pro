@@ -82,6 +82,16 @@ function EditorPage() {
   const settings = useEditor((s) => s.settings);
   const transcript = useEditor((s) => s.transcript);
   const name = useEditor((s) => s.name);
+  const selectedClipId = useEditor((s) => s.selectedClipId);
+
+  // Auto-focus Animation tab when a media clip is selected
+  useEffect(() => {
+    if (!selectedClipId) return;
+    const clip = clips.find((c) => c.id === selectedClipId);
+    if (clip && clip.kind === "media") {
+      setActiveSidebarTab("animation");
+    }
+  }, [selectedClipId, clips]);
 
   // Project renaming states
   const [isEditingName, setIsEditingName] = useState(false);
@@ -869,19 +879,23 @@ function EditorPage() {
               <aside className={`shrink-0 overflow-hidden rounded-r-md border border-border bg-panel flex flex-col transition-all duration-200 ${activeSidebarTab === "search" ? "w-[350px]" : "w-[252px]"
                 }`}>
                 <div className="flex-1 overflow-hidden min-h-0 relative">
-                  {activeSidebarTab === "search" && (
+                  <div className={activeSidebarTab !== "search" ? "hidden" : "h-full"}>
                     <Suspense fallback={<div className="flex h-full items-center justify-center p-4"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>}>
-                      <SearchMediaPanel open={true} onOpenChange={() => { }} onImport={onSearchMediaImport} />
+                      <SearchMediaPanel open={activeSidebarTab === "search"} onOpenChange={() => { }} onImport={onSearchMediaImport} />
                     </Suspense>
-                  )}
-                  {activeSidebarTab === "animation" && <AnimationPanel />}
-                  {activeSidebarTab === "media" && (
+                  </div>
+                  <div className={activeSidebarTab !== "animation" ? "hidden" : "h-full"}>
+                    <AnimationPanel />
+                  </div>
+                  <div className={activeSidebarTab !== "media" ? "hidden" : "h-full"}>
                     <MediaPanel
                       onImportMedia={() => fileImportRef.current?.click()}
                       onDownloadMedia={() => setMediaDownloadOpen(true)}
                     />
-                  )}
-                  {activeSidebarTab === "captions" && <CaptionsPanel />}
+                  </div>
+                  <div className={activeSidebarTab !== "captions" ? "hidden" : "h-full"}>
+                    <CaptionsPanel />
+                  </div>
                 </div>
               </aside>
             </div>

@@ -171,7 +171,7 @@ export default function SearchMediaPanel({ open, onOpenChange, onImport }: Props
         </div>
         <div className="min-w-0">
           <h3 className="text-xs font-semibold">Search Media</h3>
-          <p className="text-[10px] text-muted-foreground">Sportskeeda Getty search</p>
+          <p className="text-[10px] text-muted-foreground">Search and import stock media</p>
         </div>
       </header>
 
@@ -183,7 +183,7 @@ export default function SearchMediaPanel({ open, onOpenChange, onImport }: Props
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleSearchKeyDown}
-              placeholder="Search Getty images..."
+              placeholder="Search media..."
               className="h-8.5 w-full rounded-md border border-border bg-panel-2 pl-8.5 pr-2 text-xs outline-none transition-colors focus:border-primary/60"
             />
           </div>
@@ -252,14 +252,14 @@ export default function SearchMediaPanel({ open, onOpenChange, onImport }: Props
                 >
                   <img
                     src={item.url}
-                    alt={item.title ?? "Getty image"}
+                    alt={item.title ?? "Media image"}
                     loading="lazy"
                     className="aspect-[4/5] w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                   />
                   <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-1.5 pb-1.5 pt-3">
                     <div className="flex items-center justify-between gap-1 text-[9px] text-white">
                       <div className="overflow-hidden text-ellipsis whitespace-nowrap pr-1 font-semibold flex-1">
-                        {item.title || "Getty image"}
+                        {item.title || "Media image"}
                       </div>
                       <span className="inline-flex items-center gap-0.5 rounded bg-black/50 px-1 py-0.5 font-medium text-white border border-white/10 shrink-0">
                         {importing ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <ImagePlus className="h-2.5 w-2.5" />}
