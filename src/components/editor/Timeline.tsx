@@ -55,10 +55,6 @@ export function Timeline({
     didAutoFitRef.current = fitKey;
   }, [projectDuration, projectId, set]);
 
-  function presetTint(id: string) {
-    return settings.presets.find((p) => p.id === id)?.tint ?? "#71717a";
-  }
-
   function startScrubFromEvent(e: React.PointerEvent<HTMLDivElement>) {
     const targetEl = e.currentTarget as HTMLDivElement;
     e.preventDefault();
@@ -154,7 +150,7 @@ export function Timeline({
                   key={c.id}
                   clip={c}
                   zoom={zoom}
-                  tint={presetTint(c.labelPresetId)}
+                  tint="#3f3f46"
                   selected={selectedClipId === c.id}
                   onSelect={() => select(c.id)}
                   onMove={(s, r) => moveClip(c.id, s, r)}
@@ -174,51 +170,53 @@ export function Timeline({
           </div>
 
           {/* Overlay Layer */}
-          <div
-            data-track-layer="overlay"
-            className="relative h-24 shrink-0 border-b border-border bg-panel flex"
-            style={{ width: totalWidth + headerWidth }}
-            onPointerDown={(e) => {
-              if (e.target !== e.currentTarget) return;
-              startScrubFromEvent(e);
-            }}
-          >
+          {(settings.enableOverlayLayer ?? true) && (
             <div
-              className="sticky left-0 z-20 shrink-0 h-full border-r border-border bg-panel-2/95 backdrop-blur flex items-center justify-between px-3"
-              style={{ width: headerWidth }}
+              data-track-layer="overlay"
+              className="relative h-24 shrink-0 border-b border-border bg-panel flex"
+              style={{ width: totalWidth + headerWidth }}
+              onPointerDown={(e) => {
+                if (e.target !== e.currentTarget) return;
+                startScrubFromEvent(e);
+              }}
             >
-              <div className="flex items-center gap-1.5 min-w-0">
-                <Layers className="h-3.5 w-3.5 text-primary shrink-0" />
-                <span className="text-[10.5px] font-bold text-foreground truncate">Overlay Layer</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => set({ hideOverlays: !hideOverlays })}
-                className="text-muted-foreground hover:text-foreground hover:bg-accent p-1 rounded"
-                title={hideOverlays ? "Show Overlay Layer" : "Hide Overlay Layer"}
+              <div
+                className="sticky left-0 z-20 shrink-0 h-full border-r border-border bg-panel-2/95 backdrop-blur flex items-center justify-between px-3"
+                style={{ width: headerWidth }}
               >
-                {hideOverlays ? <EyeOff className="h-3.5 w-3.5 text-muted-foreground" /> : <Eye className="h-3.5 w-3.5 text-primary" />}
-              </button>
-            </div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Layers className="h-3.5 w-3.5 text-primary shrink-0" />
+                  <span className="text-[10.5px] font-bold text-foreground truncate">Overlay Layer</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => set({ hideOverlays: !hideOverlays })}
+                  className="text-muted-foreground hover:text-foreground hover:bg-accent p-1 rounded"
+                  title={hideOverlays ? "Show Overlay Layer" : "Hide Overlay Layer"}
+                >
+                  {hideOverlays ? <EyeOff className="h-3.5 w-3.5 text-muted-foreground" /> : <Eye className="h-3.5 w-3.5 text-primary" />}
+                </button>
+              </div>
 
-            <div className={`relative flex-1 h-full ${hideOverlays ? "opacity-30 pointer-events-none" : ""}`}>
-              {clips.filter(c => c.layer === "overlay" || (!c.layer && (c.kind === "text" || c.kind === "solid"))).map((c) => (
-                <ClipBlock
-                  key={c.id}
-                  clip={c}
-                  zoom={zoom}
-                  tint={presetTint(c.labelPresetId)}
-                  selected={selectedClipId === c.id}
-                  onSelect={() => select(c.id)}
-                  onMove={(s, r) => moveClip(c.id, s, r)}
-                  onTrim={(e, v, r) => trimClip(c.id, e, v, r)}
-                  onKeyframeClick={
-                    c.kind === "media" ? (time) => addKeyframe(c.id, { time }) : undefined
-                  }
-                />
-              ))}
+              <div className={`relative flex-1 h-full ${hideOverlays ? "opacity-30 pointer-events-none" : ""}`}>
+                {clips.filter(c => c.layer === "overlay" || (!c.layer && (c.kind === "text" || c.kind === "solid"))).map((c) => (
+                  <ClipBlock
+                    key={c.id}
+                    clip={c}
+                    zoom={zoom}
+                    tint="#3f3f46"
+                    selected={selectedClipId === c.id}
+                    onSelect={() => select(c.id)}
+                    onMove={(s, r) => moveClip(c.id, s, r)}
+                    onTrim={(e, v, r) => trimClip(c.id, e, v, r)}
+                    onKeyframeClick={
+                      c.kind === "media" ? (time) => addKeyframe(c.id, { time }) : undefined
+                    }
+                  />
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Audio Layer */}
           <div
@@ -234,8 +232,8 @@ export function Timeline({
               style={{ width: headerWidth }}
             >
               <div className="flex items-center gap-1.5 min-w-0">
-                <Music className="h-3.5 w-3.5 text-primary shrink-0" />
-                <span className="text-[10.5px] font-bold text-foreground truncate">Audio Layer</span>
+                <Music className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                <span className="text-[10.5px] font-bold text-foreground truncate divide-y">Audio Layer</span>
               </div>
               <button
                 type="button"
@@ -243,7 +241,7 @@ export function Timeline({
                 className="text-muted-foreground hover:text-foreground hover:bg-accent p-1 rounded"
                 title={muteAudio ? "Unmute Audio Layer" : "Mute Audio Layer"}
               >
-                {muteAudio ? <EyeOff className="h-3.5 w-3.5 text-muted-foreground" /> : <Eye className="h-3.5 w-3.5 text-primary" />}
+                {muteAudio ? <EyeOff className="h-3.5 w-3.5 text-muted-foreground" /> : <Eye className="h-3.5 w-3.5 text-emerald-500" />}
               </button>
             </div>
 
@@ -517,6 +515,8 @@ function ClipBlock({
     };
   }, [drag]);
 
+  const displayName = clip.textContent || (clip.imageUrl ? "Image Layer" : clip.videoUrl ? "Video Layer" : clip.kind === "solid" ? "Solid Layer" : "Clip");
+
   return (
     <div
       onMouseDown={(e) => {
@@ -538,18 +538,36 @@ function ClipBlock({
           setDrag({ kind: "move", startX: e.clientX, startY: e.clientY, orig: clip.start });
         }
       }}
-      className={`absolute top-2 bottom-2 cursor-grab overflow-visible rounded border transition-shadow duration-200 ${selected ? "border-primary ring-1 ring-primary shadow-lg" : "border-border"
+      className={`absolute top-2 bottom-2 cursor-grab overflow-visible rounded border transition-shadow duration-205 bg-black ${selected ? "border-primary ring-1 ring-primary shadow-lg" : "border-border"
         }`}
       style={{
         left: clip.start * zoom,
         width: Math.max(20, clip.duration * zoom),
         transform: `translateY(${deltaY}px)`,
-        backgroundImage: clip.imageUrl ? `url(${clip.imageUrl})` : `linear-gradient(180deg, color-mix(in oklab, ${tint} 35%, var(--panel)) 0%, color-mix(in oklab, ${tint} 15%, var(--panel)) 100%)`,
+        backgroundImage: clip.imageUrl ? `url(${clip.imageUrl})` : "none",
         backgroundSize: "cover",
         backgroundPosition: "center",
         zIndex: drag ? 50 : undefined,
       }}
     >
+      {/* HTML5 video element rendering video preview thumbnail */}
+      {clip.videoUrl && (
+        <video
+          src={`${clip.videoUrl}#t=0.1`}
+          className="absolute inset-0 h-full w-full object-cover opacity-60 rounded-sm pointer-events-none"
+          muted
+          playsInline
+        />
+      )}
+      {!clip.imageUrl && !clip.videoUrl && (
+        <div
+          className="absolute inset-0 rounded-sm pointer-events-none opacity-85"
+          style={{
+            backgroundImage: `linear-gradient(180deg, color-mix(in oklab, ${tint} 35%, var(--panel)) 0%, color-mix(in oklab, ${tint} 15%, var(--panel)) 100%)`
+          }}
+        />
+      )}
+
       <div data-handle="left" className="absolute left-0 top-0 bottom-0 w-3 z-20 cursor-ew-resize bg-white/10 hover:bg-white/30 border-r border-white/25 transition-colors" title="Drag to trim start" />
       <div data-handle="right" className="absolute right-0 top-0 bottom-0 w-3 z-20 cursor-ew-resize bg-white/10 hover:bg-white/30 border-l border-white/25 transition-colors" title="Drag to trim end" />
 
@@ -576,13 +594,16 @@ function ClipBlock({
         </div>
       ))}
 
-      {clip.imageUrl && <div className="absolute inset-0 bg-black/45 rounded-sm z-[1]" />}
+      {(clip.imageUrl || clip.videoUrl) && <div className="absolute inset-0 bg-black/45 rounded-sm z-[1]" />}
       <div className="pointer-events-none p-1.5 text-[10px] leading-tight relative h-full w-full z-[2]">
         <div className="truncate font-semibold flex items-center gap-1.5">
           {clip.imageUrl && (
             <img src={clip.imageUrl} alt="" className="h-4.5 w-4.5 rounded-sm object-cover shrink-0" />
           )}
-          <span className="truncate">{clip.kind === "text" ? `T: ${clip.textContent || "Text"}` : clip.kind === "solid" ? "Solid Layer" : clip.labelText}</span>
+          {clip.videoUrl && (
+            <Film className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
+          )}
+          <span className="truncate">{displayName}</span>
         </div>
         <div className="absolute bottom-1 left-2 text-[9px] uppercase tracking-wide opacity-80">{clip.animation}</div>
         <div className="absolute bottom-1 right-2 text-[9px] font-mono opacity-80">{clip.duration.toFixed(2)}s</div>

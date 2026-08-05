@@ -5,6 +5,7 @@ import { presignPut, publicUrl } from "./server/r2.server";
 import { uploadBuffer } from "./server/r2.server";
 import { submitTranscript, getTranscript } from "./server/assemblyai.server";
 import { DEFAULT_TEMPLATE_WINDOW, getTemplateById } from "@/lib/templates";
+import { getAuthUser, requireAuthUser, createSession, clearSession, hashPassword, type UserDoc } from "./server/auth.server";
 
 // Untyped collection helper to avoid Mongo's ObjectId _id constraint (we use string ids)
 async function C<T = unknown>(name: string) {
@@ -33,49 +34,43 @@ export const presignUpload = createServerFn({ method: "POST" })
 // Settings live in a single shared document so changes apply to every
 // project. The id is fixed; the per-project rows that older builds may have
 // written are ignored.
-const GLOBAL_SETTINGS_ID = "global";
-
-function defaultSettings(id: string = GLOBAL_SETTINGS_ID): SettingsDoc {
+function defaultSettings(id: string): SettingsDoc {
   return {
     _id: id,
-    defaultLabelText: "‎ ",
-    defaultFontSize: 18,
     animationIntensity: 1,
     musicUrl: "",
     musicVolume: 30,
     transitionAnimation: true,
     activeTemplateId: null,
     templateWindow: DEFAULT_TEMPLATE_WINDOW,
-    presets: [
-      { id: "wwe", name: "WWE", text: "‎ ", tint: "#ef4444" },
-      { id: "aew", name: "AEW", text: "‎ ", tint: "#eab308" },
-      { id: "custom", name: "Custom", text: "‎ ", tint: "#a855f7" },
-    ],
     captionTextColor: "#000000",
     captionBgColor: "#ffffff",
     captionPosX: 50,
     captionPosY: 75,
     captionFontSize: 36,
-    showLabels: true,
     enableGradientOverlay: true,
-  };
+    showCaptions: true,
+    enableOverlayLayer: true,
+  } as any;
 }
 
-async function readGlobalSettings(): Promise<SettingsDoc> {
+async function readGlobalSettings(userId: string): Promise<SettingsDoc> {
   const settingsC = await C<SettingsDoc>("settings");
-  const doc = await settingsC.findOne({ _id: GLOBAL_SETTINGS_ID });
-  return doc ? { ...defaultSettings(), ...doc } : defaultSettings();
+  const doc = await settingsC.findOne({ _id: userId });
+  return doc ? { ...defaultSettings(userId), ...doc } : defaultSettings(userId);
 }
 
 export const createProjectFromAudio = createServerFn({ method: "POST" })
   .inputValidator((d: { audioKey: string; audioUrl: string }) => d)
   .handler(async ({ data }) => {
+    const user = await requireAuthUser();
     const projects = await C<ProjectDoc>("projects");
     const id = randomUUID();
     const transcriptId = await submitTranscript(data.audioUrl);
     const now = Date.now();
     await projects.insertOne({
       _id: id,
+      userId: user._id,
       name: "Transcribing…",
       audioKey: data.audioKey,
       audioUrl: data.audioUrl,
@@ -97,27 +92,37 @@ export type ProjectListItem = {
   duration: number;
   clipCount: number;
   createdAt: number;
+  updatedAt?: number;
   transcriptStatus: ProjectDoc["transcriptStatus"];
+  thumbnailUrl?: string | null;
 };
 
 export const listProjects = createServerFn({ method: "GET" }).handler(async (): Promise<ProjectListItem[]> => {
+  const user = await requireAuthUser();
   const projects = await C<ProjectDoc>("projects");
-  const docs = await projects.find({}, { projection: { transcript: 0 } }).sort({ createdAt: -1 }).toArray();
+  const docs = await projects.find({ userId: user._id }, { projection: { transcript: 0 } }).sort({ createdAt: -1 }).toArray();
   return docs.map((p) => ({
     id: p._id,
     name: p.name,
     duration: p.audioDuration ?? 0,
     clipCount: (p.clips ?? []).length,
     createdAt: p.createdAt,
+    updatedAt: p.updatedAt || p.createdAt,
     transcriptStatus: p.transcriptStatus,
+    thumbnailUrl: p.clips?.[0]?.imageUrl || p.clips?.[0]?.videoUrl || null,
   }));
 });
 
 export const deleteProject = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => d)
   .handler(async ({ data }) => {
+    const user = await requireAuthUser();
     const projects = await C<ProjectDoc>("projects");
     const renders = await C<RenderDoc>("renders");
+    const proj = await projects.findOne({ _id: data.id });
+    if (!proj || proj.userId !== user._id) {
+      throw new Error("Project not found or unauthorized");
+    }
     await projects.deleteOne({ _id: data.id });
     await renders.deleteMany({ projectId: data.id });
     return { ok: true };
@@ -251,9 +256,11 @@ async function generateTranscriptMarkers(fullText: string, words: { text: string
 export const getProject = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => d)
   .handler(async ({ data }): Promise<ProjectFull> => {
+    const user = await requireAuthUser();
     const projects = await C<ProjectDoc>("projects");
     const p = await projects.findOne({ _id: data.id });
     if (!p) throw new Error("Project not found");
+    if (p.userId !== user._id) throw new Error("Unauthorized access to this project");
 
     if (p.transcriptStatus === "pending" && p.transcriptJobId) {
       const r = await getTranscript(p.transcriptJobId);
@@ -296,7 +303,7 @@ export const getProject = createServerFn({ method: "POST" })
       }
     }
 
-    const settings = await readGlobalSettings();
+    const settings = await readGlobalSettings(user._id);
     return {
       id: p._id,
       name: p.name,
@@ -314,7 +321,11 @@ export const getProject = createServerFn({ method: "POST" })
 export const saveProject = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string; clips: ClipDoc[]; audioDuration?: number; audioSegments?: AudioSegment[]; name?: string }) => d)
   .handler(async ({ data }) => {
+    const user = await requireAuthUser();
     const projects = await C<ProjectDoc>("projects");
+    const p = await projects.findOne({ _id: data.id });
+    if (!p || p.userId !== user._id) throw new Error("Unauthorized or project not found");
+
     const update: any = { clips: data.clips, updatedAt: Date.now() };
     if (typeof data.audioDuration === "number") {
       update.audioDuration = data.audioDuration;
@@ -332,16 +343,14 @@ export const saveProject = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-// Settings are global. The `id` arg is accepted but ignored — every save goes
-// to the single shared `_id: "global"` document so changes apply across every
-// project.
 export const saveSettings = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string; settings: SettingsDoc }) => d)
   .handler(async ({ data }) => {
+    const user = await requireAuthUser();
     const settingsC = await C<SettingsDoc>("settings");
     await settingsC.updateOne(
-      { _id: GLOBAL_SETTINGS_ID },
-      { $set: { ...defaultSettings(), ...data.settings, _id: GLOBAL_SETTINGS_ID } },
+      { _id: user._id },
+      { $set: { ...defaultSettings(user._id), ...data.settings, _id: user._id } },
       { upsert: true },
     );
     return { ok: true };
@@ -349,17 +358,19 @@ export const saveSettings = createServerFn({ method: "POST" })
 
 export const getGlobalSettings = createServerFn({ method: "GET" }).handler(
   async (): Promise<SettingsDoc> => {
-    return readGlobalSettings();
+    const user = await requireAuthUser();
+    return readGlobalSettings(user._id);
   },
 );
 
 export const saveGlobalSettings = createServerFn({ method: "POST" })
   .inputValidator((d: { settings: SettingsDoc }) => d)
   .handler(async ({ data }) => {
+    const user = await requireAuthUser();
     const settingsC = await C<SettingsDoc>("settings");
     await settingsC.updateOne(
-      { _id: GLOBAL_SETTINGS_ID },
-      { $set: { ...defaultSettings(), ...data.settings, _id: GLOBAL_SETTINGS_ID } },
+      { _id: user._id },
+      { $set: { ...defaultSettings(user._id), ...data.settings, _id: user._id } },
       { upsert: true },
     );
     return { ok: true };
@@ -390,26 +401,19 @@ function publicAppOrigin() {
 export const enqueueRender = createServerFn({ method: "POST" })
   .inputValidator((d: { projectId: string }) => d)
   .handler(async ({ data }) => {
+    const user = await requireAuthUser();
     const projects = await C<ProjectDoc>("projects");
     const renders = await C<RenderDoc>("renders");
 
     const project = await projects.findOne({ _id: data.projectId });
-    if (!project) throw new Error("Project not found");
+    if (!project || project.userId !== user._id) throw new Error("Project not found or unauthorized");
 
-    // Clean up any old "© WWE | © Getty Images" labels baked into existing clips
-    if (project.clips) {
-      for (const clip of project.clips) {
-        if (clip.labelText && clip.labelText.includes("Getty")) {
-          clip.labelText = "‎ ";
-        }
-      }
-    }
-
-    const settings = await readGlobalSettings();
+    const settings = await readGlobalSettings(user._id);
     const id = randomUUID();
     const filename = slugFilename(project.name);
     const render: RenderDoc = {
       _id: id,
+      userId: user._id,
       projectId: data.projectId,
       filename,
       status: "queued",
@@ -470,9 +474,10 @@ export const enqueueRender = createServerFn({ method: "POST" })
 export const getRenderProgress = createServerFn({ method: "POST" })
   .inputValidator((d: { renderId: string }) => d)
   .handler(async ({ data }) => {
+    const user = await requireAuthUser();
     const renders = await C<RenderDoc>("renders");
     const local = await renders.findOne({ _id: data.renderId });
-    if (!local) throw new Error("Render not found");
+    if (!local || local.userId !== user._id) throw new Error("Render not found or unauthorized");
 
     // Already terminal — no need to call out
     if (local.status === "done" || local.status === "error") {
@@ -586,8 +591,9 @@ export const fetchAndUploadImage = createServerFn({ method: "POST" })
   });
 
 export const listRenders = createServerFn({ method: "GET" }).handler(async (): Promise<RenderItem[]> => {
+  const user = await requireAuthUser();
   const renders = await C<RenderDoc>("renders");
-  const items = (await renders.find({}).sort({ createdAt: -1 }).toArray()).slice(0, 50);
+  const items = (await renders.find({ userId: user._id }).sort({ createdAt: -1 }).toArray()).slice(0, 50);
   return items.map((r) => ({
     id: r._id,
     projectId: r.projectId,
@@ -605,15 +611,16 @@ export const clearProjectsAndRenders = createServerFn({ method: "POST" })
   .inputValidator((d: { confirmed: boolean }) => d)
   .handler(async ({ data }) => {
     if (!data.confirmed) throw new Error("Clear not confirmed");
+    const user = await requireAuthUser();
 
     const projects = await C<ProjectDoc>("projects");
-    const projectDocs = await projects.find({}).toArray();
+    const projectDocs = await projects.find({ userId: user._id }).toArray();
     for (const doc of projectDocs) {
       await projects.deleteOne({ _id: doc._id });
     }
 
     const renders = await C<RenderDoc>("renders");
-    const renderDocs = await renders.find({}).toArray();
+    const renderDocs = await renders.find({ userId: user._id }).toArray();
     for (const doc of renderDocs) {
       await renders.deleteOne({ _id: doc._id });
     }
@@ -626,30 +633,92 @@ export const resetAllData = createServerFn({ method: "POST" })
   .inputValidator((d: { confirmed: boolean }) => d)
   .handler(async ({ data }) => {
     if (!data.confirmed) throw new Error("Reset not confirmed");
+    const user = await requireAuthUser();
 
     const projects = await C<ProjectDoc>("projects");
     const renders = await C<RenderDoc>("renders");
 
-    // Delete all projects
-    await projects.find({}).toArray().then(async (docs) => {
-      for (const doc of docs) {
-        await projects.updateOne(
-          { _id: doc._id },
-          { $unset: { _id: 1 } } // This won't actually delete, need a different approach
-        );
-      }
-    });
-
-    // Better approach: delete by finding all and removing them
-    const projectDocs = await projects.find({}).toArray();
+    const projectDocs = await projects.find({ userId: user._id }).toArray();
     for (const doc of projectDocs) {
       await projects.deleteOne({ _id: doc._id });
     }
 
-    const renderDocs = await renders.find({}).toArray();
+    const renderDocs = await renders.find({ userId: user._id }).toArray();
     for (const doc of renderDocs) {
       await renders.deleteOne({ _id: doc._id });
     }
 
     return { ok: true, deleted: { projects: projectDocs.length, renders: renderDocs.length } };
+  });
+
+export const getCurrentUser = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await getAuthUser();
+  if (!user) return null;
+  return { id: user._id, email: user.email };
+});
+
+export const loginUser = createServerFn({ method: "POST" })
+  .inputValidator((d: { email: string; password?: string }) => d)
+  .handler(async ({ data }) => {
+    const users = await C<UserDoc>("users");
+    const user = await users.findOne({ email: data.email.toLowerCase() });
+    if (!user || user.passwordHash !== hashPassword(data.password || "")) {
+      throw new Error("Invalid email or password");
+    }
+    const token = await createSession(user._id);
+    return { ok: true, userId: user._id, token };
+  });
+
+export const registerUser = createServerFn({ method: "POST" })
+  .inputValidator((d: { email: string; password?: string }) => d)
+  .handler(async ({ data }) => {
+    if (!data.email || !data.password || data.password.length < 6) {
+      throw new Error("Password must be at least 6 characters long");
+    }
+    const users = await C<UserDoc>("users");
+    const existing = await users.findOne({ email: data.email.toLowerCase() });
+    if (existing) {
+      throw new Error("Email is already registered");
+    }
+    const userId = randomUUID();
+    const passwordHash = hashPassword(data.password);
+    await users.insertOne({
+      _id: userId,
+      email: data.email.toLowerCase(),
+      passwordHash,
+      createdAt: Date.now(),
+    });
+
+    // Create initial settings for the user
+    const settingsC = await C<any>("settings");
+    await settingsC.insertOne(defaultSettings(userId));
+
+    const token = await createSession(userId);
+    return { ok: true, userId, token };
+  });
+
+export const logoutUser = createServerFn({ method: "POST" }).handler(async () => {
+  await clearSession();
+  return { ok: true };
+});
+
+export const duplicateProject = createServerFn({ method: "POST" })
+  .inputValidator((d: { id: string }) => d)
+  .handler(async ({ data }) => {
+    const user = await requireAuthUser();
+    const projects = await C<ProjectDoc>("projects");
+    const p = await projects.findOne({ _id: data.id });
+    if (!p) throw new Error("Project not found");
+    if (p.userId !== user._id) throw new Error("Unauthorized");
+
+    const newId = randomUUID();
+    const now = Date.now();
+    await projects.insertOne({
+      ...p,
+      _id: newId,
+      name: `${p.name} (Copy)`,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { id: newId };
   });

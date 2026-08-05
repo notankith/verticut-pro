@@ -16,7 +16,6 @@ type Props = {
 };
 
 export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs, saving, title, subtitle }: Props) {
-  const [newPreset, setNewPreset] = useState({ name: "", text: "" });
   const [musicTesting, setMusicTesting] = useState<HTMLAudioElement | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showClearLogsConfirm, setShowClearLogsConfirm] = useState(false);
@@ -27,27 +26,6 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs
   const templateWindow = settings.templateWindow ?? DEFAULT_TEMPLATE_WINDOW;
   const activeTemplateId = settings.activeTemplateId ?? null;
   const activeTemplate = useMemo(() => TEMPLATES.find((t) => t.id === activeTemplateId) ?? null, [activeTemplateId]);
-
-  function deletePreset(id: string) {
-    onChange({ presets: settings.presets.filter((p) => p.id !== id) });
-  }
-
-  function addPreset() {
-    if (!newPreset.name.trim()) return;
-    const tints = ["#ef4444", "#eab308", "#a855f7", "#22c55e", "#3b82f6", "#ec4899"];
-    onChange({
-      presets: [
-        ...settings.presets,
-        {
-          id: crypto.randomUUID(),
-          name: newPreset.name.trim(),
-          text: newPreset.text.trim(),
-          tint: tints[settings.presets.length % tints.length],
-        },
-      ],
-    });
-    setNewPreset({ name: "", text: "" });
-  }
 
   async function handleReset() {
     setIsResetting(true);
@@ -134,125 +112,46 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs
         >
           Templates
         </button>
-        <button
-          type="button"
-          onClick={() => setSubTab("captions")}
-          className={`rounded-t px-3 py-2 text-xs ${subTab === "captions" ? "bg-panel text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-        >
-          Captions
-        </button>
       </div>
 
       {subTab === "general" ? (
         <>
           <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Label Presets</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Timeline Layout</h3>
+            <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Show Labels</span>
-                <button
-                  type="button"
-                  onClick={() => onChange({ showLabels: !(settings.showLabels ?? true) })}
-                  className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors ${
-                    (settings.showLabels ?? true) ? "bg-primary" : "bg-muted"
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-                      (settings.showLabels ?? true) ? "translate-x-4" : "translate-x-1"
-                    }`}
-                  />
-                </button>
-              </div>
-            </div>
-            <ul className="space-y-2">
-              {settings.presets.map((p, i) => (
-                <li key={p.id} className="flex items-center gap-2 rounded border border-border bg-panel p-2">
-                  <span className="h-3 w-3 rounded" style={{ background: p.tint }} />
-                  <input
-                    value={p.name}
-                    onChange={(e) => {
-                      const next = [...settings.presets];
-                      next[i] = { ...p, name: e.target.value };
-                      onChange({ presets: next });
-                    }}
-                    className="w-32 rounded bg-panel-2 px-2 py-1 text-xs"
-                  />
-                  <input
-                    value={p.text}
-                    onChange={(e) => {
-                      const next = [...settings.presets];
-                      next[i] = { ...p, text: e.target.value };
-                      onChange({ presets: next });
-                    }}
-                    className="flex-1 rounded bg-panel-2 px-2 py-1 text-xs"
-                  />
-                  <button onClick={() => deletePreset(p.id)} className="rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10">
-                    Delete
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <div className="flex items-center gap-2 rounded border border-dashed border-border p-2">
-              <input
-                placeholder="Name"
-                value={newPreset.name}
-                onChange={(e) => setNewPreset({ ...newPreset, name: e.target.value })}
-                className="w-32 rounded bg-panel-2 px-2 py-1 text-xs"
-              />
-              <input
-                placeholder="Label text"
-                value={newPreset.text}
-                onChange={(e) => setNewPreset({ ...newPreset, text: e.target.value })}
-                className="flex-1 rounded bg-panel-2 px-2 py-1 text-xs"
-              />
-              <button onClick={addPreset} className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground">
-                + Add preset
-              </button>
-            </div>
-          </section>
-
-          <section className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Default Label</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Default label text</label>
                 <input
-                  value={settings.defaultLabelText}
-                  onChange={(e) => onChange({ defaultLabelText: e.target.value })}
-                  className="w-full rounded border border-border bg-panel-2 px-2 py-1.5 text-xs"
+                  id="enableOverlayLayer"
+                  type="checkbox"
+                  checked={settings.enableOverlayLayer ?? true}
+                  onChange={(e) => onChange({ enableOverlayLayer: e.target.checked })}
+                  className="h-4 w-4 rounded border-border bg-[#161619] text-violet-600 focus:ring-violet-600/30"
                 />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Font size ({settings.defaultFontSize}px)</label>
-                <input
-                  type="range"
-                  min={10}
-                  max={64}
-                  value={settings.defaultFontSize}
-                  onChange={(e) => onChange({ defaultFontSize: Number(e.target.value) })}
-                  className="w-full"
-                />
+                <label htmlFor="enableOverlayLayer" className="text-xs text-[#a1a1aa] font-medium selection:bg-transparent cursor-pointer">
+                  Enable Overlay Track (Media layers placed on overlay track will render as on-top overlays)
+                </label>
               </div>
             </div>
           </section>
 
           <section className="space-y-3">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Animation</h3>
-            <div>
-              <label className="mb-1 block text-xs text-muted-foreground">Global intensity ({settings.animationIntensity.toFixed(1)}×)</label>
-              <input
-                type="range"
-                min={0.5}
-                max={3}
-                step={0.1}
-                value={settings.animationIntensity}
-                onChange={(e) => onChange({ animationIntensity: Number(e.target.value) })}
-                className="w-full"
-              />
-              <p className="mt-1 text-[10px] text-muted-foreground">Higher = faster movement.</p>
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Global intensity ({settings.animationIntensity?.toFixed(1) ?? "1.0"}×)</label>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={3}
+                  step={0.1}
+                  value={settings.animationIntensity ?? 1}
+                  onChange={(e) => onChange({ animationIntensity: Number(e.target.value) })}
+                  className="w-full"
+                />
+                <p className="mt-1 text-[10px] text-muted-foreground">Higher = faster movement.</p>
+              </div>
 
-              <div className="mt-3 flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <input
                   id="transitionAnimation"
                   type="checkbox"
@@ -264,7 +163,7 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs
                   Transition animation
                 </label>
               </div>
-              <div className="mt-2 flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <input
                   id="enableGradientOverlay"
                   type="checkbox"
@@ -279,95 +178,13 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs
             </div>
           </section>
         </>
-      ) : subTab === "templates" ? (
+      ) : (
         <TemplateEditor
           activeTemplate={activeTemplate}
           windowRect={templateWindow}
           onSelectTemplate={(id) => onChange({ activeTemplateId: id })}
           onWindowChange={(next) => onChange({ templateWindow: next })}
         />
-      ) : (
-        <section className="space-y-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Word-Level Captions</h3>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1 block text-xs text-muted-foreground">Text Color</label>
-              <div className="flex gap-2">
-                <input
-                  type="color"
-                  value={settings.captionTextColor ?? "#000000"}
-                  onChange={(e) => onChange({ captionTextColor: e.target.value })}
-                  className="h-8 w-8 rounded border border-border bg-transparent p-0 cursor-pointer"
-                />
-                <input
-                  type="text"
-                  value={settings.captionTextColor ?? "#000000"}
-                  onChange={(e) => onChange({ captionTextColor: e.target.value })}
-                  className="flex-1 rounded border border-border bg-panel-2 px-2.5 py-1 text-xs"
-                />
-              </div>
-            </div>
-            
-            <div>
-              <label className="mb-1 block text-xs text-muted-foreground">Background Color</label>
-              <div className="flex gap-2">
-                <input
-                  type="color"
-                  value={settings.captionBgColor ?? "#ffffff"}
-                  onChange={(e) => onChange({ captionBgColor: e.target.value })}
-                  className="h-8 w-8 rounded border border-border bg-transparent p-0 cursor-pointer"
-                />
-                <input
-                  type="text"
-                  value={settings.captionBgColor ?? "#ffffff"}
-                  onChange={(e) => onChange({ captionBgColor: e.target.value })}
-                  className="flex-1 rounded border border-border bg-panel-2 px-2.5 py-1 text-xs"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1 block text-xs text-muted-foreground">Position X (%)</label>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={settings.captionPosX ?? 50}
-                onChange={(e) => onChange({ captionPosX: Number(e.target.value) })}
-                className="w-full"
-              />
-              <span className="text-[10px] text-muted-foreground mt-0.5 block text-right">{settings.captionPosX ?? 50}%</span>
-            </div>
-            
-            <div>
-              <label className="mb-1 block text-xs text-muted-foreground">Position Y (%)</label>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={settings.captionPosY ?? 75}
-                onChange={(e) => onChange({ captionPosY: Number(e.target.value) })}
-                className="w-full"
-              />
-              <span className="text-[10px] text-muted-foreground mt-0.5 block text-right">{settings.captionPosY ?? 75}%</span>
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">Font Size ({settings.captionFontSize ?? 36}px)</label>
-            <input
-              type="range"
-              min={12}
-              max={120}
-              value={settings.captionFontSize ?? 36}
-              onChange={(e) => onChange({ captionFontSize: Number(e.target.value) })}
-              className="w-full"
-            />
-          </div>
-        </section>
       )}
 
       <section className="space-y-3">
@@ -544,7 +361,7 @@ function TemplateEditor({
                 });
                 try {
                   (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-                } catch {}
+                } catch { }
               }}
               className="absolute rounded border-2 border-cyan-400 bg-cyan-400/15"
               style={{

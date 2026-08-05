@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, useEffect } from "react";
 import { useEditor } from "@/store/editor";
-import type { ClipDoc, AudioSegment } from "@/server/mongo.server";
+import type { ClipDoc, AudioSegment, SettingsDoc } from "@/server/mongo.server";
 
 const ANIMS: ClipDoc["animation"][] = ["zoom-in", "zoom-out", "pan-left", "pan-right"];
 
@@ -17,9 +17,7 @@ export function useTimelineActions() {
   clipsRef.current = clips;
 
   const addImageClips = useCallback(
-    (images: { url: string; key: string }[], presetId?: string) => {
-      const chosenPresetId = presetId ?? settings.defaultPresetId;
-      const preset = settings.presets.find((p) => p.id === chosenPresetId) ?? settings.presets[0];
+    (images: { url: string; key: string }[]) => {
       let cursor = findNextStart(clipsRef.current);
       const newClips: ClipDoc[] = [];
       for (const img of images) {
@@ -32,8 +30,6 @@ export function useTimelineActions() {
           ...(isVideo ? { videoUrl: img.url, videoKey: img.key } : { imageUrl: img.url, imageKey: img.key }),
           animation: "zoom-in",
           intensity: settings.animationIntensity,
-          labelText: preset?.text ?? settings.defaultLabelText,
-          labelPresetId: preset?.id ?? "custom",
         };
         newClips.push(c);
         cursor += 3.5;
@@ -345,12 +341,22 @@ export function useTimelineActions() {
 
 
 // Auto-save hook
-export function useAutoSave(save: (clips: ClipDoc[], audioDuration: number, audioSegments: AudioSegment[]) => Promise<void>) {
+export function useAutoSave(
+  save: (clips: ClipDoc[], audioDuration: number, audioSegments: AudioSegment[]) => Promise<void>,
+  saveSettings?: (settings: SettingsDoc) => Promise<void>
+) {
   const clips = useEditor((s) => s.clips);
   const audioDuration = useEditor((s) => s.audioDuration);
   const audioSegments = useEditor((s) => s.audioSegments);
+  const settings = useEditor((s) => s.settings);
   const setSaving = useEditor((s) => s.set);
   const [first, setFirst] = useState(true);
+
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  const saveSettingsRef = useRef(saveSettings);
+  saveSettingsRef.current = saveSettings;
+
   useEffect(() => {
     if (first) {
       setFirst(false);
@@ -359,7 +365,10 @@ export function useAutoSave(save: (clips: ClipDoc[], audioDuration: number, audi
     setSaving({ saving: "saving" });
     const t = setTimeout(async () => {
       try {
-        await save(clips, audioDuration, audioSegments);
+        await Promise.all([
+          saveRef.current(clips, audioDuration, audioSegments),
+          saveSettingsRef.current ? saveSettingsRef.current(settings) : Promise.resolve(),
+        ]);
         setSaving({ saving: "saved" });
       } catch {
         setSaving({ saving: "idle" });
@@ -367,5 +376,5 @@ export function useAutoSave(save: (clips: ClipDoc[], audioDuration: number, audi
     }, 500);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clips, audioDuration, audioSegments]);
+  }, [clips, audioDuration, audioSegments, settings]);
 }

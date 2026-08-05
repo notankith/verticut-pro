@@ -114,8 +114,6 @@ export function ImportSourcingModal({ open, onOpenChange }: ImportSourcingModalP
           console.warn("Failed to fetch/upload media, using direct URL", e);
         }
 
-        const preset = settings.presets[0];
-
         const ANIMS = ["zoom-in", "zoom-out", "pan-left", "pan-right"] as const;
 
         const clipBase = {
@@ -124,8 +122,6 @@ export function ImportSourcingModal({ open, onOpenChange }: ImportSourcingModalP
           start: match.start,
           duration: match.end - match.start,
           animation: settings.animationIntensity > 0 ? ANIMS[Math.floor(Math.random() * ANIMS.length)] : "none",
-          labelText: settings.defaultLabelText || "",
-          labelPresetId: preset?.id ?? "custom",
           intensity: settings.animationIntensity || 1,
         } as Partial<ClipDoc>;
 

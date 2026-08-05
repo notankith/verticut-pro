@@ -7,8 +7,8 @@ export type CompositionProps = {
   musicUrl?: string;
   musicVolume?: number; // 0..1
   clips: ClipDoc[];
-  defaultLabelText: string;
-  defaultFontSize: number;
+  defaultLabelText?: string;
+  defaultFontSize?: number;
   intensity: number; // 0.5..3
   durationInFrames: number;
   fps: number;
@@ -23,6 +23,7 @@ export type CompositionProps = {
   captionPosY?: number;
   captionFontSize?: number;
   showLabels?: boolean;
+  showCaptions?: boolean;
   transcript?: { text: string; start: number; end: number }[];
   enableGradientOverlay?: boolean;
   gradientOverlayUrl?: string;
@@ -297,21 +298,15 @@ const REF_DURATION_SEC = 3.5;
 function ClipLayer({
   clip,
   intensity,
-  defaultLabelText,
-  fontSize,
   clipIndex,
   totalClips,
   enableTransitions = true,
-  showLabels = true,
 }: {
   clip: ClipDoc;
   intensity: number;
-  defaultLabelText: string;
-  fontSize: number;
   clipIndex: number;
   totalClips: number;
   enableTransitions?: boolean;
-  showLabels?: boolean;
 }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -387,23 +382,7 @@ function ClipLayer({
           ) : (
             <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "50%", backgroundColor: "#111" }} />
           )}
-          {showLabels !== false && (
-            <div
-              style={{
-                position: "absolute",
-                top: 40,
-                left: 40,
-                color: "white",
-                fontSize,
-                fontFamily: "Inter, system-ui, sans-serif",
-                fontWeight: 600,
-                textShadow: "0 2px 8px rgba(0,0,0,0.8)",
-                zIndex: 10,
-              }}
-            >
-              {clip.labelText || defaultLabelText}
-            </div>
-          )}
+
         </AbsoluteFill>
       </AbsoluteFill>
     );
@@ -430,22 +409,7 @@ function ClipLayer({
           clip={clip}
           fps={fps}
         />
-        {showLabels !== false && (
-          <div
-            style={{
-              position: "absolute",
-              top: 40,
-              left: 40,
-              color: "white",
-              fontSize,
-              fontFamily: "Inter, system-ui, sans-serif",
-              fontWeight: 600,
-              textShadow: "0 2px 8px rgba(0,0,0,0.8)",
-            }}
-          >
-            {clip.labelText || defaultLabelText}
-          </div>
-        )}
+
       </AbsoluteFill>
     </AbsoluteFill>
   );
@@ -641,6 +605,7 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
   captionPosY = 75,
   captionFontSize = 36,
   showLabels = true,
+  showCaptions = true,
   transcript = [],
   enableGradientOverlay = true,
   gradientOverlayUrl = DEFAULT_GRADIENT_OVERLAY_URL,
@@ -657,10 +622,7 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
               clipIndex={originalIndex}
               totalClips={clips.length}
               intensity={intensity}
-              defaultLabelText={defaultLabelText}
-              fontSize={defaultFontSize}
               enableTransitions={enableTransitions && c.kind !== "text" && c.kind !== "solid"}
-              showLabels={showLabels}
             />
           </Sequence>
         );
@@ -739,15 +701,17 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
 
       {renderClips(textClips)}
 
-      <CaptionOverlay
-        transcript={transcript}
-        audioSegments={audioSegments}
-        captionTextColor={captionTextColor}
-        captionBgColor={captionBgColor}
-        captionPosX={captionPosX}
-        captionPosY={captionPosY}
-        captionFontSize={captionFontSize}
-      />
+      {showCaptions && (
+        <CaptionOverlay
+          transcript={transcript}
+          audioSegments={audioSegments}
+          captionTextColor={captionTextColor}
+          captionBgColor={captionBgColor}
+          captionPosX={captionPosX}
+          captionPosY={captionPosY}
+          captionFontSize={captionFontSize}
+        />
+      )}
     </AbsoluteFill>
   );
 };

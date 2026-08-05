@@ -67,6 +67,10 @@ function EditorPage() {
   const [mediaDownloadOpen, setMediaDownloadOpen] = useState(false);
   const [searchMediaOpen, setSearchMediaOpen] = useState(false);
   const [activeSidebarTab, setActiveSidebarTab] = useState<"search" | "animation" | "media" | "captions">("search");
+  const [mediaOpen, setMediaOpen] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
+  const mediaTimeoutRef = useRef<any>(null);
+  const newTimeoutRef = useRef<any>(null);
 
   // Sync player frame -> editor currentTime
   const setEditorState = useEditor((s) => s.set);
@@ -171,9 +175,14 @@ function EditorPage() {
   }, [audioDuration, loading, loadProject]);
 
   // Autosave
-  useAutoSave(async (clipsArg, audioDurationArg, audioSegmentsArg) => {
-    await saveProject({ data: { id, clips: clipsArg, audioDuration: audioDurationArg, audioSegments: audioSegmentsArg } });
-  });
+  useAutoSave(
+    async (clipsArg, audioDurationArg, audioSegmentsArg) => {
+      await saveProject({ data: { id, clips: clipsArg, audioDuration: audioDurationArg, audioSegments: audioSegmentsArg } });
+    },
+    async (settingsArg) => {
+      await saveGlobalSettings({ data: { settings: settingsArg } });
+    }
+  );
 
   // Aggressively preload all clip images + the gradient overlay into the
   // browser cache. R2 sets `immutable` Cache-Control, so once an image is
@@ -356,13 +365,6 @@ function EditorPage() {
         playerRef.current?.pause();
       } else if (e.key.toLowerCase() === "l") {
         playerRef.current?.play();
-      } else if (!e.ctrlKey && !e.metaKey && ["1", "2", "3"].includes(e.key)) {
-        const idx = Number(e.key) - 1;
-        const presets = useEditor.getState().settings.presets;
-        const preset = presets[idx];
-        if (!preset) return;
-        e.preventDefault();
-        useEditor.getState().updateSettings({ defaultPresetId: preset.id });
       }
     }
     window.addEventListener("keydown", onKey, { capture: true });
@@ -549,8 +551,6 @@ function EditorPage() {
       musicUrl: settings.musicUrl || undefined,
       musicVolume: settings.musicVolume / 100,
       clips,
-      defaultLabelText: settings.defaultLabelText,
-      defaultFontSize: settings.defaultFontSize,
       intensity: settings.animationIntensity,
       durationInFrames: totalFrames,
       fps: FPS,
@@ -563,7 +563,7 @@ function EditorPage() {
       captionPosX: settings.captionPosX,
       captionPosY: settings.captionPosY,
       captionFontSize: settings.captionFontSize,
-      showLabels: settings.showLabels ?? true,
+      showCaptions: settings.showCaptions ?? true,
       transcript,
       enableGradientOverlay: settings.enableGradientOverlay ?? true,
       gradientOverlayUrl: GRADIENT_OVERLAY_URL,
@@ -572,8 +572,6 @@ function EditorPage() {
       audioUrl,
       settings.musicUrl,
       settings.musicVolume,
-      settings.defaultLabelText,
-      settings.defaultFontSize,
       settings.animationIntensity,
       settings.transitionAnimation,
       settings.activeTemplateId,
@@ -583,7 +581,7 @@ function EditorPage() {
       settings.captionPosX,
       settings.captionPosY,
       settings.captionFontSize,
-      settings.showLabels,
+      settings.showCaptions,
       settings.enableGradientOverlay,
       clips,
       totalFrames,
@@ -662,101 +660,147 @@ function EditorPage() {
           </button>
 
           {/* Media Dropdown Panel */}
-          <div className="relative group">
+          <div
+            className="relative"
+            onMouseEnter={() => {
+              if (mediaTimeoutRef.current) clearTimeout(mediaTimeoutRef.current);
+              setMediaOpen(true);
+            }}
+            onMouseLeave={() => {
+              mediaTimeoutRef.current = setTimeout(() => {
+                setMediaOpen(false);
+              }, 300);
+            }}
+          >
             <button
               type="button"
+              onClick={() => setMediaOpen((prev) => !prev)}
               className="flex items-center gap-1.5 rounded border border-border bg-panel hover:bg-accent px-3 py-1 text-[11px] font-bold text-foreground h-7.5"
             >
               <ImageIcon className="h-3.5 w-3.5 text-primary" /> Media <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
             </button>
-            <div className="absolute left-0 mt-1 hidden group-hover:block z-50 w-44 rounded border border-border bg-panel p-1 shadow-lg">
-              <button
-                type="button"
-                onClick={() => { setTab("editor"); setActiveSidebarTab("search"); }}
-                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
-              >
-                <SearchIcon className="h-3.5 w-3.5 text-primary" /> Search Media
-              </button>
-              <button
-                type="button"
-                onClick={() => setMediaDownloadOpen(true)}
-                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
-              >
-                <DownloadCloud className="h-3.5 w-3.5 text-primary" /> Media Download
-              </button>
-              <button
-                type="button"
-                onClick={() => setSourcingModalOpen(true)}
-                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
-              >
-                <FileText className="h-3.5 w-3.5 text-primary" /> Import Sourcing
-              </button>
-              <button
-                type="button"
-                onClick={() => fileImportRef.current?.click()}
-                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
-              >
-                <ImageIcon className="h-3.5 w-3.5 text-primary" /> Import Local Images
-              </button>
-            </div>
+            {mediaOpen && (
+              <div className="absolute left-0 top-full pt-1 z-50">
+                <div className="w-44 rounded border border-border bg-panel p-1 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTab("editor");
+                      setActiveSidebarTab("search");
+                      setMediaOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
+                  >
+                    <SearchIcon className="h-3.5 w-3.5 text-primary" /> Search Media
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMediaDownloadOpen(true);
+                      setMediaOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
+                  >
+                    <DownloadCloud className="h-3.5 w-3.5 text-primary" /> Media Download
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSourcingModalOpen(true);
+                      setMediaOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
+                  >
+                    <FileText className="h-3.5 w-3.5 text-primary" /> Import Sourcing
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fileImportRef.current?.click();
+                      setMediaOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
+                  >
+                    <ImageIcon className="h-3.5 w-3.5 text-primary" /> Import Local Images
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* New Content Dropdown Panel */}
-          <div className="relative group">
+          <div
+            className="relative"
+            onMouseEnter={() => {
+              if (newTimeoutRef.current) clearTimeout(newTimeoutRef.current);
+              setNewOpen(true);
+            }}
+            onMouseLeave={() => {
+              newTimeoutRef.current = setTimeout(() => {
+                setNewOpen(false);
+              }, 300);
+            }}
+          >
             <button
               type="button"
+              onClick={() => setNewOpen((prev) => !prev)}
               className="flex items-center gap-1.5 rounded border border-border bg-panel hover:bg-accent px-3 py-1 text-[11px] font-bold text-foreground h-7.5"
             >
               <Plus className="h-3.5 w-3.5 text-primary" /> New <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
             </button>
-            <div className="absolute left-0 mt-1 hidden group-hover:block z-50 w-40 rounded border border-border bg-panel p-1 shadow-lg">
-              <button
-                type="button"
-                onClick={() => {
-                  updateClips((prev) => [...prev, {
-                    id: crypto.randomUUID(),
-                    kind: "solid",
-                    start: 0,
-                    duration: Math.max(1, audioDuration),
-                    solidColor: "#c21d24",
-                    animation: "none",
-                    labelText: "",
-                    labelPresetId: "custom"
-                  }]);
-                }}
-                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
-              >
-                <Square className="h-3.5 w-3.5 text-primary" /> Solid Layer
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const start = playerRef.current?.getCurrentFrame() ? playerRef.current.getCurrentFrame() / FPS : 0;
-                  updateClips((prev) => [...prev, {
-                    id: crypto.randomUUID(),
-                    kind: "text",
-                    start,
-                    duration: audioDuration - start,
-                    textContent: "Text Layer",
-                    animation: "none",
-                    labelText: "",
-                    labelPresetId: "custom",
-                    posY: 20,
-                    scale: 0.4
-                  }]);
-                }}
-                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
-              >
-                <Type className="h-3.5 w-3.5 text-primary" /> Text Layer
-              </button>
-              <button
-                type="button"
-                onClick={() => setDurationOpen(true)}
-                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
-              >
-                <Clock className="h-3.5 w-3.5 text-primary" /> Duration...
-              </button>
-            </div>
+            {newOpen && (
+              <div className="absolute left-0 top-full pt-1 z-50">
+                <div className="w-40 rounded border border-border bg-panel p-1 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateClips((prev) => [...prev, {
+                        id: crypto.randomUUID(),
+                        kind: "solid",
+                        start: 0,
+                        duration: Math.max(1, audioDuration),
+                        solidColor: "#c21d24",
+                        animation: "none",
+                      }]);
+                      setNewOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
+                  >
+                    <Square className="h-3.5 w-3.5 text-primary" /> Solid Layer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const start = playerRef.current?.getCurrentFrame() ? playerRef.current.getCurrentFrame() / FPS : 0;
+                      updateClips((prev) => [...prev, {
+                        id: crypto.randomUUID(),
+                        kind: "text",
+                        start,
+                        duration: audioDuration - start,
+                        textContent: "Text Layer",
+                        animation: "none",
+                        posY: 20,
+                        scale: 0.4
+                      }]);
+                      setNewOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
+                  >
+                    <Type className="h-3.5 w-3.5 text-primary" /> Text Layer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDurationOpen(true);
+                      setNewOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
+                  >
+                    <Clock className="h-3.5 w-3.5 text-primary" /> Duration...
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1339,8 +1383,6 @@ function EditorPage() {
                       const res = await uploadToR2(videoTrimModal.file, "video");
                       const cursor = findNextStart(useEditor.getState().clips);
                       const duration = videoTrimModal.endTime - videoTrimModal.startTime;
-                      const { settings } = useEditor.getState();
-                      const preset = settings.presets[0];
                       const newClip: ClipDoc = {
                         id: crypto.randomUUID(),
                         kind: "media",
@@ -1351,8 +1393,6 @@ function EditorPage() {
                         trimStart: videoTrimModal.startTime,
                         trimEnd: videoTrimModal.endTime,
                         animation: "none",
-                        labelText: settings.defaultLabelText || "",
-                        labelPresetId: preset?.id ?? "custom",
                         muted: true,
                         volume: 100,
                       };
@@ -1460,57 +1500,7 @@ function RenderProgressToast({
   );
 }
 
-function GlobalLabelPresetSelect() {
-  const presets = useEditor((s) => s.settings.presets);
-  const defaultPresetId = useEditor((s) => s.settings.defaultPresetId);
-  const updateSettings = useEditor((s) => s.updateSettings);
 
-  if (presets.length === 0) {
-    return (
-      <span className="text-[10px] text-muted-foreground" title="Add presets in Settings">
-        No presets
-      </span>
-    );
-  }
-
-  const isCustom = defaultPresetId === "custom";
-  const customPreset = presets.find((p) => p.id === "custom");
-
-  return (
-    <div className="flex items-center gap-1.5">
-      <select
-        value={defaultPresetId ?? ""}
-        onChange={(e) => {
-          updateSettings({ defaultPresetId: e.target.value });
-        }}
-        title="Preset applied to future imports only"
-        className="rounded border border-border bg-panel-2 px-2 py-1 text-[11px]"
-      >
-        <option value="">(No preset)</option>
-        {presets.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
-      {isCustom && customPreset ? (
-        <input
-          value={customPreset.text}
-          onChange={(e) => {
-            updateSettings({
-              presets: presets.map((p) =>
-                p.id === "custom" ? { ...p, text: e.target.value } : p,
-              ),
-            });
-          }}
-          placeholder="Custom label text"
-          title="Custom label text used for new imports"
-          className="w-44 rounded border border-border bg-panel-2 px-2 py-1 text-[11px]"
-        />
-      ) : null}
-    </div>
-  );
-}
 
 function fmtTC(t: number) {
   const m = Math.floor(t / 60);

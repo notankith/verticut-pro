@@ -28,6 +28,7 @@ export type AudioSegment = {
 
 export type ProjectDoc = {
   _id: string;
+  userId?: string;
   name: string;
   audioKey: string;
   audioUrl: string;
@@ -61,8 +62,6 @@ export type ClipDoc = {
   muted?: boolean;
   volume?: number;
   animation: "zoom-in" | "zoom-out" | "pan-left" | "pan-right" | "none";
-  labelText: string;
-  labelPresetId: string;
   intensity?: number;
   anchorX?: number;
   anchorY?: number;
@@ -88,14 +87,9 @@ export type MarkerDoc = {
 
 export type SettingsDoc = {
   _id: string;
-  defaultLabelText: string;
-  defaultFontSize: number;
   animationIntensity: number;
   musicUrl: string;
   musicVolume: number;
-  // The preset to apply to future imports. Optional for back-compat.
-  defaultPresetId?: string;
-  presets: { id: string; name: string; text: string; tint: string }[];
   // Whether to enable transition animations between clips in preview and render
   transitionAnimation?: boolean;
   activeTemplateId?: string | null;
@@ -105,13 +99,14 @@ export type SettingsDoc = {
   captionPosX?: number;
   captionPosY?: number;
   captionFontSize?: number;
-  showLabels?: boolean;
   enableGradientOverlay?: boolean;
   showCaptions?: boolean;
+  enableOverlayLayer?: boolean;
 };
 
 export type RenderDoc = {
   _id: string;
+  userId?: string;
   projectId: string;
   filename: string;
   status: "queued" | "rendering" | "done" | "error";
