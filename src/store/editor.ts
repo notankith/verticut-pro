@@ -26,6 +26,9 @@ export type EditorState = {
   // history
   past: ClipDoc[][];
   future: ClipDoc[][];
+  hideMedia: boolean;
+  hideOverlays: boolean;
+  muteAudio: boolean;
 
   // Playback state (updated from player)
   currentTime: number;
@@ -63,7 +66,11 @@ export const useEditor = create<EditorState>((set, get) => ({
     activeTemplateId: null,
     templateWindow: DEFAULT_TEMPLATE_WINDOW,
     enableGradientOverlay: true,
+    showCaptions: true,
   },
+  hideMedia: false,
+  hideOverlays: false,
+  muteAudio: false,
   selectedClipId: null,
   selectedClipIds: [],
   zoom: 60,

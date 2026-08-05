@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 import { usePlayerFrame } from "@/components/editor/usePlayerFrame";
-import { Film, Settings, Undo2, Redo2, Loader2, Image as ImageIcon, Play, Pause, Rewind, Clock, Plus, Minus, FileText, Square, Type, DownloadCloud, Search as SearchIcon } from "lucide-react";
+import { Film, Settings, Undo2, Redo2, Loader2, Image as ImageIcon, Play, Pause, Rewind, Clock, Plus, Minus, FileText, Square, Type, DownloadCloud, Search as SearchIcon, ChevronDown, Pencil, Share } from "lucide-react";
 import {
   enqueueRender,
   getProject,
@@ -15,7 +15,7 @@ import { VertiCutComposition } from "@/remotion/composition";
 import { useEditor } from "@/store/editor";
 import { Timeline } from "@/components/editor/Timeline";
 import { ImportSourcingModal } from "@/components/editor/ImportSourcingModal";
-import { Inspector } from "@/components/editor/Inspector";
+import { AnimationPanel, MediaPanel, CaptionsPanel } from "@/components/editor/Inspector";
 import { WordTranscript } from "@/components/editor/WordTranscript";
 import { SettingsPanel } from "@/components/editor/SettingsPanel";
 import { useAutoSave, useTimelineActions, findNextStart } from "@/components/editor/hooks";
@@ -57,12 +57,16 @@ function EditorPage() {
   const dragDepthRef = useRef(0);
 
   // Timeline height (resizable)
-  const [timelineHeight, setTimelineHeight] = useState<number>(380);
+  const [timelineHeight, setTimelineHeight] = useState<number>(() => {
+    const saved = localStorage.getItem("verticut_timeline_height");
+    return saved ? Math.max(120, parseInt(saved, 10)) : 380;
+  });
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [durationOpen, setDurationOpen] = useState(false);
   const [sourcingModalOpen, setSourcingModalOpen] = useState(false);
   const [mediaDownloadOpen, setMediaDownloadOpen] = useState(false);
   const [searchMediaOpen, setSearchMediaOpen] = useState(false);
+  const [activeSidebarTab, setActiveSidebarTab] = useState<"search" | "animation" | "media" | "captions">("search");
 
   // Sync player frame -> editor currentTime
   const setEditorState = useEditor((s) => s.set);
@@ -78,6 +82,24 @@ function EditorPage() {
   const settings = useEditor((s) => s.settings);
   const transcript = useEditor((s) => s.transcript);
   const name = useEditor((s) => s.name);
+
+  // Project renaming states
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editName, setEditName] = useState(name);
+  useEffect(() => {
+    setEditName(name);
+  }, [name]);
+
+  const handleRenameSave = useCallback(async () => {
+    setIsEditingName(false);
+    const trimmed = editName.trim();
+    if (trimmed && trimmed !== name) {
+      useEditor.getState().set({ name: trimmed });
+      await saveProject({ data: { id, clips: useEditor.getState().clips, name: trimmed } });
+    } else {
+      setEditName(name);
+    }
+  }, [editName, name, id]);
   const saving = useEditor((s) => s.saving);
   const undo = useEditor((s) => s.undo);
   const redo = useEditor((s) => s.redo);
@@ -90,11 +112,11 @@ function EditorPage() {
     const currentSegments = useEditor.getState().audioSegments;
     const oldDur = useEditor.getState().audioDuration;
     let nextSegments = currentSegments.slice();
-    
+
     if (currentSegments.length === 1 && currentSegments[0].duration === oldDur) {
       nextSegments[0] = { ...currentSegments[0], duration: newDur };
     }
-    
+
     useEditor.getState().set({
       audioDuration: newDur,
       audioSegments: nextSegments,
@@ -115,6 +137,10 @@ function EditorPage() {
         markers: p.markers,
         settings: p.settings,
         audioSegments: p.audioSegments ?? [],
+        selectedClipIds: [],
+        hideMedia: false,
+        hideOverlays: false,
+        muteAudio: false,
       });
     } catch (e) {
       setError(String(e));
@@ -364,12 +390,12 @@ function EditorPage() {
         setRenderJob((cur) =>
           cur && cur.id === snap.id
             ? {
-                ...cur,
-                status: snap.status,
-                progress: snap.progress,
-                url: snap.url,
-                error: snap.error ?? undefined,
-              }
+              ...cur,
+              status: snap.status,
+              progress: snap.progress,
+              url: snap.url,
+              error: snap.error ?? undefined,
+            }
             : cur,
         );
       } catch {
@@ -567,120 +593,190 @@ function EditorPage() {
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
-      {/* Header */}
-      <header className="flex items-center gap-2.5 border-b border-border bg-panel/95 px-4 py-2 backdrop-blur-xl">
-        <Link to="/" className="flex items-center gap-1.5 text-xs hover:text-primary">
-          <Film className="h-4 w-4 text-primary" />
-          <span className="font-semibold tracking-wide">VERTICUT</span>
-        </Link>
-        <div className="mx-3 h-4 w-px bg-border" />
-        <span className="truncate max-w-[280px] text-xs text-muted-foreground" title={name}>
-          {name}
-        </span>
-        <div className="mx-2 h-4 w-px bg-border" />
-        <button
-          onClick={() => setTab("editor")}
-          className={`rounded-md px-3 py-1.5 text-[12px] ${tab === "editor" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}
-        >
-          Editor
-        </button>
-        <button
-          onClick={() => setTab("settings")}
-          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] ${tab === "settings" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}
-        >
-          <Settings className="h-3 w-3" /> Settings
-        </button>
-        <button
-          onClick={() => setSourcingModalOpen(true)}
-          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:bg-accent/50"
-        >
-          <FileText className="h-3.5 w-3.5 text-primary" /> Import Sourcing
-        </button>
-        <button
-          onClick={() => setMediaDownloadOpen(true)}
-          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:bg-accent/50"
-        >
-          <DownloadCloud className="h-3.5 w-3.5 text-primary" /> Media Download
-        </button>
-        <button
-          onClick={() => setSearchMediaOpen(true)}
-          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:bg-accent/50"
-        >
-          <SearchIcon className="h-3.5 w-3.5 text-primary" /> Search Media
-        </button>
-        <button
-          onClick={() => setDurationOpen(true)}
-          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:bg-accent/50"
-        >
-          <Clock className="h-3.5 w-3.5 text-primary" /> Duration ({audioDuration.toFixed(1)}s)
-        </button>
-        <div className="mx-1 h-4 w-px bg-border" />
-        <button
-          onClick={() => {
-            const start = playerRef.current?.getCurrentFrame() ? playerRef.current.getCurrentFrame() / FPS : 0;
-            updateClips((prev) => [...prev, {
-              id: crypto.randomUUID(),
-              kind: "solid",
-              start: 0,
-              duration: Math.max(1, audioDuration),
-              solidColor: "#800000",
-              animation: "none",
-              labelText: "",
-              labelPresetId: "custom"
-            }]);
-          }}
-          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:bg-accent/50"
-        >
-          <Square className="h-3.5 w-3.5 text-primary" /> New Solid
-        </button>
-        <button
-          onClick={() => {
-            const start = playerRef.current?.getCurrentFrame() ? playerRef.current.getCurrentFrame() / FPS : 0;
-            updateClips((prev) => [...prev, {
-              id: crypto.randomUUID(),
-              kind: "text",
-              start,
-              duration: audioDuration - start,
-              textContent: "Text",
-              animation: "none",
-              labelText: "",
-              labelPresetId: "custom",
-              posY: 20,
-              scale: 0.4
-            }]);
-          }}
-          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] text-muted-foreground hover:bg-accent/50"
-        >
-          <Type className="h-3.5 w-3.5 text-primary" /> New Text
-        </button>
-          <div className="ml-auto flex items-center gap-2">
-          <span className="text-[10px] text-muted-foreground">
-            {pasteError ? (
-              <span className="text-destructive" title={pasteError}>Paste failed: {pasteError}</span>
-            ) : pasting ? (
-              "Pasting…"
-            ) : saving === "saving" ? (
-              "Saving…"
-            ) : saving === "saved" ? (
-              "Saved"
-            ) : (
-              ""
-            )}
-          </span>
-          <GlobalLabelPresetSelect />
-          <div className="h-4 w-px bg-border" />
-          <button onClick={() => undo()} title="Undo (Ctrl+Z)" className="rounded-md p-1.5 hover:bg-accent">
-            <Undo2 className="h-4 w-4" />
+      {/* Header aligned 1:1 like screenshot */}
+      <header className="flex h-[52px] items-center justify-between border-b border-border bg-panel-2 px-4 py-2 shrink-0 select-none">
+
+        {/* Left Section: Logo & Project Title */}
+        <div className="flex items-center gap-4">
+          <Link to="/" className="flex items-center gap-1.5 hover:opacity-90">
+            {/* Red custom circle logo */}
+            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary">
+              <Film className="h-3.5 w-3.5 text-primary-foreground" />
+            </div>
+            <span className="text-[14px] font-extrabold tracking-wider text-foreground">VERTICUT</span>
+          </Link>
+
+          {isEditingName ? (
+            <div className="flex items-center gap-2 rounded-md border border-primary bg-panel-3 px-3 py-1">
+              <input
+                type="text"
+                className="bg-transparent border-0 p-0 text-[11px] font-bold text-foreground focus:outline-none focus:ring-0 w-[220px]"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                onBlur={handleRenameSave}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleRenameSave();
+                  if (e.key === "Escape") {
+                    setIsEditingName(false);
+                    setEditName(name);
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+          ) : (
+            <div
+              onClick={() => setIsEditingName(true)}
+              className="flex items-center gap-2 rounded-md border border-border bg-panel-3 px-3 py-1 cursor-pointer hover:border-muted-foreground/30 transition-colors"
+            >
+              <span className="text-[11px] font-bold text-foreground w-[220px] truncate pr-4">
+                {name || "Untitled Project"}
+              </span>
+              <Pencil className="h-3 w-3 text-muted-foreground hover:text-foreground shrink-0" />
+            </div>
+          )}
+        </div>
+
+        {/* Center Section: Dropdowns for Settings, Media, and New */}
+        <div className="flex items-center gap-2.5">
+          {/* Settings Button */}
+          <button
+            type="button"
+            onClick={() => setTab(tab === "settings" ? "editor" : "settings")}
+            className={`flex items-center gap-1.5 rounded border border-border px-3 py-1 text-[11px] font-bold h-7.5 transition-colors ${tab === "settings"
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-panel hover:bg-accent text-foreground"
+              }`}
+          >
+            <Settings className="h-3.5 w-3.5" /> Settings
           </button>
-          <button onClick={() => redo()} title="Redo (Ctrl+Shift+Z)" className="rounded-md p-1.5 hover:bg-accent">
-            <Redo2 className="h-4 w-4" />
-          </button>
+
+          {/* Media Dropdown Panel */}
+          <div className="relative group">
+            <button
+              type="button"
+              className="flex items-center gap-1.5 rounded border border-border bg-panel hover:bg-accent px-3 py-1 text-[11px] font-bold text-foreground h-7.5"
+            >
+              <ImageIcon className="h-3.5 w-3.5 text-primary" /> Media <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
+            </button>
+            <div className="absolute left-0 mt-1 hidden group-hover:block z-50 w-44 rounded border border-border bg-panel p-1 shadow-lg">
+              <button
+                type="button"
+                onClick={() => { setTab("editor"); setActiveSidebarTab("search"); }}
+                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
+              >
+                <SearchIcon className="h-3.5 w-3.5 text-primary" /> Search Media
+              </button>
+              <button
+                type="button"
+                onClick={() => setMediaDownloadOpen(true)}
+                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
+              >
+                <DownloadCloud className="h-3.5 w-3.5 text-primary" /> Media Download
+              </button>
+              <button
+                type="button"
+                onClick={() => setSourcingModalOpen(true)}
+                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
+              >
+                <FileText className="h-3.5 w-3.5 text-primary" /> Import Sourcing
+              </button>
+              <button
+                type="button"
+                onClick={() => fileImportRef.current?.click()}
+                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
+              >
+                <ImageIcon className="h-3.5 w-3.5 text-primary" /> Import Local Images
+              </button>
+            </div>
+          </div>
+
+          {/* New Content Dropdown Panel */}
+          <div className="relative group">
+            <button
+              type="button"
+              className="flex items-center gap-1.5 rounded border border-border bg-panel hover:bg-accent px-3 py-1 text-[11px] font-bold text-foreground h-7.5"
+            >
+              <Plus className="h-3.5 w-3.5 text-primary" /> New <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
+            </button>
+            <div className="absolute left-0 mt-1 hidden group-hover:block z-50 w-40 rounded border border-border bg-panel p-1 shadow-lg">
+              <button
+                type="button"
+                onClick={() => {
+                  updateClips((prev) => [...prev, {
+                    id: crypto.randomUUID(),
+                    kind: "solid",
+                    start: 0,
+                    duration: Math.max(1, audioDuration),
+                    solidColor: "#c21d24",
+                    animation: "none",
+                    labelText: "",
+                    labelPresetId: "custom"
+                  }]);
+                }}
+                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
+              >
+                <Square className="h-3.5 w-3.5 text-primary" /> Solid Layer
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const start = playerRef.current?.getCurrentFrame() ? playerRef.current.getCurrentFrame() / FPS : 0;
+                  updateClips((prev) => [...prev, {
+                    id: crypto.randomUUID(),
+                    kind: "text",
+                    start,
+                    duration: audioDuration - start,
+                    textContent: "Text Layer",
+                    animation: "none",
+                    labelText: "",
+                    labelPresetId: "custom",
+                    posY: 20,
+                    scale: 0.4
+                  }]);
+                }}
+                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
+              >
+                <Type className="h-3.5 w-3.5 text-primary" /> Text Layer
+              </button>
+              <button
+                type="button"
+                onClick={() => setDurationOpen(true)}
+                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] font-semibold hover:bg-accent"
+              >
+                <Clock className="h-3.5 w-3.5 text-primary" /> Duration...
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Section: Undo, Redo, Export */}
+        <div className="flex items-center gap-3">
+          {/* Undo/Redo pair */}
+          <div className="flex items-center rounded border border-border bg-panel p-0.5 transition-shadow shadow-sm">
+            <button
+              onClick={() => undo()}
+              title="Undo (Ctrl+Z)"
+              className="rounded p-1 hover:bg-accent text-foreground transition-colors"
+            >
+              <Undo2 className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => redo()}
+              title="Redo (Ctrl+Shift+Z)"
+              className="rounded p-1 border-l border-border hover:bg-accent text-foreground transition-colors"
+            >
+              <Redo2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {/* Red Export Button */}
           <button
             onClick={onExport}
             disabled={enqueuing || clips.length === 0}
-            className="rounded-md bg-primary px-4 py-1.5 text-[12px] font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            className="flex items-center gap-1.5 h-7.5 rounded bg-primary text-primary-foreground font-bold text-[11px] px-4 py-1.5 shadow hover:opacity-90 disabled:opacity-50"
           >
-            {enqueuing ? "Queueing…" : "Export"}
+            <Share className="h-3.5 w-3.5" /> Export
           </button>
         </div>
       </header>
@@ -699,10 +795,96 @@ function EditorPage() {
       ) : (
         <>
           <div className="flex flex-1 min-h-0 gap-2 px-2 pb-2 pt-2">
-            {/* Left: Clip Inspector */}
-            <aside className="w-80 shrink-0 overflow-hidden rounded-md border border-border bg-panel">
-              <Inspector />
-            </aside>
+            {/* Left: Tabbed Sidebar with Vertical Selector Strip on the left & Active Panel on the right */}
+            <div className={`flex shrink-0 select-none transition-all duration-200 ${activeSidebarTab === "search" ? "w-[418px]" : "w-80"}`}>
+
+              {/* Leftmost narrow vertical tab icon bar */}
+              <nav className="w-[68px] bg-panel-2 border border-border border-r-0 rounded-l-md flex flex-col items-center py-4 gap-4.5 shrink-0">
+                {/* Search Media tab button */}
+                <button
+                  type="button"
+                  onClick={() => setActiveSidebarTab("search")}
+                  className={`group flex flex-col items-center gap-1.5 w-full py-1.5 relative transition-all ${activeSidebarTab === "search" ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                    }`}
+                >
+                  {activeSidebarTab === "search" && (
+                    <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary rounded-r" />
+                  )}
+                  <div className={`p-1.5 rounded-lg transition-colors ${activeSidebarTab === "search" ? "bg-primary/10 text-primary" : "group-hover:bg-accent"}`}>
+                    <SearchIcon className="h-4.5 w-4.5" />
+                  </div>
+                  <span className="text-[9px] font-bold tracking-tight text-center leading-tight">Search<br />Media</span>
+                </button>
+
+                {/* Animation tab button */}
+                <button
+                  type="button"
+                  onClick={() => setActiveSidebarTab("animation")}
+                  className={`group flex flex-col items-center gap-1.5 w-full py-1.5 relative transition-all ${activeSidebarTab === "animation" ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                    }`}
+                >
+                  {activeSidebarTab === "animation" && (
+                    <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary rounded-r" />
+                  )}
+                  <div className={`p-1.5 rounded-lg transition-colors ${activeSidebarTab === "animation" ? "bg-primary/10 text-primary" : "group-hover:bg-accent"}`}>
+                    <Settings className="h-4.5 w-4.5" />
+                  </div>
+                  <span className="text-[9px] font-bold tracking-tight text-center leading-tight">Animation</span>
+                </button>
+
+                {/* Media tab button */}
+                <button
+                  type="button"
+                  onClick={() => setActiveSidebarTab("media")}
+                  className={`group flex flex-col items-center gap-1.5 w-full py-1.5 relative transition-all ${activeSidebarTab === "media" ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                    }`}
+                >
+                  {activeSidebarTab === "media" && (
+                    <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary rounded-r" />
+                  )}
+                  <div className={`p-1.5 rounded-lg transition-colors ${activeSidebarTab === "media" ? "bg-primary/10 text-primary" : "group-hover:bg-accent"}`}>
+                    <ImageIcon className="h-4.5 w-4.5" />
+                  </div>
+                  <span className="text-[9px] font-bold tracking-tight text-center leading-tight">Media</span>
+                </button>
+
+                {/* Captions tab button */}
+                <button
+                  type="button"
+                  onClick={() => setActiveSidebarTab("captions")}
+                  className={`group flex flex-col items-center gap-1.5 w-full py-1.5 relative transition-all ${activeSidebarTab === "captions" ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                    }`}
+                >
+                  {activeSidebarTab === "captions" && (
+                    <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary rounded-r" />
+                  )}
+                  <div className={`p-1.5 rounded-lg transition-colors ${activeSidebarTab === "captions" ? "bg-primary/10 text-primary" : "group-hover:bg-accent"}`}>
+                    <FileText className="h-4.5 w-4.5" />
+                  </div>
+                  <span className="text-[9px] font-bold tracking-tight text-center leading-tight">Captions</span>
+                </button>
+              </nav>
+
+              {/* Right Sidebar Content Panel */}
+              <aside className={`shrink-0 overflow-hidden rounded-r-md border border-border bg-panel flex flex-col transition-all duration-200 ${activeSidebarTab === "search" ? "w-[350px]" : "w-[252px]"
+                }`}>
+                <div className="flex-1 overflow-hidden min-h-0 relative">
+                  {activeSidebarTab === "search" && (
+                    <Suspense fallback={<div className="flex h-full items-center justify-center p-4"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>}>
+                      <SearchMediaPanel open={true} onOpenChange={() => { }} onImport={onSearchMediaImport} />
+                    </Suspense>
+                  )}
+                  {activeSidebarTab === "animation" && <AnimationPanel />}
+                  {activeSidebarTab === "media" && (
+                    <MediaPanel
+                      onImportMedia={() => fileImportRef.current?.click()}
+                      onDownloadMedia={() => setMediaDownloadOpen(true)}
+                    />
+                  )}
+                  {activeSidebarTab === "captions" && <CaptionsPanel />}
+                </div>
+              </aside>
+            </div>
 
             {/* Center preview */}
             <main
@@ -744,27 +926,31 @@ function EditorPage() {
                   controls={false}
                   acknowledgeRemotionLicense
                 />
-                
-                {/* Text drag overlay */}
+
+                {/* Visual drag overlay for Text, Solids, and Overlay track items */}
                 {(() => {
                   const selectedClip = useEditor.getState().clips.find(c => c.id === useEditor.getState().selectedClipId);
-                  if (selectedClip?.kind === "text") {
+                  if (selectedClip && (selectedClip.kind === "text" || selectedClip.kind === "solid" || selectedClip.layer === "overlay")) {
                     const posX = selectedClip.posX ?? 50;
                     const posY = selectedClip.posY ?? 50;
+                    const isOverlayMedia = selectedClip.layer === "overlay";
+                    const isSolid = selectedClip.kind === "solid";
+                    const boxWidth = isOverlayMedia ? "40%" : (isSolid ? "90%" : "25%");
+                    const boxHeight = isOverlayMedia ? "40%" : (isSolid ? "90%" : "10%");
                     return (
                       <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden" style={{ borderRadius: 6 }}>
-                        <div 
+                        <div
                           className="absolute pointer-events-auto border-2 border-dashed border-primary/50 cursor-grab active:cursor-grabbing hover:border-primary transition-colors flex items-center justify-center group"
                           style={{
                             left: `${posX}%`,
                             top: `${posY}%`,
                             transform: 'translate(-50%, -50%)',
-                            width: '25%', // Approximate width of text box
-                            height: '10%', // Approximate height of text box
-                            minWidth: '100px',
-                            minHeight: '40px'
+                            width: boxWidth,
+                            height: boxHeight,
+                            minWidth: isSolid ? '120px' : '65px',
+                            minHeight: isSolid ? '120px' : '30px'
                           }}
-                          title="Drag to reposition text"
+                          title="Drag to reposition layer"
                           onPointerDown={(e) => {
                             e.preventDefault();
                             const container = e.currentTarget.parentElement;
@@ -774,30 +960,30 @@ function EditorPage() {
                             const startY = e.clientY;
                             const startPosX = posX;
                             const startPosY = posY;
-                            
-                            try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+
+                            try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
 
                             const onMove = (me: PointerEvent) => {
                               const dx = me.clientX - startX;
                               const dy = me.clientY - startY;
                               const newPosX = Math.max(0, Math.min(100, startPosX + (dx / rect.width) * 100));
                               const newPosY = Math.max(0, Math.min(100, startPosY + (dy / rect.height) * 100));
-                              
-                              useEditor.getState().updateClips(prev => 
+
+                              useEditor.getState().updateClips(prev =>
                                 prev.map(c => c.id === selectedClip.id ? { ...c, posX: newPosX, posY: newPosY } : c),
                                 false // Do not record every frame
                               );
                             };
-                            
+
                             const onUp = (me: PointerEvent) => {
-                              try { (me.currentTarget as HTMLElement).releasePointerCapture(me.pointerId); } catch {}
+                              try { (me.currentTarget as HTMLElement).releasePointerCapture(me.pointerId); } catch { }
                               window.removeEventListener('pointermove', onMove);
                               window.removeEventListener('pointerup', onUp);
                               // Record final state
                               const currentClips = useEditor.getState().clips;
                               useEditor.getState().updateClips(currentClips, true);
                             };
-                            
+
                             window.addEventListener('pointermove', onMove);
                             window.addEventListener('pointerup', onUp);
                           }}
@@ -856,14 +1042,15 @@ function EditorPage() {
                 const startY = e.clientY;
                 const startH = timelineHeight;
                 const root = document.documentElement;
-                try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch {}
+                try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { }
                 const move = (ev: PointerEvent) => {
                   const dy = ev.clientY - startY;
                   const next = Math.max(120, Math.min(window.innerHeight * 0.82, startH - dy));
                   setTimelineHeight(next);
+                  localStorage.setItem("verticut_timeline_height", String(next));
                 };
                 const up = (ev: PointerEvent) => {
-                  try { (e.currentTarget as HTMLElement).releasePointerCapture(ev.pointerId); } catch {}
+                  try { (e.currentTarget as HTMLElement).releasePointerCapture(ev.pointerId); } catch { }
                   window.removeEventListener("pointermove", move);
                   window.removeEventListener("pointerup", up);
                 };
@@ -929,7 +1116,7 @@ function EditorPage() {
                 Close
               </button>
             </div>
-            
+
             <div className="my-4 space-y-4">
               <div className="flex flex-col items-center justify-center bg-panel-2 rounded p-3">
                 <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Current Duration</span>
@@ -940,7 +1127,7 @@ function EditorPage() {
                   {fmtTC(audioDuration)}
                 </span>
               </div>
-              
+
               <div className="flex items-center justify-between gap-2">
                 <button
                   onClick={() => {
@@ -979,7 +1166,7 @@ function EditorPage() {
                   <Plus className="h-3 w-3" /> 5s
                 </button>
               </div>
-              
+
               <div className="space-y-1">
                 <label className="text-[11px] text-muted-foreground block">Exact duration (seconds)</label>
                 <div className="flex gap-2">
@@ -1015,14 +1202,14 @@ function EditorPage() {
                 Cancel
               </button>
             </div>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="text-[11px] text-muted-foreground block mb-2">Duration: {videoTrimModal.duration.toFixed(2)}s</label>
                 <div className="space-y-3">
                   {/* Visual slider */}
                   <div className="bg-panel-2 rounded p-2 space-y-2">
-                    <div className="relative h-12 bg-black/50 rounded cursor-pointer border border-border overflow-hidden flex items-center" 
+                    <div className="relative h-12 bg-black/50 rounded cursor-pointer border border-border overflow-hidden flex items-center"
                       onClick={(e) => {
                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                         const percent = (e.clientX - rect.left) / rect.width;
@@ -1087,7 +1274,7 @@ function EditorPage() {
                       <span>{videoTrimModal.endTime.toFixed(2)}s</span>
                     </div>
                   </div>
-                  
+
                   <div>
                     <label className="text-[10px] text-muted-foreground block mb-1">Start (s)</label>
                     <input
@@ -1123,7 +1310,7 @@ function EditorPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="flex gap-2">
                 <button
                   onClick={() => setVideoTrimModal(null)}
@@ -1142,7 +1329,7 @@ function EditorPage() {
                       const preset = settings.presets[0];
                       const newClip: ClipDoc = {
                         id: crypto.randomUUID(),
-                        kind: "video",
+                        kind: "media",
                         start: cursor,
                         duration: duration,
                         videoUrl: res.url,
@@ -1188,9 +1375,6 @@ function EditorPage() {
       <ImportSourcingModal open={sourcingModalOpen} onOpenChange={setSourcingModalOpen} />
       <Suspense fallback={null}>
         <MediaDownloadModal open={mediaDownloadOpen} onOpenChange={setMediaDownloadOpen} />
-      </Suspense>
-      <Suspense fallback={null}>
-        <SearchMediaPanel open={searchMediaOpen} onOpenChange={setSearchMediaOpen} onImport={onSearchMediaImport} />
       </Suspense>
     </div>
   );
@@ -1448,11 +1632,11 @@ function PreviewAudio({
         // Pause the player until audio has started to avoid running ahead
         try {
           player.pause();
-        } catch {}
+        } catch { }
         await audio.play();
         try {
           player.play();
-        } catch {}
+        } catch { }
         startDriftCheck();
       } catch (_) {
         // ignore play errors
@@ -1538,14 +1722,14 @@ function PreviewAudioSegment({
     const sync = () => {
       const t = targetTime();
       const isWithin = t >= segment.projStart && t < segment.projStart + segment.duration;
-      
+
       if (isWithin) {
         const targetSeek = segment.srcStart + (t - segment.projStart);
         if (Math.abs(audio.currentTime - targetSeek) > DRIFT_HARD) {
           audio.currentTime = targetSeek;
         }
         if (audio.paused) {
-          audio.play().catch(() => {});
+          audio.play().catch(() => { });
         }
       } else {
         if (!audio.paused) {
@@ -1588,11 +1772,11 @@ function PreviewAudioSegment({
           hardSync();
           try {
             player.pause();
-          } catch {}
+          } catch { }
           await audio.play();
           try {
             player.play();
-          } catch {}
+          } catch { }
           startDriftCheck();
         } else {
           audio.pause();
@@ -1616,7 +1800,7 @@ function PreviewAudioSegment({
       if (isWithin) {
         hardSync();
         if (driftTimer != null && audio.paused) {
-          audio.play().catch(() => {});
+          audio.play().catch(() => { });
         }
       } else {
         audio.pause();

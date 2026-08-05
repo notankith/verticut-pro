@@ -312,7 +312,7 @@ export const getProject = createServerFn({ method: "POST" })
   });
 
 export const saveProject = createServerFn({ method: "POST" })
-  .inputValidator((d: { id: string; clips: ClipDoc[]; audioDuration?: number; audioSegments?: AudioSegment[] }) => d)
+  .inputValidator((d: { id: string; clips: ClipDoc[]; audioDuration?: number; audioSegments?: AudioSegment[]; name?: string }) => d)
   .handler(async ({ data }) => {
     const projects = await C<ProjectDoc>("projects");
     const update: any = { clips: data.clips, updatedAt: Date.now() };
@@ -321,6 +321,9 @@ export const saveProject = createServerFn({ method: "POST" })
     }
     if (data.audioSegments) {
       update.audioSegments = data.audioSegments;
+    }
+    if (typeof data.name === "string") {
+      update.name = data.name;
     }
     await projects.updateOne(
       { _id: data.id },
@@ -602,7 +605,7 @@ export const clearProjectsAndRenders = createServerFn({ method: "POST" })
   .inputValidator((d: { confirmed: boolean }) => d)
   .handler(async ({ data }) => {
     if (!data.confirmed) throw new Error("Clear not confirmed");
-    
+
     const projects = await C<ProjectDoc>("projects");
     const projectDocs = await projects.find({}).toArray();
     for (const doc of projectDocs) {
@@ -623,10 +626,10 @@ export const resetAllData = createServerFn({ method: "POST" })
   .inputValidator((d: { confirmed: boolean }) => d)
   .handler(async ({ data }) => {
     if (!data.confirmed) throw new Error("Reset not confirmed");
-    
+
     const projects = await C<ProjectDoc>("projects");
     const renders = await C<RenderDoc>("renders");
-    
+
     // Delete all projects
     await projects.find({}).toArray().then(async (docs) => {
       for (const doc of docs) {

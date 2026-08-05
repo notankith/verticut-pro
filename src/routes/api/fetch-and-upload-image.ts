@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { s3Client, uploadBuffer } from "../../server/r2.server";
+import { uploadBuffer } from "../../server/r2.server";
 import { randomUUID } from "crypto";
 
 export const Route = createFileRoute("/api/fetch-and-upload-image")({

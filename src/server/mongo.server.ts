@@ -45,6 +45,7 @@ export type ProjectDoc = {
 export type ClipDoc = {
   id: string;
   kind?: "media" | "solid" | "text";
+  layer?: "media" | "overlay";
   start: number;
   duration: number;
   imageKey?: string;
@@ -106,6 +107,7 @@ export type SettingsDoc = {
   captionFontSize?: number;
   showLabels?: boolean;
   enableGradientOverlay?: boolean;
+  showCaptions?: boolean;
 };
 
 export type RenderDoc = {

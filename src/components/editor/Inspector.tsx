@@ -1,9 +1,9 @@
 import { useEditor } from "@/store/editor";
 import { useTimelineActions } from "./hooks";
 import { uploadToR2 } from "@/lib/upload";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ClipDoc } from "@/server/mongo.server";
-import { Trash2, RefreshCw, Image as ImageIcon, Star, Diamond, VolumeX, Volume2 } from "lucide-react";
+import { Trash2, RefreshCw, Image as ImageIcon, Star, Diamond, VolumeX, Volume2, Sparkles, Type, Film } from "lucide-react";
 
 const ANIMS: ClipDoc["animation"][] = ["zoom-in", "zoom-out", "pan-left", "pan-right"];
 
@@ -21,7 +21,6 @@ function DraggableNumberInput({
   step?: number;
 }) {
   const handlePointerDown = (e: React.PointerEvent) => {
-    // e.preventDefault(); // allow focus to switch so it feels native
     const startX = e.clientX;
     const startVal = value;
     const handleMove = (ev: PointerEvent) => {
@@ -44,52 +43,72 @@ function DraggableNumberInput({
       value={Number(Number(value).toFixed(2))}
       onChange={(e) => onChange(Number(e.target.value))}
       onPointerDown={handlePointerDown}
-      className="w-full rounded border border-border bg-panel-3 px-2 py-0.5 font-mono text-[10px] cursor-ew-resize"
+      className="w-full rounded border border-border bg-panel-2 px-2 py-0.5 font-mono text-[10px] cursor-ew-resize outline-none"
     />
   );
 }
 
-export function Inspector() {
-  const { selectedClipId, clips, settings, audioSegments, currentTime } = useEditor();
-  const { updateClip, deleteClip, updateAudioSegment, deleteAudioSegment, splitAudioAt, addKeyframe } = useTimelineActions();
-  const replaceRef = useRef<HTMLInputElement>(null);
-  const splitBottomRef = useRef<HTMLInputElement>(null);
+// Probe image dimensions helper
+function useImageDimensions(imageUrl?: string) {
+  const [imgDims, setImgDims] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    setImgDims(null);
+    if (!imageUrl) return;
+    const img = new Image();
+    let cancelled = false;
+    img.onload = () => {
+      if (cancelled) return;
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        setImgDims({ w: img.naturalWidth, h: img.naturalHeight });
+      }
+    };
+    img.src = imageUrl;
+    return () => {
+      cancelled = true;
+    };
+  }, [imageUrl]);
+  return imgDims;
+}
+
+// Shared interpolation pure helper
+function interpClipProp(clip: ClipDoc, prop: "posX" | "posY" | "scale" | "rotation" | "opacity", time: number) {
+  if (!clip.keyframes || clip.keyframes.length === 0) return undefined;
+  const kfs = clip.keyframes.slice().sort((a, b) => a.time - b.time);
+  let prev = null as any;
+  let next = null as any;
+  for (let i = 0; i < kfs.length; i++) {
+    if (kfs[i].time <= time) prev = kfs[i];
+    if (kfs[i].time > time) { next = kfs[i]; break; }
+  }
+  if (!prev && !next) return undefined;
+  if (!prev) return (next as any)[prop];
+  if (!next) return (prev as any)[prop];
+  const pVal = (prev as any)[prop];
+  const nVal = (next as any)[prop];
+  if (pVal == null || nVal == null) return pVal ?? nVal;
+  const alpha = (time - prev.time) / Math.max(1e-6, next.time - prev.time);
+  return pVal + (nVal - pVal) * alpha;
+}
+
+// ----------------------------------------------------
+// ANIMATION PANEL
+// ----------------------------------------------------
+export function AnimationPanel() {
+  const { selectedClipId, clips, currentTime } = useEditor();
+  const { updateClip } = useTimelineActions();
   const clip = clips.find((c) => c.id === selectedClipId);
-  const audioSegment = audioSegments.find((s) => s.id === selectedClipId);
-  const [timingError, setTimingError] = useState<string | null>(null);
+  const imgDims = useImageDimensions(clip?.imageUrl);
 
-  const handleTimingChange = (newStart: number, newEnd: number) => {
-    setTimingError(null);
-    if (!clip) return;
-    if (newEnd <= newStart) {
-      setTimingError("Invalid (duration <= 0)");
-      return;
-    }
-    
-    updateClip(clip.id, { start: newStart, duration: newEnd - newStart });
-  };
+  if (!clip) {
+    return (
+      <div className="flex h-full items-center justify-center p-4 text-center text-xs text-muted-foreground bg-panel">
+        Select a layer or transition on the timeline to animate.
+      </div>
+    );
+  }
 
-  const interpClipProp = (clip: ClipDoc, prop: "posX" | "posY" | "scale" | "rotation" | "opacity", time: number) => {
-    if (!clip.keyframes || clip.keyframes.length === 0) return undefined;
-    const kfs = clip.keyframes.slice().sort((a, b) => a.time - b.time);
-    let prev = null as any;
-    let next = null as any;
-    for (let i = 0; i < kfs.length; i++) {
-      if (kfs[i].time <= time) prev = kfs[i];
-      if (kfs[i].time > time) { next = kfs[i]; break; }
-    }
-    if (!prev && !next) return undefined;
-    if (!prev) return (next as any)[prop];
-    if (!next) return (prev as any)[prop];
-    const pVal = (prev as any)[prop];
-    const nVal = (next as any)[prop];
-    if (pVal == null || nVal == null) return pVal ?? nVal;
-    const alpha = (time - prev.time) / Math.max(1e-6, next.time - prev.time);
-    return pVal + (nVal - pVal) * alpha;
-  };
-
+  // Keyframing helpers
   const handlePropChange = (prop: "posX" | "posY" | "scale" | "rotation" | "opacity", value: number) => {
-    if (!clip) return;
     const isKeyframed = clip.keyframedProps?.includes(prop);
     if (isKeyframed) {
       const existingKeyframes = clip.keyframes || [];
@@ -107,11 +126,10 @@ export function Inspector() {
   };
 
   const toggleKeyframe = (prop: "posX" | "posY" | "scale" | "rotation" | "opacity") => {
-    if (!clip) return;
     const props = clip.keyframedProps || [];
     const isKeyframed = props.includes(prop);
     const nextProps = isKeyframed ? props.filter((p) => p !== prop) : [...props, prop];
-    
+
     let nextKeyframes = clip.keyframes || [];
     if (!isKeyframed) {
       const val = interpClipProp(clip, prop, currentTime) ?? clip[prop] ?? (prop === "scale" || prop === "opacity" ? 1 : prop === "rotation" ? 0 : 50);
@@ -132,17 +150,17 @@ export function Inspector() {
   };
 
   const hasKeyframeAtCurrentTime = (prop: string) => {
-    if (!clip?.keyframes) return false;
+    if (!clip.keyframes) return false;
     const kf = clip.keyframes.find(k => Math.abs(k.time - currentTime) < 0.05);
     return kf ? kf[prop as keyof typeof kf] !== undefined : false;
   };
 
   const addRemoveKeyframe = (prop: "posX" | "posY" | "scale" | "rotation" | "opacity") => {
-    if (!clip || !clip.keyframedProps?.includes(prop)) return;
+    if (!clip.keyframedProps?.includes(prop)) return;
     const existing = clip.keyframes || [];
     const index = existing.findIndex(k => Math.abs(k.time - currentTime) < 0.05);
     let nextKeyframes = [...existing];
-    
+
     if (index >= 0 && nextKeyframes[index][prop] !== undefined) {
       nextKeyframes[index] = { ...nextKeyframes[index] };
       delete nextKeyframes[index][prop];
@@ -160,170 +178,19 @@ export function Inspector() {
     updateClip(clip.id, { keyframes: nextKeyframes });
   };
 
-  // Probe the selected image's intrinsic pixel dimensions so the anchor inputs
-  // can range 0..naturalWidth / 0..naturalHeight instead of a fixed 0–100.
-  const [imgDims, setImgDims] = useState<{ w: number; h: number } | null>(null);
-  const imageUrl = clip?.imageUrl;
-  useEffect(() => {
-    setImgDims(null);
-    if (!imageUrl) return;
-    const img = new Image();
-    let cancelled = false;
-    img.onload = () => {
-      if (cancelled) return;
-      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-        setImgDims({ w: img.naturalWidth, h: img.naturalHeight });
-      }
-    };
-    img.src = imageUrl;
-    return () => {
-      cancelled = true;
-    };
-  }, [imageUrl]);
-
-  if (audioSegment) {
+  if (clip.kind === "text" || clip.kind === "solid") {
     return (
-      <div className="h-full overflow-y-auto space-y-4 p-4 text-xs">
-        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Audio Segment Inspector</h3>
-        
-        <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Properties</div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="mb-0.5 block text-muted-foreground">Start Time (s)</label>
-              <input
-                type="number"
-                min={0}
-                step={0.1}
-                value={Number(audioSegment.projStart.toFixed(2))}
-                onChange={(e) => updateAudioSegment(audioSegment.id, { projStart: Math.max(0, Number(e.target.value)) })}
-                className="w-full rounded border border-border bg-panel-3 px-2 py-1 font-mono"
-              />
-            </div>
-            <div>
-              <label className="mb-0.5 block text-muted-foreground">Duration (s)</label>
-              <input
-                type="number"
-                min={0.1}
-                step={0.1}
-                value={Number(audioSegment.duration.toFixed(2))}
-                onChange={(e) => updateAudioSegment(audioSegment.id, { duration: Math.max(0.1, Number(e.target.value)) })}
-                className="w-full rounded border border-border bg-panel-3 px-2 py-1 font-mono"
-              />
-            </div>
-          </div>
-        </div>
+      <div className="h-full overflow-y-auto space-y-4 p-4 text-xs bg-panel">
+        <header className="border-b border-border pb-2">
+          <h3 className="text-xs font-semibold">Animation</h3>
+          <p className="text-[10px] text-muted-foreground mr-1">Animate overlay parameters</p>
+        </header>
 
-        <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">    
-          <div>
-            <label className="mb-0.5 block text-muted-foreground">Source Start Offset (s)</label>
-            <input
-              type="number"
-              min={0}
-              step={0.1}
-              value={Number(audioSegment.srcStart.toFixed(2))}
-              onChange={(e) => updateAudioSegment(audioSegment.id, { srcStart: Math.max(0, Number(e.target.value)) })}
-              className="w-full rounded border border-border bg-panel-3 px-2 py-1 font-mono"
-            />
-          </div>
-        </div>
+        <div className="bg-panel-2 p-2.5 rounded border border-border space-y-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Properties Keyframes</div>
 
-        <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Actions</div>
-          
-          <button
-            type="button"
-            onClick={() => splitAudioAt(currentTime)}
-            disabled={currentTime <= audioSegment.projStart || currentTime >= audioSegment.projStart + audioSegment.duration}
-            className="w-full flex items-center justify-center gap-1.5 rounded border border-border bg-panel-3 py-1.5 hover:bg-accent disabled:opacity-50 disabled:hover:bg-panel-3"
-          >
-            Split at Playhead ({currentTime.toFixed(2)}s)
-          </button>
-        </div>
-
-        <button
-          onClick={() => deleteAudioSegment(audioSegment.id)}
-          className="flex w-full items-center justify-center gap-1.5 rounded border border-destructive/50 bg-destructive/10 py-1.5 text-destructive hover:bg-destructive/20"
-        >
-          <Trash2 className="h-3 w-3" /> Delete Audio Segment
-        </button>
-      </div>
-    );
-  }
-
-  if (!clip) {
-    return (
-      <div className="flex h-full items-center justify-center p-4 text-center text-xs text-muted-foreground">
-        Select a clip on the timeline to edit properties.
-      </div>
-    );
-  }
-
-  return (
-    <div className="h-full overflow-y-auto space-y-4 p-4 text-xs">
-      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Clip Inspector</h3>
-
-      {clip.kind === "text" && (
-        <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Layer Duration</div>
-            {timingError && <span className="text-[10px] text-destructive font-semibold truncate ml-2">{timingError}</span>}
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="mb-0.5 block text-muted-foreground">Start Time (s)</label>
-              <DraggableNumberInput
-                step={0.1}
-                min={0}
-                max={999}
-                value={clip.start}
-                onChange={(v) => handleTimingChange(v, clip.start + clip.duration)}
-              />
-            </div>
-            <div>
-              <label className="mb-0.5 block text-muted-foreground">End Time (s)</label>
-              <DraggableNumberInput
-                step={0.1}
-                min={clip.start + 0.1}
-                max={999}
-                value={clip.start + clip.duration}
-                onChange={(v) => handleTimingChange(clip.start, v)}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {clip.kind === "text" && (
-        <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Text Layer</div>
-          <textarea
-            value={clip.textContent || ""}
-            onChange={(e) => updateClip(clip.id, { textContent: e.target.value })}
-            className="w-full rounded border border-border bg-panel-3 px-2 py-1 font-sans text-xs min-h-[60px]"
-          />
-        </div>
-      )}
-
-      {clip.kind === "solid" && (
-        <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Solid Layer</div>
-          <div className="flex items-center gap-2">
-            <input
-              type="color"
-              value={clip.solidColor || "#800000"}
-              onChange={(e) => updateClip(clip.id, { solidColor: e.target.value })}
-              className="h-6 w-8 cursor-pointer rounded border border-border"
-            />
-            <span className="font-mono text-[10px]">{clip.solidColor || "#800000"}</span>
-          </div>
-        </div>
-      )}
-
-      {(clip.kind === "solid" || clip.kind === "text") && (
-        <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Transform</div>
-          <div className="space-y-2">
+          {/* Scale Keyframing */}
+          <div className="space-y-1">
             <div className="flex items-center justify-between">
               <label className="text-[11px] text-muted-foreground">Scale</label>
               <div className="flex items-center gap-1.5">
@@ -336,168 +203,139 @@ export function Inspector() {
                     onChange={(v) => handlePropChange("scale", v)}
                   />
                 </div>
-                {clip.kind !== "text" && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => addRemoveKeyframe("scale")}
-                      className={`rounded p-1 transition-colors ${
-                        hasKeyframeAtCurrentTime("scale")
-                          ? "text-primary hover:bg-primary/20"
-                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                      }`}
-                      disabled={!clip.keyframedProps?.includes("scale")}
-                      title="Add/Remove Keyframe at Playhead"
-                    >
-                      <Diamond className="h-3.5 w-3.5 fill-current" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => toggleKeyframe("scale")}
-                      className={`rounded p-1 transition-colors ${
-                        clip.keyframedProps?.includes("scale")
-                          ? "text-yellow-500 bg-yellow-500/20 hover:bg-yellow-500/30"
-                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                      }`}
-                      title="Toggle Scale Keyframing"
-                    >
-                      <Star className="h-3.5 w-3.5 fill-current" />
-                    </button>
-                  </>
-                )}
+                <button
+                  type="button"
+                  onClick={() => addRemoveKeyframe("scale")}
+                  className={`rounded p-1 transition-colors ${hasKeyframeAtCurrentTime("scale")
+                    ? "text-primary hover:bg-primary/20"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    }`}
+                  disabled={!clip.keyframedProps?.includes("scale")}
+                  title="Add Keyframe"
+                >
+                  <Diamond className="h-3.5 w-3.5 fill-current" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleKeyframe("scale")}
+                  className={`rounded p-1 transition-colors ${clip.keyframedProps?.includes("scale")
+                    ? "text-yellow-500 bg-yellow-500/20"
+                    : "text-muted-foreground hover:bg-accent"
+                    }`}
+                  title="Keyframe Switch"
+                >
+                  <Star className="h-3.5 w-3.5 fill-current" />
+                </button>
               </div>
+            </div>
           </div>
-          
-          { (clip.kind === "text" || clip.kind === "solid") && (
-            <>
-              <div className="flex items-center justify-between">
-                <label className="text-[11px] text-muted-foreground">Position X (%)</label>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-16">
-                    <DraggableNumberInput
-                      min={-100}
-                      max={200}
-                      step={1}
-                      value={interpClipProp(clip, "posX", currentTime) ?? clip.posX ?? 50}
-                      onChange={(v) => handlePropChange("posX", v)}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => addRemoveKeyframe("posX")}
-                    className={`rounded p-1 transition-colors ${
-                      hasKeyframeAtCurrentTime("posX")
-                        ? "text-primary hover:bg-primary/20"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                    }`}
-                    disabled={!clip.keyframedProps?.includes("posX")}
-                    title="Add/Remove Keyframe at Playhead"
-                  >
-                    <Diamond className="h-3.5 w-3.5 fill-current" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => toggleKeyframe("posX")}
-                    className={`rounded p-1 transition-colors ${
-                      clip.keyframedProps?.includes("posX")
-                        ? "text-yellow-500 bg-yellow-500/20 hover:bg-yellow-500/30"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                    }`}
-                    title="Toggle Position X Keyframing"
-                  >
-                    <Star className="h-3.5 w-3.5 fill-current" />
-                  </button>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <label className="text-[11px] text-muted-foreground">Position Y (%)</label>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-16">
-                    <DraggableNumberInput
-                      min={-100}
-                      max={200}
-                      step={1}
-                      value={interpClipProp(clip, "posY", currentTime) ?? clip.posY ?? 50}
-                      onChange={(v) => handlePropChange("posY", v)}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => addRemoveKeyframe("posY")}
-                    className={`rounded p-1 transition-colors ${
-                      hasKeyframeAtCurrentTime("posY")
-                        ? "text-primary hover:bg-primary/20"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                    }`}
-                    disabled={!clip.keyframedProps?.includes("posY")}
-                    title="Add/Remove Keyframe at Playhead"
-                  >
-                    <Diamond className="h-3.5 w-3.5 fill-current" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => toggleKeyframe("posY")}
-                    className={`rounded p-1 transition-colors ${
-                      clip.keyframedProps?.includes("posY")
-                        ? "text-yellow-500 bg-yellow-500/20 hover:bg-yellow-500/30"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                    }`}
-                    title="Toggle Position Y Keyframing"
-                  >
-                    <Star className="h-3.5 w-3.5 fill-current" />
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-          </div>
-        </div>
-      )}
 
-      {clip.kind !== "text" && clip.kind !== "solid" && clip.videoUrl && (
-        <div className="bg-panel-2 p-2.5 rounded border border-border space-y-2">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Audio</div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => updateClip(clip.id, { muted: !clip.muted })}
-              className="rounded p-2 hover:bg-accent"
-            >
-              {clip.muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-            </button>
-            <div className="flex-1">
-              <div className="flex justify-between mb-1">
-                <label className="text-[10px] text-muted-foreground">Volume</label>
-                <span className="text-[10px] text-muted-foreground">{clip.volume ?? 100}%</span>
+          {/* Position X Keyframing */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] text-muted-foreground">Position X (%)</label>
+              <div className="flex items-center gap-1.5">
+                <div className="w-16">
+                  <DraggableNumberInput
+                    min={-100}
+                    max={200}
+                    step={1}
+                    value={interpClipProp(clip, "posX", currentTime) ?? clip.posX ?? 50}
+                    onChange={(v) => handlePropChange("posX", v)}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => addRemoveKeyframe("posX")}
+                  className={`rounded p-1 transition-colors ${hasKeyframeAtCurrentTime("posX")
+                    ? "text-primary hover:bg-primary/20"
+                    : "text-muted-foreground hover:bg-accent"
+                    }`}
+                  disabled={!clip.keyframedProps?.includes("posX")}
+                >
+                  <Diamond className="h-3.5 w-3.5 fill-current" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleKeyframe("posX")}
+                  className={`rounded p-1 transition-colors ${clip.keyframedProps?.includes("posX")
+                    ? "text-yellow-500 bg-yellow-500/20"
+                    : "text-muted-foreground hover:bg-accent"
+                    }`}
+                >
+                  <Star className="h-3.5 w-3.5 fill-current" />
+                </button>
               </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={clip.volume ?? 100}
-                disabled={clip.muted}
-                onChange={(e) => updateClip(clip.id, { volume: Number(e.target.value) })}
-                className={`w-full ${clip.muted ? 'opacity-50' : ''}`}
-              />
+            </div>
+          </div>
+
+          {/* Position Y Keyframing */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] text-muted-foreground">Position Y (%)</label>
+              <div className="flex items-center gap-1.5">
+                <div className="w-16">
+                  <DraggableNumberInput
+                    min={-100}
+                    max={200}
+                    step={1}
+                    value={interpClipProp(clip, "posY", currentTime) ?? clip.posY ?? 50}
+                    onChange={(v) => handlePropChange("posY", v)}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => addRemoveKeyframe("posY")}
+                  className={`rounded p-1 transition-colors ${hasKeyframeAtCurrentTime("posY")
+                    ? "text-primary hover:bg-primary/20"
+                    : "text-muted-foreground hover:bg-accent"
+                    }`}
+                  disabled={!clip.keyframedProps?.includes("posY")}
+                >
+                  <Diamond className="h-3.5 w-3.5 fill-current" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleKeyframe("posY")}
+                  className={`rounded p-1 transition-colors ${clip.keyframedProps?.includes("posY")
+                    ? "text-yellow-500 bg-yellow-500/20"
+                    : "text-muted-foreground hover:bg-accent"
+                    }`}
+                >
+                  <Star className="h-3.5 w-3.5 fill-current" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      )}
 
-      {clip.kind !== "text" && clip.kind !== "solid" && (
-        <>
-          <div>
-        <label className="mb-1 block text-muted-foreground">Animation</label>
+        {/* Display keyframes list */}
+        {renderKeyframesList(clip, updateClip)}
+      </div>
+    );
+  }
+
+  // Visual Media (image/video) Animation properties
+  return (
+    <div className="h-full overflow-y-auto space-y-4 p-4 text-xs bg-panel">
+      <header className="border-b border-border pb-2">
+        <h3 className="text-xs font-semibold">Animation</h3>
+        <p className="text-[10px] text-muted-foreground">Ken Burns effect & Keyframes</p>
+      </header>
+
+      {/* Animation Types selection */}
+      <div className="space-y-1.5">
+        <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Animation Type</label>
         <div className="grid grid-cols-2 gap-1.5">
           {ANIMS.map((a) => (
             <button
               key={a}
               type="button"
               onClick={() => updateClip(clip.id, { animation: a })}
-              className={`rounded border px-2 py-1.5 text-[11px] capitalize transition-colors ${
-                clip.animation === a
-                  ? "border-primary bg-primary/15 text-foreground"
-                  : "border-border bg-panel-2 text-muted-foreground hover:bg-accent hover:text-foreground"
-              }`}
+              className={`rounded border px-2 py-1.5 text-[11px] capitalize transition-colors ${clip.animation === a
+                ? "border-primary bg-primary/15 text-foreground"
+                : "border-border bg-panel-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+                }`}
             >
               {a.replace("-", " ")}
             </button>
@@ -505,210 +343,280 @@ export function Inspector() {
         </div>
       </div>
 
-      <div>
-        <label className="mb-1 block text-muted-foreground">Label preset</label>
-        <select
-          value={clip.labelPresetId}
-          onChange={(e) => {
-            const nextId = e.target.value;
-            const p = settings.presets.find((x) => x.id === nextId);
-            // Pulling preset text into labelText keeps the rendered overlay in
-            // sync. For "custom", default to the preset's text but the inline
-            // input below lets the user override per-clip.
-            updateClip(clip.id, { labelPresetId: nextId, labelText: p?.text ?? clip.labelText });
-          }}
-          className="w-full rounded border border-border bg-panel-2 px-2 py-1.5"
-        >
-          {settings.presets.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-        {clip.labelPresetId === "custom" ? (
-          <div className="mt-2">
-            <label className="mb-1 block text-muted-foreground">Custom credits</label>
-            <input
-              autoFocus
-              value={clip.labelText}
-              placeholder="e.g. © Source"
-              onChange={(e) => updateClip(clip.id, { labelText: e.target.value })}
-              className="w-full rounded border border-border bg-panel-2 px-2 py-1.5"
-            />
-          </div>
-        ) : null}
+      {/* Animation Intensity slider */}
+      <div className="space-y-1.5">
+        <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+          <label>Animation Intensity</label>
+          <span className="font-mono">{(clip.intensity ?? 1).toFixed(1)}x</span>
+        </div>
+        <input
+          type="range"
+          min={0.5}
+          max={3}
+          step={0.1}
+          value={clip.intensity ?? 1}
+          onChange={(e) => updateClip(clip.id, { intensity: Number(e.target.value) })}
+          className="w-full accent-primary"
+        />
       </div>
 
-      <div>
-        <label className="mb-1 block text-muted-foreground">
-          Anchor point <span className="text-[10px]">(animation origin within layer)</span>
-        </label>
-        <div className="grid grid-cols-1 gap-2">
+      {/* Anchor point X and Y sliders */}
+      <div className="space-y-2 border-t border-border pt-3">
+        <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Ken Burns Focus (Anchor)</label>
+        <div className="space-y-3 mt-1.5">
           <AnchorInput
             axis="X"
             value={clip.anchorX ?? 50}
             maxPx={imgDims?.w}
             onChange={(v) => updateClip(clip.id, { anchorX: v })}
           />
+          <AnchorInput
+            axis="Y"
+            value={clip.anchorY ?? 50}
+            maxPx={imgDims?.h}
+            onChange={(v) => updateClip(clip.id, { anchorY: v })}
+          />
         </div>
-          <div className="mt-2">
-            <label className="mb-1 block text-muted-foreground">Animation intensity ({(clip.intensity ?? 1).toFixed(1)}×)</label>
-            <input
-              type="range"
-              min={0.5}
-              max={3}
-              step={0.1}
-              value={clip.intensity ?? 1}
-              onChange={(e) => updateClip(clip.id, { intensity: Number(e.target.value) })}
-              className="w-full"
-            />
-          </div>
 
-          <div className="mt-3">
-            <button
-              type="button"
-              onClick={() =>
-                updateClip(clip.id, {
-                  splitScreen: clip.splitScreen?.enabled
-                    ? { ...clip.splitScreen, enabled: false }
-                    : { ...(clip.splitScreen ?? {}), enabled: true },
-                })
-              }
-              className={`w-full rounded border px-2 py-1.5 text-[11px] transition-colors ${
-                clip.splitScreen?.enabled
-                  ? "border-primary bg-primary/15 text-foreground"
-                  : "border-border bg-panel-2 text-muted-foreground hover:bg-accent hover:text-foreground"
-              }`}
-            >
-              Split Screen {clip.splitScreen?.enabled ? "On" : "Off"}
-            </button>
-
-            {clip.splitScreen?.enabled && (
-              <div className="mt-2 space-y-1.5">
-                <div className="text-[10px] text-muted-foreground">
-                  Top: current image (pan left) · Bottom: {clip.splitScreen.bottomImageUrl ? "imported" : "empty"}
-                </div>
-                {clip.splitScreen.bottomImageUrl && (
-                  <img
-                    src={clip.splitScreen.bottomImageUrl}
-                    alt="bottom half"
-                    className="w-full rounded"
-                    style={{ height: 38, objectFit: "cover" }}
-                  />
-                )}
-                <button
-                  type="button"
-                  onClick={() => splitBottomRef.current?.click()}
-                  className="flex w-full items-center justify-center gap-1.5 rounded border border-border bg-panel-2 py-1.5 text-[11px] hover:bg-accent"
-                >
-                  <ImageIcon className="h-3 w-3" />
-                  {clip.splitScreen.bottomImageUrl ? "Replace bottom" : "Import bottom"}
-                </button>
-                <p className="text-center text-[10px] text-muted-foreground">or Ctrl+V with this clip selected</p>
-              </div>
-            )}
-          </div>
-
-        <div className="mt-1.5 flex items-center justify-between">
+        <div className="mt-1 flex items-center justify-between">
           <button
             onClick={() => updateClip(clip.id, { anchorX: 50, anchorY: 50 })}
             className="text-[10px] text-muted-foreground hover:text-foreground"
           >
             Reset to center
           </button>
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-[10px] font-mono text-muted-foreground">
             {(clip.anchorX ?? 50)}% / {(clip.anchorY ?? 50)}%
           </span>
         </div>
       </div>
-      </>
-      )}
 
-      <div className="flex gap-2">
-        {clip.kind !== "text" && (
-          <button
-            onClick={() => replaceRef.current?.click()}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded border border-border bg-panel-2 py-1.5 hover:bg-accent"
-          >
-            <RefreshCw className="h-3 w-3" /> Replace
-          </button>
-        )}
-        <button
-          onClick={() => deleteClip(clip.id)}
-          className={`flex items-center justify-center gap-1.5 rounded border border-destructive/50 bg-destructive/10 py-1.5 text-destructive hover:bg-destructive/20 ${clip.kind === "text" ? "flex-1" : "px-3"}`}
-        >
-          <Trash2 className="h-3 w-3" /> Delete
-        </button>
-      </div>
-
-      {clip.kind !== "text" && clip.keyframes && clip.keyframes.length > 0 && (
-        <div className="mt-6 border-t border-border pt-4">
-          <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Keyframes Editor
-          </div>
-          <div className="flex flex-col gap-2">
-            {clip.keyframes
-              .map((kf, originalIdx) => ({ kf, originalIdx }))
-              .sort((a, b) => a.kf.time - b.kf.time)
-              .map(({ kf, originalIdx }, displayIdx) => (
-              <div key={originalIdx} className="flex items-center justify-between rounded border border-border bg-panel-2 px-2 py-1.5 text-[11px]">
-                <span className="font-medium text-foreground">Keyframe {displayIdx + 1}</span>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={Number(kf.time.toFixed(3))}
-                    onChange={(e) => {
-                      const newTime = Math.max(clip.start, Math.min(clip.start + clip.duration, Number(e.target.value)));
-                      const nextKfs = [...clip.keyframes!];
-                      nextKfs[originalIdx] = { ...nextKfs[originalIdx], time: newTime };
-                      updateClip(clip.id, { keyframes: nextKfs });
-                    }}
-                    className="w-16 rounded border border-border bg-panel px-1.5 py-0.5 text-right font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                  <span className="text-muted-foreground opacity-60">sec</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <input
-        ref={replaceRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={async (e) => {
-          const f = e.target.files?.[0];
-          if (!f) return;
-          const { key, url } = await uploadToR2(f, "image");
-          updateClip(clip.id, { imageKey: key, imageUrl: url });
-        }}
-      />
-      <input
-        ref={splitBottomRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={async (e) => {
-          const f = e.target.files?.[0];
-          if (!f) return;
-          const targetEl = e.target;
-          try {
-            const { key, url } = await uploadToR2(f, "image");
-            updateClip(clip.id, {
-              splitScreen: { enabled: true, bottomImageKey: key, bottomImageUrl: url },
-            });
-          } catch (err) {
-            console.error("Split screen bottom import failed:", err);
-          } finally {
-            targetEl.value = "";
-          }
-        }}
-      />
+      {/* Display keyframes list */}
+      {renderKeyframesList(clip, updateClip)}
     </div>
   );
 }
 
+function renderKeyframesList(clip: ClipDoc, updateClip: any) {
+  if (!clip.keyframes || clip.keyframes.length === 0) return null;
+  return (
+    <div className="border-t border-border pt-3.5 space-y-2">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Keyframes Timeline
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {clip.keyframes
+          .slice()
+          .sort((a, b) => a.time - b.time)
+          .map((kf, idx) => (
+            <div key={idx} className="flex items-center justify-between rounded border border-border bg-panel-2 px-2 py-1 text-[10.5px]">
+              <span className="font-medium text-foreground">Keyframe {idx + 1}</span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={Number(kf.time.toFixed(3))}
+                  onChange={(e) => {
+                    const newTime = Math.max(clip.start, Math.min(clip.start + clip.duration, Number(e.target.value)));
+                    const nextKfs = [...clip.keyframes!];
+                    const origIdx = clip.keyframes!.findIndex(k => k.time === kf.time);
+                    if (origIdx >= 0) {
+                      nextKfs[origIdx] = { ...nextKfs[origIdx], time: newTime };
+                      updateClip(clip.id, { keyframes: nextKfs });
+                    }
+                  }}
+                  className="w-14 rounded border border-border bg-panel px-1 py-0.5 text-right font-mono text-[10px]"
+                />
+                <span className="text-[9px] text-muted-foreground opacity-60">s</span>
+              </div>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------
+// MEDIA PANEL
+// ----------------------------------------------------
+export function MediaPanel({
+  onImportMedia,
+  onDownloadMedia,
+}: {
+  onImportMedia?: () => void;
+  onDownloadMedia?: () => void;
+}) {
+  return (
+    <div className="h-full flex flex-col p-4 text-xs bg-panel">
+      <header className="border-b border-border pb-2.5 mb-4 shrink-0">
+        <h3 className="text-xs font-semibold">Media Manager</h3>
+        <p className="text-[10px] text-muted-foreground">Manage and download project media assets</p>
+      </header>
+
+      <div className="space-y-3 flex-1 flex flex-col justify-center max-w-xs mx-auto w-full">
+        <button
+          type="button"
+          onClick={onImportMedia}
+          className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-border bg-panel-2 py-3.5 hover:bg-accent text-sm font-semibold transition-all shadow-sm hover:scale-[1.01]"
+        >
+          <Film className="h-4.5 w-4.5 text-primary" />
+          Import Media
+        </button>
+
+        <button
+          type="button"
+          onClick={onDownloadMedia}
+          className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-border bg-panel-2 py-3.5 hover:bg-accent text-sm font-semibold transition-all shadow-sm hover:scale-[1.01]"
+        >
+          <Sparkles className="h-4.5 w-4.5 text-yellow-500" />
+          Download Media
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------
+// CAPTIONS PANEL
+// ----------------------------------------------------
+export function CaptionsPanel() {
+  const { settings } = useEditor();
+  const updateSettings = useEditor((s) => s.updateSettings);
+
+  const onChange = (patch: Partial<typeof settings>) => {
+    updateSettings(patch);
+  };
+
+  const showCaptions = settings.showCaptions ?? true;
+
+  return (
+    <div className="h-full overflow-y-auto space-y-4 p-4 text-xs bg-panel">
+      <header className="border-b border-border pb-2.5">
+        <h3 className="text-xs font-semibold">Captions Settings</h3>
+        <p className="text-[10px] text-muted-foreground mr-1">Tweak text styling controls</p>
+      </header>
+
+      {/* Toggle */}
+      <div className="flex items-center justify-between bg-panel-2 p-2.5 rounded border border-border">
+        <div>
+          <div className="font-semibold text-foreground text-[11.5px]">Display Captions</div>
+          <div className="text-[9px] text-muted-foreground">Display overlay captions in player</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => onChange({ showCaptions: !showCaptions })}
+          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${showCaptions ? "bg-primary" : "bg-muted"
+            }`}
+        >
+          <span
+            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${showCaptions ? "translate-x-4.5" : "translate-x-1"
+              }`}
+          />
+        </button>
+      </div>
+
+      {showCaptions && (
+        <div className="space-y-4 pt-1">
+          {/* Colors */}
+          <div className="grid grid-cols-2 gap-3 pb-2 border-b border-border/50">
+            <div>
+              <label className="mb-1 block text-[10px] text-muted-foreground">Text Color</label>
+              <div className="flex gap-1.5">
+                <input
+                  type="color"
+                  value={settings.captionTextColor ?? "#000000"}
+                  onChange={(e) => onChange({ captionTextColor: e.target.value })}
+                  className="h-7 w-7 rounded border border-border bg-transparent p-0 cursor-pointer"
+                />
+                <input
+                  type="text"
+                  value={settings.captionTextColor ?? "#000000"}
+                  onChange={(e) => onChange({ captionTextColor: e.target.value })}
+                  className="w-16 rounded border border-border bg-panel-2 px-1 text-[10px] text-center font-mono"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] text-muted-foreground">Background Color</label>
+              <div className="flex gap-1.5">
+                <input
+                  type="color"
+                  value={settings.captionBgColor ?? "#ffffff"}
+                  onChange={(e) => onChange({ captionBgColor: e.target.value })}
+                  className="h-7 w-7 rounded border border-border bg-transparent p-0 cursor-pointer"
+                />
+                <input
+                  type="text"
+                  value={settings.captionBgColor ?? "#ffffff"}
+                  onChange={(e) => onChange({ captionBgColor: e.target.value })}
+                  className="w-16 rounded border border-border bg-panel-2 px-1 text-[10px] text-center font-mono"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Positions */}
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+                <label>Position X (Horizontal)</label>
+                <span className="font-mono">{settings.captionPosX ?? 50}%</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={settings.captionPosX ?? 50}
+                onChange={(e) => onChange({ captionPosX: Number(e.target.value) })}
+                className="w-full accent-primary"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+                <label>Position Y (Vertical)</label>
+                <span className="font-mono">{settings.captionPosY ?? 75}%</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={settings.captionPosY ?? 75}
+                onChange={(e) => onChange({ captionPosY: Number(e.target.value) })}
+                className="w-full accent-primary"
+              />
+            </div>
+          </div>
+
+          {/* Size */}
+          <div className="space-y-1 pt-1">
+            <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+              <label>Font Size</label>
+              <span className="font-mono">{settings.captionFontSize ?? 36}px</span>
+            </div>
+            <input
+              type="range"
+              min={12}
+              max={120}
+              value={settings.captionFontSize ?? 36}
+              onChange={(e) => onChange({ captionFontSize: Number(e.target.value) })}
+              className="w-full accent-primary"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Legacy fallback component
+export function Inspector() {
+  return <MediaPanel />;
+}
+
+// ----------------------------------------------------
+// ANCHOR INPUT SUB-COMPONENT
+// ----------------------------------------------------
 function AnchorInput({
   axis,
   value,
@@ -720,7 +628,6 @@ function AnchorInput({
   maxPx?: number | null; // intrinsic pixel size for axis
   onChange: (v: number) => void;
 }) {
-  // Convert stored percent -> pixel for UI when we have intrinsic size
   const px = Math.round(((value ?? 0) / 100) * (maxPx ?? 100));
   const clampPercent = (p: number) => Math.max(0, Math.min(100, Math.round(p)));
   const onPxChange = (newPx: number) => {
@@ -728,17 +635,16 @@ function AnchorInput({
       const nextPct = clampPercent((newPx / maxPx) * 100);
       onChange(nextPct);
     } else {
-      // fallback: treat incoming value as percent when no intrinsic size
       onChange(clampPercent(newPx));
     }
   };
 
   return (
     <div>
-      <label className="mb-1 block text-[10px] uppercase tracking-wider text-muted-foreground">
+      <label className="mb-0.5 block text-[9.5px] uppercase tracking-wider text-muted-foreground font-semibold">
         {axis} ({maxPx ? `${px}px / ${value}%` : `${value}%`})
       </label>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1.5">
         <input
           type="range"
           min={0}
@@ -746,7 +652,7 @@ function AnchorInput({
           step={1}
           value={px}
           onChange={(e) => onPxChange(Number(e.target.value))}
-          className="flex-1"
+          className="flex-1 accent-primary"
         />
         <input
           type="number"
@@ -754,7 +660,7 @@ function AnchorInput({
           max={maxPx ?? 100}
           value={px}
           onChange={(e) => onPxChange(Number(e.target.value))}
-          className="w-20 rounded border border-border bg-panel-2 px-1 py-0.5 text-right text-[11px]"
+          className="w-16 rounded border border-border bg-panel-2 px-1 py-0.5 text-right font-mono text-[10px]"
         />
       </div>
     </div>

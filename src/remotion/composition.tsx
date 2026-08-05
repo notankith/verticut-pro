@@ -77,15 +77,16 @@ function KenBurns({
   clip: ClipDoc;
   fps: number;
 }) {
+  const actualVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
   const t = interpolate(frame, [0, duration], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const range = ANIM_SHIFT * intensity;
   let baseScale = 1.05;
   let txPercent = 0;
   let ty = 0;
-  
+
   // Disable auto-animation if keyframes are present
   const hasKeyframes = clip.keyframes && clip.keyframes.length > 0;
-  
+
   if (!hasKeyframes && animation === "zoom-in") {
     baseScale = 1 + range * 0.35 * t + 0.02;
   } else if (!hasKeyframes && animation === "zoom-out") {
@@ -144,9 +145,53 @@ function KenBurns({
   const appliedPosY = kfPosY ?? clip.posY ?? anchorY;
   const appliedOpacity = kfOpacity ?? clip.opacity ?? 1;
 
+  if (clip.layer === "overlay") {
+    // Render as a sticker centered at appliedPosX%, appliedPosY%
+    const isVid = actualVideoUrl;
+    return (
+      <AbsoluteFill style={{
+        transform: `translate(-50%, -50%) translate(${appliedPosX}%, ${appliedPosY}%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        opacity: appliedOpacity,
+        willChange: "transform, opacity",
+        width: "40%",
+        height: "22.5%", // 16:9 ratio container
+        transformOrigin: "center",
+        zIndex: 5,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+        borderRadius: 8,
+      }}>
+        {isVid ? (
+          <Video
+            src={actualVideoUrl}
+            startFrom={Math.round((clip.trimStart ?? 0) * fps)}
+            muted={clip.muted ?? true}
+            volume={(clip.volume ?? 100) / 100}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+            }}
+          />
+        ) : (
+          <Img
+            src={imageUrl || ""}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+            }}
+          />
+        )}
+      </AbsoluteFill>
+    );
+  }
+
   if (clip.kind === "solid") {
     return (
-      <AbsoluteFill style={{ 
+      <AbsoluteFill style={{
         transform: `translate(-50%, -50%) translate(${appliedPosX}%, ${appliedPosY}%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
         opacity: appliedOpacity,
         backgroundColor: clip.solidColor || "#800000",
@@ -160,7 +205,7 @@ function KenBurns({
 
   if (clip.kind === "text") {
     return (
-      <AbsoluteFill style={{ 
+      <AbsoluteFill style={{
         transform: `translate(-50%, -50%) translate(${appliedPosX}%, ${appliedPosY}%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
         opacity: appliedOpacity,
         willChange: "transform, opacity",
@@ -187,15 +232,13 @@ function KenBurns({
     );
   }
 
-  const actualVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
-
   if (actualVideoUrl) {
     const trimStartSec = (clip && clip.trimStart) || 0;
     const trimStartFrames = Math.round(trimStartSec * fps);
-    
+
     const vidDurFrames = clip.videoDuration ? Math.max(1, Math.round((clip.videoDuration - trimStartSec) * fps)) : Math.max(1, duration);
     const loopCount = clip.videoDuration ? Math.ceil(duration / vidDurFrames) : 1;
-    
+
     const loops = [];
     for (let i = 0; i < loopCount; i++) {
       loops.push(
@@ -217,7 +260,7 @@ function KenBurns({
     }
 
     return (
-      <AbsoluteFill style={{ 
+      <AbsoluteFill style={{
         transform: `translate(${txPercent}%, 0%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
         opacity: appliedOpacity,
         filter: `contrast(${CONTRAST_MULTIPLIER})`,
@@ -480,73 +523,73 @@ const CaptionOverlay: React.FC<{
   captionPosY = 75,
   captionFontSize = 36,
 }) => {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const currentTime = frame / fps;
+    const frame = useCurrentFrame();
+    const { fps } = useVideoConfig();
+    const currentTime = frame / fps;
 
-  if (!transcript || transcript.length === 0) return null;
+    if (!transcript || transcript.length === 0) return null;
 
-  const srcT = audioSegments && audioSegments.length > 0
-    ? getSourceTime(audioSegments, currentTime)
-    : currentTime;
+    const srcT = audioSegments && audioSegments.length > 0
+      ? getSourceTime(audioSegments, currentTime)
+      : currentTime;
 
-  if (srcT < 0) return null;
+    if (srcT < 0) return null;
 
-  // Group into max 3-word segments
-  const segments: { words: TranscriptWord[]; start: number; end: number; text: string }[] = [];
-  for (let i = 0; i < transcript.length; i += 3) {
-    const group = transcript.slice(i, i + 3);
-    if (group.length > 0) {
-      segments.push({
-        words: group,
-        text: group.map(w => w.text).join(" "),
-        start: group[0].start,
-        end: group[group.length - 1].end,
-      });
+    // Group into max 3-word segments
+    const segments: { words: TranscriptWord[]; start: number; end: number; text: string }[] = [];
+    for (let i = 0; i < transcript.length; i += 3) {
+      const group = transcript.slice(i, i + 3);
+      if (group.length > 0) {
+        segments.push({
+          words: group,
+          text: group.map(w => w.text).join(" "),
+          start: group[0].start,
+          end: group[group.length - 1].end,
+        });
+      }
     }
-  }
 
-  let activeSegment = null;
-  if (segments.length > 0) {
-    if (srcT >= segments[0].start) {
-      for (let i = 0; i < segments.length; i++) {
-        const seg = segments[i];
-        const nextSeg = segments[i + 1];
-        const limit = nextSeg ? nextSeg.start : (seg.end + 2.0);
-        if (srcT >= seg.start && srcT < limit) {
-          if (srcT > seg.end + 1.0 && nextSeg && nextSeg.start - seg.end > 1.5) {
+    let activeSegment = null;
+    if (segments.length > 0) {
+      if (srcT >= segments[0].start) {
+        for (let i = 0; i < segments.length; i++) {
+          const seg = segments[i];
+          const nextSeg = segments[i + 1];
+          const limit = nextSeg ? nextSeg.start : (seg.end + 2.0);
+          if (srcT >= seg.start && srcT < limit) {
+            if (srcT > seg.end + 1.0 && nextSeg && nextSeg.start - seg.end > 1.5) {
+              break;
+            }
+            activeSegment = seg;
             break;
           }
-          activeSegment = seg;
-          break;
         }
       }
     }
-  }
 
-  if (!activeSegment) return null;
+    if (!activeSegment) return null;
 
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: `${captionPosX}%`,
-        top: `${captionPosY}%`,
-        transform: "translate(-50%, -50%)",
-        display: "flex",
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: `${captionFontSize * 0.25}px`,
-        whiteSpace: "nowrap",
-        pointerEvents: "none",
-        maxWidth: "90%",
-        overflow: "hidden",
-        zIndex: 50,
-      }}
-    >
-      <style>
-        {`
+    return (
+      <div
+        style={{
+          position: "absolute",
+          left: `${captionPosX}%`,
+          top: `${captionPosY}%`,
+          transform: "translate(-50%, -50%)",
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: `${captionFontSize * 0.25}px`,
+          whiteSpace: "nowrap",
+          pointerEvents: "none",
+          maxWidth: "90%",
+          overflow: "hidden",
+          zIndex: 50,
+        }}
+      >
+        <style>
+          {`
           @font-face {
             font-family: 'AcuminProCondensedBlack';
             src: url('${staticFile("acumin-pro-condensed-black.otf")}') format('opentype');
@@ -554,29 +597,29 @@ const CaptionOverlay: React.FC<{
             font-style: normal;
           }
         `}
-      </style>
-      <div
-        style={{
-          position: "relative",
-          padding: `${captionFontSize * 0.15}px ${captionFontSize * 0.4}px`,
-          fontSize: `${captionFontSize}px`,
-          fontFamily: "'AcuminProCondensedBlack', ui-sans-serif, system-ui, sans-serif",
-          fontWeight: 900,
-          textTransform: "uppercase",
-          color: captionTextColor,
-          backgroundColor: captionBgColor,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          whiteSpace: "pre-wrap",
-          textAlign: "center",
-        }}
-      >
-        <span>{activeSegment.text}</span>
+        </style>
+        <div
+          style={{
+            position: "relative",
+            padding: `${captionFontSize * 0.15}px ${captionFontSize * 0.4}px`,
+            fontSize: `${captionFontSize}px`,
+            fontFamily: "'AcuminProCondensedBlack', ui-sans-serif, system-ui, sans-serif",
+            fontWeight: 900,
+            textTransform: "uppercase",
+            color: captionTextColor,
+            backgroundColor: captionBgColor,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            whiteSpace: "pre-wrap",
+            textAlign: "center",
+          }}
+        >
+          <span>{activeSegment.text}</span>
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
 export const VertiCutComposition: React.FC<CompositionProps> = ({
   audioUrl,
@@ -626,9 +669,11 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
   );
 
   const clipsWithIndex = clips.map((c, originalIndex) => ({ c, originalIndex }));
-  const solidClips = clipsWithIndex.filter(x => x.c.kind === "solid");
-  const mediaClips = clipsWithIndex.filter(x => x.c.kind !== "solid" && x.c.kind !== "text");
-  const textClips = clipsWithIndex.filter(x => x.c.kind === "text");
+  const solidClips = clipsWithIndex.filter(x => x.c.kind === "solid" && (x.c.layer as any) !== "overlay");
+  const mediaClips = clipsWithIndex.filter(x => x.c.kind !== "solid" && x.c.kind !== "text" && (x.c.layer as any) !== "overlay");
+  const textClips = clipsWithIndex.filter(
+    x => x.c.kind === "text" || (x.c.layer as any) === "overlay" || (x.c.kind === "solid" && (x.c.layer as any) === "overlay")
+  );
 
   const hasTemplate = Boolean(overlayUrl && templateWindow);
 

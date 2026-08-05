@@ -102,7 +102,7 @@ export function ImportSourcingModal({ open, onOpenChange }: ImportSourcingModalP
         let key = "";
         let url = match.link; // fallback to direct URL
         let isVideo = /\.(mp4|webm|mov)$/i.test(match.link || "");
-        
+
         try {
           const res = await fetchAndUploadImageUrl(match.link);
           key = res.key;
@@ -115,12 +115,12 @@ export function ImportSourcingModal({ open, onOpenChange }: ImportSourcingModalP
         }
 
         const preset = settings.presets[0];
-        
+
         const ANIMS = ["zoom-in", "zoom-out", "pan-left", "pan-right"] as const;
 
         const clipBase = {
           id: crypto.randomUUID(),
-          kind: isVideo ? "video" : "image",
+          kind: "media",
           start: match.start,
           duration: match.end - match.start,
           animation: settings.animationIntensity > 0 ? ANIMS[Math.floor(Math.random() * ANIMS.length)] : "none",
@@ -128,7 +128,7 @@ export function ImportSourcingModal({ open, onOpenChange }: ImportSourcingModalP
           labelPresetId: preset?.id ?? "custom",
           intensity: settings.animationIntensity || 1,
         } as Partial<ClipDoc>;
-        
+
         if (isVideo) {
           clipBase.videoUrl = url;
           clipBase.videoKey = key;
@@ -177,7 +177,7 @@ export function ImportSourcingModal({ open, onOpenChange }: ImportSourcingModalP
           <p className="text-xs text-muted-foreground">
             Paste your sourcing JSON array here. Each object should have a `text` and an `image` URL property.
           </p>
-          
+
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}

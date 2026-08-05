@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import type { ClipDoc, MarkerDoc, AudioSegment } from "@/server/mongo.server";
 import type { PlayerRef } from "@remotion/player";
 import { usePlayerFrame } from "./usePlayerFrame";
+import { Eye, EyeOff, Film, Music, Layers } from "lucide-react";
 
 export function Timeline({
   playerRef,
@@ -23,23 +24,28 @@ export function Timeline({
   const settings = useEditor((s) => s.settings);
   const select = useEditor((s) => s.select);
   const set = useEditor((s) => s.set);
-  const { moveClip, trimClip, updateClip, moveAudioSegment, trimAudioSegment } = useTimelineActions();
+
+  const hideMedia = useEditor((s) => s.hideMedia);
+  const hideOverlays = useEditor((s) => s.hideOverlays);
+  const muteAudio = useEditor((s) => s.muteAudio);
+
+  const { moveClip, trimClip, updateClip, moveAudioSegment, trimAudioSegment, addKeyframe } = useTimelineActions();
   const containerRef = useRef<HTMLDivElement>(null);
   const didAutoFitRef = useRef<string | null>(null);
+
   const clipsEnd = clips.reduce((max, c) => Math.max(max, c.start + c.duration), 0);
   const projectDuration = Math.max(audioDuration || 0, clipsEnd, 1);
   const totalWidth = Math.max(projectDuration * zoom, 1);
+  const headerWidth = 140;
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     if (!projectDuration || projectDuration <= 0) return;
 
-    const containerWidth = container.clientWidth;
+    const containerWidth = container.clientWidth - headerWidth;
     if (containerWidth <= 0) return;
 
-    // Auto-fit per project + duration bucket so it also runs when the
-    // final voiceover duration arrives after initial load.
     const fitKey = `${projectId}:${Math.ceil(projectDuration)}`;
     if (didAutoFitRef.current === fitKey) return;
 
@@ -56,17 +62,17 @@ export function Timeline({
   function startScrubFromEvent(e: React.PointerEvent<HTMLDivElement>) {
     const targetEl = e.currentTarget as HTMLDivElement;
     e.preventDefault();
-    try { targetEl.setPointerCapture(e.pointerId); } catch {}
-    try { playerRef.current?.pause(); } catch {}
+    try { targetEl.setPointerCapture(e.pointerId); } catch { }
+    try { playerRef.current?.pause(); } catch { }
     const rect = targetEl.getBoundingClientRect();
     const seekFromClientX = (cx: number) => {
-      const x = cx - rect.left + (containerRef.current?.scrollLeft ?? 0);
+      const x = cx - rect.left - headerWidth + (containerRef.current?.scrollLeft ?? 0);
       onSeek(Math.max(0, x / zoom));
     };
     seekFromClientX(e.clientX);
     const move = (ev: PointerEvent) => seekFromClientX(ev.clientX);
     const end = (ev: PointerEvent) => {
-      try { targetEl.releasePointerCapture(ev.pointerId); } catch {}
+      try { targetEl.releasePointerCapture(ev.pointerId); } catch { }
       targetEl.removeEventListener("pointermove", move);
       targetEl.removeEventListener("pointerup", end);
       targetEl.removeEventListener("pointercancel", end);
@@ -81,38 +87,167 @@ export function Timeline({
 
   return (
     <div className="flex h-full flex-col bg-track">
-      <div className="flex items-center gap-3 border-b border-border bg-panel/95 px-4 py-2 backdrop-blur">
-        <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Timeline</span>
+      <div className="flex items-center gap-3 border-b border-border bg-panel px-4 py-2 shrink-0">
+        <span className="text-[10px] uppercase font-bold tracking-[0.16em] text-muted-foreground mr-1">Timeline</span>
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-[10px] text-muted-foreground">Zoom</span>
+          <span className="text-[10px] text-muted-foreground font-semibold">Zoom</span>
           <input
             type="range"
             min={2}
             max={200}
             value={zoom}
             onChange={(e) => set({ zoom: Number(e.target.value) })}
-            className="w-36"
+            className="w-36 accent-primary"
           />
         </div>
       </div>
-      <div ref={containerRef} className="flex-1 overflow-x-auto overflow-y-hidden">
-        <div style={{ width: totalWidth, minHeight: "100%" }} className="flex flex-col">
+
+      <div ref={containerRef} className="flex-1 overflow-x-auto overflow-y-hidden select-none">
+        <div style={{ width: totalWidth + headerWidth, minHeight: "100%" }} className="flex flex-col relative">
+
           {/* Ruler */}
           <div
             onPointerDown={startScrubFromEvent}
-            className="sticky top-0 z-10 h-7 shrink-0 cursor-ew-resize select-none border-b border-border bg-panel"
-            style={{ width: totalWidth, touchAction: "none" }}
+            className="sticky top-0 z-30 h-7 shrink-0 cursor-ew-resize border-b border-border bg-panel flex"
+            style={{ width: totalWidth + headerWidth, touchAction: "none" }}
           >
-            <Ruler totalWidth={totalWidth} zoom={zoom} duration={projectDuration} />
+            <div
+              className="sticky left-0 z-35 shrink-0 bg-panel border-r border-border"
+              style={{ width: headerWidth }}
+            />
+            <div className="relative flex-1 h-full pointer-events-none">
+              <Ruler totalWidth={totalWidth} zoom={zoom} duration={projectDuration} />
+            </div>
           </div>
 
-          {/* Audio track */}
-          <div className="relative h-8 shrink-0 border-b border-border bg-panel px-2 text-[11px] text-muted-foreground">
-            <div className="absolute left-2 top-0.5 text-[9px] opacity-60">Audio</div>
+          {/* Media Layer */}
+          <div
+            data-track-layer="media"
+            className="relative h-20 shrink-0 border-b border-border bg-panel flex"
+            style={{ width: totalWidth + headerWidth }}
+            onPointerDown={(e) => {
+              if (e.target !== e.currentTarget) return;
+              startScrubFromEvent(e);
+            }}
+          >
             <div
-              className="absolute left-0 top-0 h-full"
-              style={{ width: totalWidth }}
+              className="sticky left-0 z-20 shrink-0 h-full border-r border-border bg-panel-2/95 backdrop-blur flex items-center justify-between px-3"
+              style={{ width: headerWidth }}
             >
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Film className="h-3.5 w-3.5 text-primary shrink-0" />
+                <span className="text-[10.5px] font-bold text-foreground truncate">Media Layer</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => set({ hideMedia: !hideMedia })}
+                className="text-muted-foreground hover:text-foreground hover:bg-accent p-1 rounded"
+                title={hideMedia ? "Show Media Layer" : "Hide Media Layer"}
+              >
+                {hideMedia ? <EyeOff className="h-3.5 w-3.5 text-muted-foreground" /> : <Eye className="h-3.5 w-3.5 text-primary" />}
+              </button>
+            </div>
+
+            <div className={`relative flex-1 h-full ${hideMedia ? "opacity-30 pointer-events-none" : ""}`}>
+              {clips.filter(c => c.layer === "media" || (!c.layer && c.kind !== "text" && c.kind !== "solid")).map((c) => (
+                <ClipBlock
+                  key={c.id}
+                  clip={c}
+                  zoom={zoom}
+                  tint={presetTint(c.labelPresetId)}
+                  selected={selectedClipId === c.id}
+                  onSelect={() => select(c.id)}
+                  onMove={(s, r) => moveClip(c.id, s, r)}
+                  onTrim={(e, v, r) => trimClip(c.id, e, v, r)}
+                  onKeyframeClick={
+                    c.kind === "media" ? (time) => addKeyframe(c.id, { time }) : undefined
+                  }
+                />
+              ))}
+              {markers
+                .slice()
+                .sort((a, b) => a.start - b.start)
+                .map((marker, index) => (
+                  <TimelineMarker key={marker.id} marker={marker} zoom={zoom} onSeek={onSeek} colorIndex={index} />
+                ))}
+            </div>
+          </div>
+
+          {/* Overlay Layer */}
+          <div
+            data-track-layer="overlay"
+            className="relative h-24 shrink-0 border-b border-border bg-panel flex"
+            style={{ width: totalWidth + headerWidth }}
+            onPointerDown={(e) => {
+              if (e.target !== e.currentTarget) return;
+              startScrubFromEvent(e);
+            }}
+          >
+            <div
+              className="sticky left-0 z-20 shrink-0 h-full border-r border-border bg-panel-2/95 backdrop-blur flex items-center justify-between px-3"
+              style={{ width: headerWidth }}
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Layers className="h-3.5 w-3.5 text-primary shrink-0" />
+                <span className="text-[10.5px] font-bold text-foreground truncate">Overlay Layer</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => set({ hideOverlays: !hideOverlays })}
+                className="text-muted-foreground hover:text-foreground hover:bg-accent p-1 rounded"
+                title={hideOverlays ? "Show Overlay Layer" : "Hide Overlay Layer"}
+              >
+                {hideOverlays ? <EyeOff className="h-3.5 w-3.5 text-muted-foreground" /> : <Eye className="h-3.5 w-3.5 text-primary" />}
+              </button>
+            </div>
+
+            <div className={`relative flex-1 h-full ${hideOverlays ? "opacity-30 pointer-events-none" : ""}`}>
+              {clips.filter(c => c.layer === "overlay" || (!c.layer && (c.kind === "text" || c.kind === "solid"))).map((c) => (
+                <ClipBlock
+                  key={c.id}
+                  clip={c}
+                  zoom={zoom}
+                  tint={presetTint(c.labelPresetId)}
+                  selected={selectedClipId === c.id}
+                  onSelect={() => select(c.id)}
+                  onMove={(s, r) => moveClip(c.id, s, r)}
+                  onTrim={(e, v, r) => trimClip(c.id, e, v, r)}
+                  onKeyframeClick={
+                    c.kind === "media" ? (time) => addKeyframe(c.id, { time }) : undefined
+                  }
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Audio Layer */}
+          <div
+            className="relative h-14 shrink-0 border-b border-border bg-panel flex"
+            style={{ width: totalWidth + headerWidth }}
+            onPointerDown={(e) => {
+              if (e.target !== e.currentTarget) return;
+              startScrubFromEvent(e);
+            }}
+          >
+            <div
+              className="sticky left-0 z-20 shrink-0 h-full border-r border-border bg-panel-2/95 backdrop-blur flex items-center justify-between px-3"
+              style={{ width: headerWidth }}
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Music className="h-3.5 w-3.5 text-primary shrink-0" />
+                <span className="text-[10.5px] font-bold text-foreground truncate">Audio Layer</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => set({ muteAudio: !muteAudio })}
+                className="text-muted-foreground hover:text-foreground hover:bg-accent p-1 rounded"
+                title={muteAudio ? "Unmute Audio Layer" : "Mute Audio Layer"}
+              >
+                {muteAudio ? <EyeOff className="h-3.5 w-3.5 text-muted-foreground" /> : <Eye className="h-3.5 w-3.5 text-primary" />}
+              </button>
+            </div>
+
+            <div className={`relative flex-1 h-full ${muteAudio ? "opacity-30 pointer-events-none" : ""}`}>
               {audioSegments.map((s) => (
                 <AudioSegmentBlock
                   key={s.id}
@@ -124,95 +259,16 @@ export function Timeline({
                   onTrim={(edge, val) => trimAudioSegment(s.id, edge, val)}
                 />
               ))}
-              <div className="absolute top-0 bottom-0 w-px bg-border" style={{ left: currentTime * zoom }} />
             </div>
           </div>
 
-          {/* Solids track */}
-          <div
-            className="relative h-16 shrink-0 border-b border-border bg-panel"
-            style={{ width: totalWidth }}
-            onPointerDown={(e) => {
-              if (e.target !== e.currentTarget) return;
-              startScrubFromEvent(e);
-            }}
-          >
-            <div className="absolute left-2 top-1 text-[9px] font-semibold tracking-wider text-muted-foreground opacity-60 z-[1]">SOLIDS</div>
-            {clips.filter(c => c.kind === "solid").map((c) => (
-              <ClipBlock
-                key={c.id}
-                clip={c}
-                zoom={zoom}
-                tint={presetTint(c.labelPresetId)}
-                selected={selectedClipId === c.id}
-                onSelect={() => select(c.id)}
-                onMove={(s) => moveClip(c.id, s)}
-                onTrim={(edge, v) => trimClip(c.id, edge, v)}
-                onKeyframeClick={(t) => onSeek(t)}
-              />
-            ))}
+          {/* Red Playhead line */}
+          <div className="pointer-events-none absolute inset-y-0 z-25" style={{ left: headerWidth + currentTime * zoom }}>
+            <div className="h-full w-px bg-primary relative">
+              <div className="absolute top-0 -left-[5px] w-[11px] h-3 bg-primary rounded-b" />
+            </div>
           </div>
 
-          {/* Texts track */}
-          <div
-            className="relative h-16 shrink-0 border-b border-border bg-panel"
-            style={{ width: totalWidth }}
-            onPointerDown={(e) => {
-              if (e.target !== e.currentTarget) return;
-              startScrubFromEvent(e);
-            }}
-          >
-            <div className="absolute left-2 top-1 text-[9px] font-semibold tracking-wider text-muted-foreground opacity-60 z-[1]">TEXTS</div>
-            {clips.filter(c => c.kind === "text").map((c) => (
-              <ClipBlock
-                key={c.id}
-                clip={c}
-                zoom={zoom}
-                tint={presetTint(c.labelPresetId)}
-                selected={selectedClipId === c.id}
-                onSelect={() => select(c.id)}
-                onMove={(s) => moveClip(c.id, s)}
-                onTrim={(edge, v) => trimClip(c.id, edge, v)}
-                onKeyframeClick={(t) => onSeek(t)}
-              />
-            ))}
-          </div>
-
-          {/* Media track */}
-          <div
-            className="relative flex-1 min-h-[56px]"
-            style={{ width: totalWidth }}
-            onPointerDown={(e) => {
-              if (e.target !== e.currentTarget) return;
-              startScrubFromEvent(e);
-            }}
-          >
-            <div className="absolute left-2 top-1 text-[9px] font-semibold tracking-wider text-muted-foreground opacity-60 z-[1]">MEDIA</div>
-            {clips.filter(c => c.kind !== "text" && c.kind !== "solid").map((c) => (
-                <ClipBlock
-                  key={c.id}
-                  clip={c}
-                  zoom={zoom}
-                  tint={presetTint(c.labelPresetId)}
-                  selected={selectedClipId === c.id}
-                  onSelect={() => select(c.id)}
-                  onMove={(s, r) => moveClip(c.id, s, r)}
-                  onTrim={(e, v, r) => trimClip(c.id, e, v, r)}
-                  onKeyframeClick={
-                    c.kind === "video" || c.kind === "image" ? (time) => addKeyframeAtTime(c.id, time) : undefined
-                  }
-                />
-              ))}
-            {markers
-              .slice()
-              .sort((a, b) => a.start - b.start)
-              .map((marker, index) => (
-                <TimelineMarker key={marker.id} marker={marker} zoom={zoom} onSeek={onSeek} colorIndex={index} />
-              ))}
-          </div>
-          <div className="pointer-events-none absolute inset-0 z-20">
-            <Playhead playerRef={playerRef} fps={fps} zoom={zoom} onSeek={onSeek} containerRef={containerRef} />
-          </div>
         </div>
       </div>
     </div>
@@ -240,8 +296,8 @@ function Playhead({
     e.preventDefault();
     e.stopPropagation();
     const target = e.currentTarget;
-    try { target.setPointerCapture(e.pointerId); } catch {}
-    try { playerRef?.current?.pause(); } catch {}
+    try { target.setPointerCapture(e.pointerId); } catch { }
+    try { playerRef?.current?.pause(); } catch { }
     const container = containerRef?.current;
     const trackEl = container?.querySelector(".relative.h-24") as HTMLElement | null;
     const rect = trackEl?.getBoundingClientRect() ?? container?.getBoundingClientRect();
@@ -255,7 +311,7 @@ function Playhead({
     seekFromClientX(e.clientX);
     const move = (ev: PointerEvent) => seekFromClientX(ev.clientX);
     const up = (ev: PointerEvent) => {
-      try { target.releasePointerCapture(ev.pointerId); } catch {}
+      try { target.releasePointerCapture(ev.pointerId); } catch { }
       setScrubTime(null);
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
@@ -346,6 +402,7 @@ function ClipBlock({
   onSelect,
   onMove,
   onTrim,
+  onKeyframeClick,
 }: {
   clip: ClipDoc;
   zoom: number;
@@ -356,7 +413,8 @@ function ClipBlock({
   onTrim: (edge: "start" | "end", v: number, record?: boolean) => void;
   onKeyframeClick?: (time: number) => void;
 }) {
-  const [drag, setDrag] = useState<null | { kind: "move" | "left" | "right" | "keyframe"; startX: number; orig: number; keyframeIndex?: number; multiOrig?: Record<string, number>; multiIds?: string[] }>(null);
+  const [drag, setDrag] = useState<null | { kind: "move" | "left" | "right" | "keyframe"; startX: number; startY?: number; orig: number; keyframeIndex?: number; multiOrig?: Record<string, number>; multiIds?: string[] }>(null);
+  const [deltaY, setDeltaY] = useState(0);
   const { updateClip } = useTimelineActions();
 
   const latest = useRef({ zoom, onMove, onTrim, updateClip, clip });
@@ -402,7 +460,12 @@ function ClipBlock({
         return;
       }
 
-      if (drag.kind === "move") onMove(drag.orig + dt, false);
+      if (drag.kind === "move") {
+        onMove(drag.orig + dt, false);
+        if (drag.startY !== undefined) {
+          setDeltaY(ev.clientY - drag.startY);
+        }
+      }
       else if (drag.kind === "left") onTrim("start", drag.orig + dt, false);
       else if (drag.kind === "right") onTrim("end", drag.orig + dt, false);
       else if (drag.kind === "keyframe" && drag.keyframeIndex != null && clip.keyframes) {
@@ -413,7 +476,22 @@ function ClipBlock({
       }
     }
 
-    function up() {
+    function up(ev: MouseEvent) {
+      if (drag && drag.kind === "move") {
+        const elements = document.elementsFromPoint(ev.clientX, ev.clientY);
+        let hoveredLayer: "media" | "overlay" | null = null;
+        for (const el of elements) {
+          const layerAttr = el.getAttribute?.("data-track-layer");
+          if (layerAttr === "media" || layerAttr === "overlay") {
+            hoveredLayer = layerAttr as "media" | "overlay";
+            break;
+          }
+        }
+        const { updateClip, clip } = latest.current;
+        if (hoveredLayer && hoveredLayer !== clip.layer) {
+          updateClip(clip.id, { layer: hoveredLayer }, true);
+        }
+      }
       // If it was a multi-drag, finalize and record history once
       if (drag && drag.kind === "move" && drag.multiOrig && drag.multiIds) {
         const ids = drag.multiIds;
@@ -428,6 +506,7 @@ function ClipBlock({
         state.updateClips((prev) => prev.map((c) => (ids.includes(c.id) ? { ...c, start: finalMap[c.id] ?? c.start } : c)), true);
       }
       setDrag(null);
+      setDeltaY(0);
     }
 
     window.addEventListener("mousemove", move);
@@ -451,26 +530,29 @@ function ClipBlock({
         } else if ((e.target as HTMLElement).dataset.handle === "right") {
           setDrag({ kind: "right", startX: e.clientX, orig: clip.start + clip.duration });
         } else if ((e.target as HTMLElement).dataset.keyframeIndex) {
-          const kfIdx = parseInt((e.target as HTMLElement).dataset.keyframeIndex, 10);
+          const kfIdx = parseInt((e.target as HTMLElement).dataset.keyframeIndex || "", 10);
           if (clip.keyframes?.[kfIdx]) {
             setDrag({ kind: "keyframe", startX: e.clientX, orig: clip.keyframes[kfIdx].time, keyframeIndex: kfIdx });
           }
         } else {
-          setDrag({ kind: "move", startX: e.clientX, orig: clip.start });
+          setDrag({ kind: "move", startX: e.clientX, startY: e.clientY, orig: clip.start });
         }
       }}
-      className={`absolute top-2 bottom-2 cursor-grab overflow-visible rounded border transition-shadow duration-200 ${
-        selected ? "border-primary ring-1 ring-primary shadow-lg" : "border-border"
-      }`}
+      className={`absolute top-2 bottom-2 cursor-grab overflow-visible rounded border transition-shadow duration-200 ${selected ? "border-primary ring-1 ring-primary shadow-lg" : "border-border"
+        }`}
       style={{
         left: clip.start * zoom,
         width: Math.max(20, clip.duration * zoom),
-        background: `linear-gradient(180deg, color-mix(in oklab, ${tint} 35%, var(--panel)) 0%, color-mix(in oklab, ${tint} 15%, var(--panel)) 100%)`,
+        transform: `translateY(${deltaY}px)`,
+        backgroundImage: clip.imageUrl ? `url(${clip.imageUrl})` : `linear-gradient(180deg, color-mix(in oklab, ${tint} 35%, var(--panel)) 0%, color-mix(in oklab, ${tint} 15%, var(--panel)) 100%)`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        zIndex: drag ? 50 : undefined,
       }}
     >
       <div data-handle="left" className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-white/20 hover:bg-white/40" />
       <div data-handle="right" className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-white/20 hover:bg-white/40" />
-      
+
       {/* Keyframe markers */}
       {clip.keyframes?.map((k, idx) => (
         <div
@@ -493,10 +575,14 @@ function ClipBlock({
           <div className="text-yellow-400 text-base pointer-events-none">★</div>
         </div>
       ))}
-      
-      <div className="pointer-events-none p-1.5 text-[10px] leading-tight">
-        <div className="truncate font-semibold">
-          {clip.kind === "text" ? `T: ${clip.textContent || "Text"}` : clip.kind === "solid" ? "Solid Layer" : clip.labelText}
+
+      {clip.imageUrl && <div className="absolute inset-0 bg-black/45 rounded-sm z-[1]" />}
+      <div className="pointer-events-none p-1.5 text-[10px] leading-tight relative h-full w-full z-[2]">
+        <div className="truncate font-semibold flex items-center gap-1.5">
+          {clip.imageUrl && (
+            <img src={clip.imageUrl} alt="" className="h-4.5 w-4.5 rounded-sm object-cover shrink-0" />
+          )}
+          <span className="truncate">{clip.kind === "text" ? `T: ${clip.textContent || "Text"}` : clip.kind === "solid" ? "Solid Layer" : clip.labelText}</span>
         </div>
         <div className="absolute bottom-1 left-2 text-[9px] uppercase tracking-wide opacity-80">{clip.animation}</div>
         <div className="absolute bottom-1 right-2 text-[9px] font-mono opacity-80">{clip.duration.toFixed(2)}s</div>
@@ -601,9 +687,8 @@ function AudioSegmentBlock({
           }
         }
       }}
-      className={`absolute top-0.5 h-5 rounded border cursor-grab overflow-hidden select-none ${
-        selected ? "border-primary bg-primary/20 ring-1 ring-primary" : "border-border bg-panel-2 hover:bg-panel-2/90"
-      }`}
+      className={`absolute top-0.5 h-5 rounded border cursor-grab overflow-hidden select-none ${selected ? "border-[#10b981] bg-[#10b981]/25 ring-1 ring-[#10b981]" : "border-[#10b981]/30 bg-[#10b981]/12 hover:bg-[#10b981]/18"
+        }`}
       style={{
         left: segment.projStart * zoom,
         width: Math.max(12, segment.duration * zoom),

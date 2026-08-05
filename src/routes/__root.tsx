@@ -29,14 +29,14 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "Verticut" },
+      { name: "description", content: "Optimized Web Video Editor" },
+      { name: "author", content: "ankith.studio" },
+      { property: "og:title", content: "Verticut Web Editor" },
+      { property: "og:description", content: "Optimized Web Video Editor" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:site", content: "@ankith.studio" },
     ],
     links: [
       {
@@ -58,9 +58,9 @@ function RootShell({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         {children}
-            <script
-              dangerouslySetInnerHTML={{
-                __html: `(() => {
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(() => {
   try {
     const orig = window.fetch.bind(window);
     window.fetch = function(input, init) {
@@ -84,9 +84,9 @@ function RootShell({ children }: { children: React.ReactNode }) {
     };
   } catch(e) {}
 })();`,
-              }}
-            />
-            <Scripts />
+          }}
+        />
+        <Scripts />
       </body>
     </html>
   );

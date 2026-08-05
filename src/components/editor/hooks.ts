@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, useEffect } from "react";
 import { useEditor } from "@/store/editor";
-import type { ClipDoc } from "@/server/mongo.server";
+import type { ClipDoc, AudioSegment } from "@/server/mongo.server";
 
 const ANIMS: ClipDoc["animation"][] = ["zoom-in", "zoom-out", "pan-left", "pan-right"];
 
@@ -26,7 +26,7 @@ export function useTimelineActions() {
         const isVideo = img.url.match(/\.(mp4|webm|mov|mkv)$/i) || img.url.includes("/video/");
         const c: ClipDoc = {
           id: crypto.randomUUID(),
-          kind: isVideo ? "video" : "image",
+          kind: "media",
           start: cursor,
           duration: 3.5,
           ...(isVideo ? { videoUrl: img.url, videoKey: img.key } : { imageUrl: img.url, imageKey: img.key }),
@@ -55,9 +55,9 @@ export function useTimelineActions() {
         if (idx < 0) return prev;
         const c = prev[idx];
         const dur = c.duration;
-        
+
         const othersToSnap = prev.filter(o => o.id !== id);
-        
+
         let target = Math.max(0, newStart);
         const SNAP = 8 / (useEditor.getState().zoom || 60);
 
@@ -73,9 +73,9 @@ export function useTimelineActions() {
           const d4 = Math.abs((target + dur) - (o.start + o.duration));
           if (d4 < nearestSnapDist) { snappedPos = o.start + o.duration - dur; nearestSnapDist = d4; }
         }
-        
+
         target = Math.max(0, snappedPos);
-        
+
         const list = [...prev];
         list[idx] = { ...c, start: target };
         return list;
@@ -89,10 +89,10 @@ export function useTimelineActions() {
       updateClips((prev) => {
         const c = prev.find((x) => x.id === id);
         if (!c) return prev;
-        
+
         let newStart = c.start;
         let newDur = c.duration;
-        
+
         if (edge === "start") {
           newStart = Math.max(0, Math.min(c.start + c.duration - 0.5, newValue));
           newDur = c.start + c.duration - newStart;
@@ -100,7 +100,7 @@ export function useTimelineActions() {
           const end = Math.max(c.start + 0.5, newValue);
           newDur = end - c.start;
         }
-        
+
         const list = [...prev];
         const globalIdx = list.findIndex(x => x.id === id);
         list[globalIdx] = { ...c, start: newStart, duration: newDur };
@@ -117,7 +117,7 @@ export function useTimelineActions() {
     },
     [updateClips, select],
   );
- 
+
   const updateClip = useCallback(
     (id: string, patch: Partial<ClipDoc>, record = true) => {
       updateClips((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)), record);
@@ -217,19 +217,19 @@ export function useTimelineActions() {
       if (idx < 0) return;
       const s = segs[idx];
       let val = Math.max(0, newStart);
-      
+
       const before = segs.filter((seg) => seg.id !== id && seg.projStart <= s.projStart).sort((a, b) => a.projStart - b.projStart).pop();
       const after = segs.filter((seg) => seg.id !== id && seg.projStart > s.projStart).sort((a, b) => a.projStart - b.projStart)[0];
       const beforeEnd = before ? before.projStart + before.duration : 0;
       const afterStart = after ? after.projStart : 999999;
-      
+
       const SNAP = 8 / (useEditor.getState().zoom || 60);
       if (Math.abs(val - beforeEnd) < SNAP) val = beforeEnd;
       if (Math.abs(val + s.duration - afterStart) < SNAP) val = afterStart - s.duration;
-      
+
       if (val < beforeEnd) val = beforeEnd;
       if (val + s.duration > afterStart) val = afterStart - s.duration;
-      
+
       segs[idx] = { ...s, projStart: val };
       useEditor.getState().set({ audioSegments: segs });
     },
@@ -246,7 +246,7 @@ export function useTimelineActions() {
       const after = segs.filter((seg) => seg.id !== id && seg.projStart > s.projStart).sort((a, b) => a.projStart - b.projStart)[0];
       const beforeEnd = before ? before.projStart + before.duration : 0;
       const afterStart = after ? after.projStart : 999999;
-      
+
       if (edge === "start") {
         let val = Math.max(beforeEnd, Math.min(s.projStart + s.duration - 0.1, newValue));
         const diff = val - s.projStart;
