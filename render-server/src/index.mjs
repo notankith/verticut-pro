@@ -118,8 +118,8 @@ const bundleCache = new Map(); // entryPath → bundleUrl
 async function getOrCreateBundle(entryPathOverride) {
   const entryPoint = path.resolve(
     entryPathOverride
-      || process.env.REMOTION_ENTRY
-      || path.join(process.cwd(), 'src', 'remotion-entry.jsx')
+    || process.env.REMOTION_ENTRY
+    || path.join(process.cwd(), 'src', 'remotion-entry.jsx')
   );
 
   const cached = bundleCache.get(entryPoint);
@@ -129,7 +129,7 @@ async function getOrCreateBundle(entryPathOverride) {
         log('BUNDLE', `Reusing cached bundle for ${entryPoint}`);
         return cached;
       }
-    } catch {}
+    } catch { }
     bundleCache.delete(entryPoint);
   }
 
@@ -164,22 +164,22 @@ async function processNextJob() {
           { _id: new ObjectId(stalledJob.uploadId) },
           { $set: { caption_status: 'render_failed', render_error: stalledJob.error } }
         );
-      } catch {}
+      } catch { }
     }
     isProcessing = false;
     currentJobId = null;
     currentJobStart = null;
   }
-  
+
   if (isProcessing || renderQueue.length === 0) return;
-  
+
   isProcessing = true;
   const { jobId, params } = renderQueue.shift();
   currentJobId = jobId;
   currentJobStart = Date.now();
-  
+
   log('JOB_DEQUEUED', `Starting job ${jobId}, ${renderQueue.length} remaining in queue`);
-  
+
   try {
     if (params.kind === 'verticut') {
       await processVerticutRender(jobId, params);
@@ -214,9 +214,9 @@ app.use(express.json({ limit: '50mb' }));
 
 // Health
 app.get('/health', (_req, res) => {
-  res.json({ 
-    status: 'ok', 
-    uptime: process.uptime(), 
+  res.json({
+    status: 'ok',
+    uptime: process.uptime(),
     jobs: jobQueue.size,
     queueLength: renderQueue.length,
     isProcessing,
@@ -259,7 +259,7 @@ app.post('/render', authMiddleware, async (req, res) => {
     if (renderQueue.length >= 20) {
       return res.status(429).json({ error: 'Queue full (20 jobs). Please try again later.' });
     }
-    
+
     // Prevent duplicate renders for the same upload
     const existingQueuedJob = renderQueue.find(q => q.params.uploadId === uploadId);
     const existingActiveJob = currentJobId && jobQueue.get(currentJobId)?.uploadId === uploadId;
@@ -434,14 +434,14 @@ app.get('/queue', authMiddleware, (_req, res) => {
     uploadId: q.params.uploadId,
     template: q.params.template,
   }));
-  
+
   const active = currentJobId ? {
     jobId: currentJobId,
     uploadId: jobQueue.get(currentJobId)?.uploadId,
     elapsed: currentJobStart ? Math.round((Date.now() - currentJobStart) / 1000) : 0,
     progress: jobQueue.get(currentJobId)?.progress || 0,
   } : null;
-  
+
   res.json({
     active,
     queued,
@@ -482,30 +482,30 @@ async function processRender(jobId, params) {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-      
+
       const sourceResponse = await fetch(sourceMediaUrl, {
         method: 'HEAD', // HEAD request is sufficient to check status
         signal: controller.signal,
       });
-      
+
       clearTimeout(timeoutId);
-      
+
       if (!sourceResponse.ok) {
         throw new Error(`HTTP ${sourceResponse.status}: ${sourceResponse.statusText}`);
       }
-      
+
       log('SOURCE_OK', `${jobId} source accessible (${sourceResponse.status})`);
     } catch (sourceErr) {
       const errorMsg = `FAILED_SOURCE_MISSING: ${sourceErr.message}`;
       log('SOURCE_FAILED', `${jobId}: ${errorMsg}`);
-      
+
       // Mark job as failed and update DB
       await updateJob({
         status: 'failed',
         error: errorMsg,
         failed_at: new Date(),
       });
-      
+
       await db.collection('uploads').updateOne(
         { _id: new ObjectId(uploadId) },
         {
@@ -515,7 +515,7 @@ async function processRender(jobId, params) {
           },
         },
       );
-      
+
       return; // Exit early, don't retry
     }
 
@@ -714,6 +714,7 @@ async function processVerticutRender(jobId, params) {
       captionPosX: settings.captionPosX,
       captionPosY: settings.captionPosY,
       captionFontSize: settings.captionFontSize,
+      showCaptions: settings.showCaptions ?? true,
       transcript: project.transcript || [],
       enableTransitions: settings.transitionAnimation ?? true,
       enableGradientOverlay: settings.enableGradientOverlay ?? true,
@@ -752,7 +753,7 @@ async function processVerticutRender(jobId, params) {
             db.collection('render_jobs').updateOne(
               { _id: jobId },
               { $set: { progress: pct } },
-            ).catch(() => {});
+            ).catch(() => { });
           }
         },
       });
@@ -830,14 +831,14 @@ async function recoverOrphanedJobs() {
       .find({ status: { $in: ['queued', 'rendering'] } })
       .sort({ created_at: 1 })
       .toArray();
-    
+
     if (orphaned.length === 0) {
       log('RECOVERY', 'No orphaned jobs found');
       return;
     }
-    
+
     log('RECOVERY', `Found ${orphaned.length} orphaned job(s), marking as failed...`);
-    
+
     for (const job of orphaned) {
       const jobId = String(job._id);
       await db.collection('render_jobs').updateOne(

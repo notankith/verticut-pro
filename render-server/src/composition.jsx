@@ -93,7 +93,7 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
 
   if (clip.kind === "solid") {
     return (
-      <AbsoluteFill style={{ 
+      <AbsoluteFill style={{
         transform: `translate(-50%, -50%) translate(${appliedPosX}%, ${appliedPosY}%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
         opacity: appliedOpacity,
         backgroundColor: clip.solidColor || "#800000",
@@ -107,7 +107,7 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
 
   if (clip.kind === "text") {
     return (
-      <AbsoluteFill style={{ 
+      <AbsoluteFill style={{
         transform: `translate(-50%, -50%) translate(${appliedPosX}%, ${appliedPosY}%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
         opacity: appliedOpacity,
         willChange: "transform, opacity",
@@ -460,6 +460,7 @@ export const VertiCutComposition = ({
   captionPosY,
   captionFontSize = 36,
   showLabels = true,
+  showCaptions = true,
   transcript = [],
   enableGradientOverlay = true,
   gradientOverlayUrl = DEFAULT_GRADIENT_OVERLAY_URL,
@@ -552,15 +553,17 @@ export const VertiCutComposition = ({
         />
       ) : null}
       {renderClips(textClips)}
-      <CaptionOverlay
-        transcript={transcript}
-        audioSegments={audioSegments}
-        captionTextColor={captionTextColor}
-        captionBgColor={captionBgColor}
-        captionPosX={captionPosX}
-        captionPosY={captionPosY}
-        captionFontSize={captionFontSize}
-      />
+      {showCaptions && (
+        <CaptionOverlay
+          transcript={transcript}
+          audioSegments={audioSegments}
+          captionTextColor={captionTextColor}
+          captionBgColor={captionBgColor}
+          captionPosX={captionPosX}
+          captionPosY={captionPosY}
+          captionFontSize={captionFontSize}
+        />
+      )}
     </AbsoluteFill>
   );
 };
