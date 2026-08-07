@@ -23,6 +23,37 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs
   const [isClearingLogs, setIsClearingLogs] = useState(false);
   const [subTab, setSubTab] = useState<"general" | "templates" | "captions">("general");
 
+  const [durationVal, setDurationVal] = useState(
+    (settings.defaultImageImportDuration ?? 3.5).toString()
+  );
+  const [durationError, setDurationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDurationVal((settings.defaultImageImportDuration ?? 3.5).toString());
+  }, [settings.defaultImageImportDuration]);
+
+  const handleDurationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    setDurationVal(raw);
+
+    const num = parseFloat(raw);
+    if (isNaN(num)) {
+      setDurationError("Please enter a valid number");
+      return;
+    }
+    if (num <= 0) {
+      setDurationError("Duration must be greater than 0");
+      return;
+    }
+    if (num > 8) {
+      setDurationError("Duration cannot exceed 8 seconds");
+      return;
+    }
+
+    setDurationError(null);
+    onChange({ defaultImageImportDuration: num });
+  };
+
   const templateWindow = settings.templateWindow ?? DEFAULT_TEMPLATE_WINDOW;
   const activeTemplateId = settings.activeTemplateId ?? null;
   const activeTemplate = useMemo(() => TEMPLATES.find((t) => t.id === activeTemplateId) ?? null, [activeTemplateId]);
@@ -174,6 +205,27 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs
                 <label htmlFor="enableGradientOverlay" className="text-xs text-muted-foreground">
                   Gradient overlay
                 </label>
+              </div>
+            </div>
+          </section>
+          <section className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Media Settings</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Default Image Import Duration (seconds)</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    max="8"
+                    value={durationVal}
+                    onChange={handleDurationChange}
+                    className="w-24 rounded border border-border bg-panel-2 px-2.5 py-1 text-xs text-foreground outline-none focus:border-primary/60"
+                  />
+                  <span className="text-[10px] text-muted-foreground">Default 3.5s. Max 8s (decimals allowed).</span>
+                </div>
+                {durationError && <p className="mt-1 text-[10px] text-destructive">{durationError}</p>}
               </div>
             </div>
           </section>

@@ -88,9 +88,15 @@ function EditorPage() {
   const name = useEditor((s) => s.name);
   const selectedClipId = useEditor((s) => s.selectedClipId);
 
+  const isImportingFromSearchRef = useRef(false);
+
   // Auto-focus Animation tab when a media clip is selected
   useEffect(() => {
     if (!selectedClipId) return;
+    if (isImportingFromSearchRef.current) {
+      isImportingFromSearchRef.current = false;
+      return;
+    }
     const clip = clips.find((c) => c.id === selectedClipId);
     if (clip && clip.kind === "media") {
       setActiveSidebarTab("animation");
@@ -308,12 +314,18 @@ function EditorPage() {
   }, [addImageClips]);
 
   const onSearchMediaImport = useCallback(async (imageUrl: string) => {
-    const uploaded = await fetchAndUploadImageUrl(imageUrl);
-    addImageClips([{ key: uploaded.key, url: uploaded.publicUrl }]);
-    const selectedId = useEditor.getState().selectedClipId;
-    const inserted = useEditor.getState().clips.find((c) => c.id === selectedId);
-    if (inserted) {
-      seekTo(inserted.start);
+    try {
+      const uploaded = await fetchAndUploadImageUrl(imageUrl);
+      isImportingFromSearchRef.current = true;
+      addImageClips([{ key: uploaded.key, url: uploaded.publicUrl }]);
+      const selectedId = useEditor.getState().selectedClipId;
+      const inserted = useEditor.getState().clips.find((c) => c.id === selectedId);
+      if (inserted) {
+        seekTo(inserted.start);
+      }
+    } catch (err) {
+      console.error("Search media import failed:", err);
+      isImportingFromSearchRef.current = false;
     }
   }, [addImageClips, seekTo]);
 

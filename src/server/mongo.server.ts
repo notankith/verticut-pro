@@ -102,6 +102,7 @@ export type SettingsDoc = {
   enableGradientOverlay?: boolean;
   showCaptions?: boolean;
   enableOverlayLayer?: boolean;
+  defaultImageImportDuration?: number;
 };
 
 export type RenderDoc = {

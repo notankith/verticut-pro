@@ -20,19 +20,21 @@ export function useTimelineActions() {
     (images: { url: string; key: string }[]) => {
       let cursor = findNextStart(clipsRef.current);
       const newClips: ClipDoc[] = [];
+      const imageDur = settings.defaultImageImportDuration ?? 3.5;
       for (const img of images) {
         const isVideo = img.url.match(/\.(mp4|webm|mov|mkv)$/i) || img.url.includes("/video/");
+        const duration = isVideo ? 3.5 : imageDur;
         const c: ClipDoc = {
           id: crypto.randomUUID(),
           kind: "media",
           start: cursor,
-          duration: 3.5,
+          duration,
           ...(isVideo ? { videoUrl: img.url, videoKey: img.key } : { imageUrl: img.url, imageKey: img.key }),
           animation: "zoom-in",
           intensity: settings.animationIntensity,
         };
         newClips.push(c);
-        cursor += 3.5;
+        cursor += duration;
       }
       for (let i = 0; i < newClips.length; i++) {
         // "completely mixed and random"
