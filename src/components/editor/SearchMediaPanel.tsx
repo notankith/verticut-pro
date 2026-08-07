@@ -33,6 +33,15 @@ const DEFAULT_PAGE_SIZE = 24;
 export default function SearchMediaPanel({ open, onOpenChange, onImport }: Props) {
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
+  const [source, setSource] = useState<"verticut" | "duckduckgo" | "giphy" | "pexels">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("verticut_search_source");
+      if (saved === "verticut" || saved === "duckduckgo" || saved === "giphy" || saved === "pexels") {
+        return saved;
+      }
+    }
+    return "verticut";
+  });
   const [items, setItems] = useState<SearchImage[]>([]);
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
@@ -44,6 +53,11 @@ export default function SearchMediaPanel({ open, onOpenChange, onImport }: Props
   const cacheRef = useRef<Map<string, CacheEntry>>(new Map());
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  const handleSourceChange = useCallback((val: "verticut" | "duckduckgo" | "giphy" | "pexels") => {
+    setSource(val);
+    localStorage.setItem("verticut_search_source", val);
+  }, []);
 
   const normalizedQuery = useMemo(() => submittedQuery.trim().toLowerCase(), [submittedQuery]);
 
@@ -73,7 +87,7 @@ export default function SearchMediaPanel({ open, onOpenChange, onImport }: Props
         return;
       }
 
-      const cacheKey = `${q}::${nextPage}::${size}`;
+      const cacheKey = `${q}::${source}::${nextPage}::${size}`;
       const cacheHit = cacheRef.current.get(cacheKey);
       if (cacheHit) {
         setItems((prev) => (append ? [...prev, ...cacheHit.images] : cacheHit.images));
@@ -98,6 +112,7 @@ export default function SearchMediaPanel({ open, onOpenChange, onImport }: Props
             query: q,
             page: nextPage,
             size,
+            source,
           }),
           signal: controller.signal,
         });
@@ -126,7 +141,7 @@ export default function SearchMediaPanel({ open, onOpenChange, onImport }: Props
         setLoading(false);
       }
     },
-    [normalizedQuery, size],
+    [normalizedQuery, size, source],
   );
 
   useEffect(() => {
@@ -139,7 +154,7 @@ export default function SearchMediaPanel({ open, onOpenChange, onImport }: Props
     }
 
     void runSearch(1, false);
-  }, [submittedQuery, runSearch]);
+  }, [submittedQuery, source, runSearch]);
 
   useEffect(() => {
     if (!open || !hasMore) return;
@@ -165,13 +180,28 @@ export default function SearchMediaPanel({ open, onOpenChange, onImport }: Props
 
   return (
     <section className="flex h-full flex-col bg-panel">
-      <header className="flex items-center gap-3 border-b border-border px-3.5 py-3">
-        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/12 text-primary">
-          <Search className="h-3.5 w-3.5" />
+      <header className="flex items-center justify-between border-b border-border px-3.5 py-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/12 text-primary">
+            <Search className="h-3.5 w-3.5" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-xs font-semibold">Search Media</h3>
+            <p className="text-[10px] text-muted-foreground">Search and import stock media</p>
+          </div>
         </div>
-        <div className="min-w-0">
-          <h3 className="text-xs font-semibold">Search Media</h3>
-          <p className="text-[10px] text-muted-foreground">Search and import stock media</p>
+        <div>
+          <select
+            value={source}
+            onChange={(e) => handleSourceChange(e.target.value as any)}
+            className="h-7.5 rounded-md border border-border bg-panel-2 px-2 text-[10px] text-foreground outline-none focus:border-primary/60"
+            title="Search provider"
+          >
+            <option value="verticut">VertiCut Search</option>
+            <option value="duckduckgo">DuckDuckGo</option>
+            <option value="giphy">Giphy GIFs</option>
+            <option value="pexels">Pexels Photos</option>
+          </select>
         </div>
       </header>
 

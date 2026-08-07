@@ -103,6 +103,9 @@ export type SettingsDoc = {
   showCaptions?: boolean;
   enableOverlayLayer?: boolean;
   defaultImageImportDuration?: number;
+  captionWordsPerLine?: number;
+  captionLinesPerSegment?: number;
+  captionFont?: string;
 };
 
 export type RenderDoc = {

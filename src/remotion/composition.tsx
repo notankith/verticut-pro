@@ -22,6 +22,9 @@ export type CompositionProps = {
   captionPosX?: number;
   captionPosY?: number;
   captionFontSize?: number;
+  captionWordsPerLine?: number;
+  captionLinesPerSegment?: number;
+  captionFont?: string;
   showLabels?: boolean;
   showCaptions?: boolean;
   transcript?: { text: string; start: number; end: number }[];
@@ -478,6 +481,9 @@ const CaptionOverlay: React.FC<{
   captionPosX?: number;
   captionPosY?: number;
   captionFontSize?: number;
+  captionWordsPerLine?: number;
+  captionLinesPerSegment?: number;
+  captionFont?: string;
 }> = ({
   transcript = [],
   audioSegments = [],
@@ -486,6 +492,9 @@ const CaptionOverlay: React.FC<{
   captionPosX = 50,
   captionPosY = 75,
   captionFontSize = 36,
+  captionWordsPerLine = 3,
+  captionLinesPerSegment = 1,
+  captionFont = "AcuminProCondensedBlack",
 }) => {
     const frame = useCurrentFrame();
     const { fps } = useVideoConfig();
@@ -499,18 +508,45 @@ const CaptionOverlay: React.FC<{
 
     if (srcT < 0) return null;
 
-    // Group into max 3-word segments
-    const segments: { words: TranscriptWord[]; start: number; end: number; text: string }[] = [];
-    for (let i = 0; i < transcript.length; i += 3) {
-      const group = transcript.slice(i, i + 3);
-      if (group.length > 0) {
-        segments.push({
-          words: group,
-          text: group.map(w => w.text).join(" "),
-          start: group[0].start,
-          end: group[group.length - 1].end,
-        });
+    // Group segments: break on full stops or commas or max lines/words configuration
+    const segments: { words: TranscriptWord[]; lines: TranscriptWord[][]; start: number; end: number; text: string }[] = [];
+    let currentLine: TranscriptWord[] = [];
+    let currentSegmentLines: TranscriptWord[][] = [];
+
+    for (let i = 0; i < transcript.length; i++) {
+      const w = transcript[i];
+      currentLine.push(w);
+
+      const text = w.text.trim();
+      const hasPunctuation = /[.!?,]$/.test(text);
+
+      if (currentLine.length >= captionWordsPerLine || hasPunctuation) {
+        currentSegmentLines.push(currentLine);
+        currentLine = [];
+
+        if (currentSegmentLines.length >= captionLinesPerSegment || hasPunctuation) {
+          segments.push({
+            words: currentSegmentLines.flat(),
+            lines: currentSegmentLines,
+            text: currentSegmentLines.map(line => line.map(x => x.text).join(" ")).join("\n"),
+            start: currentSegmentLines[0][0].start,
+            end: currentSegmentLines[currentSegmentLines.length - 1][currentSegmentLines[currentSegmentLines.length - 1].length - 1].end,
+          });
+          currentSegmentLines = [];
+        }
       }
+    }
+    if (currentLine.length > 0) {
+      currentSegmentLines.push(currentLine);
+    }
+    if (currentSegmentLines.length > 0) {
+      segments.push({
+        words: currentSegmentLines.flat(),
+        lines: currentSegmentLines,
+        text: currentSegmentLines.map(line => line.map(x => x.text).join(" ")).join("\n"),
+        start: currentSegmentLines[0][0].start,
+        end: currentSegmentLines[currentSegmentLines.length - 1][currentSegmentLines[currentSegmentLines.length - 1].length - 1].end,
+      });
     }
 
     let activeSegment = null;
@@ -533,18 +569,22 @@ const CaptionOverlay: React.FC<{
 
     if (!activeSegment) return null;
 
+    // Resolve font styles
+    const resolvedFont = captionFont || "AcuminProCondensedBlack";
+    const googleFontStyles = `@import url('https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@800&family=Montserrat:wght@800&family=Outfit:wght@800&family=Playfair+Display:wght@800&display=swap');`;
+
     return (
       <div
         style={{
           position: "absolute",
-          left: `${captionPosX}%`,
+          left: `50%`,
           top: `${captionPosY}%`,
           transform: "translate(-50%, -50%)",
           display: "flex",
-          flexDirection: "row",
+          flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          gap: `${captionFontSize * 0.25}px`,
+          gap: `${captionFontSize * 0.15}px`,
           whiteSpace: "nowrap",
           pointerEvents: "none",
           maxWidth: "90%",
@@ -554,6 +594,7 @@ const CaptionOverlay: React.FC<{
       >
         <style>
           {`
+          ${googleFontStyles}
           @font-face {
             font-family: 'AcuminProCondensedBlack';
             src: url('${staticFile("acumin-pro-condensed-black.otf")}') format('opentype');
@@ -565,21 +606,40 @@ const CaptionOverlay: React.FC<{
         <div
           style={{
             position: "relative",
-            padding: `${captionFontSize * 0.15}px ${captionFontSize * 0.4}px`,
+            padding: `${captionFontSize * 0.2}px ${captionFontSize * 0.4}px`,
             fontSize: `${captionFontSize}px`,
-            fontFamily: "'AcuminProCondensedBlack', ui-sans-serif, system-ui, sans-serif",
-            fontWeight: 900,
+            fontFamily: resolvedFont === "AcuminProCondensedBlack" ? "'AcuminProCondensedBlack', ui-sans-serif, system-ui, sans-serif" : `'${resolvedFont}', ui-sans-serif, system-ui, sans-serif`,
+            fontWeight: 800,
             textTransform: "uppercase",
             color: captionTextColor,
             backgroundColor: captionBgColor,
+            borderRadius: `${captionFontSize * 0.18}px`,
             display: "flex",
+            flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            whiteSpace: "pre-wrap",
+            gap: `${captionFontSize * 0.15}px`,
+            whiteSpace: "normal",
             textAlign: "center",
           }}
         >
-          <span>{activeSegment.text}</span>
+          {activeSegment.lines.map((line, lIdx) => (
+            <div
+              key={lIdx}
+              style={{
+                display: "flex",
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: `${captionFontSize * 0.25}px`,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {line.map((w, wIdx) => (
+                <span key={wIdx}>{w.text}</span>
+              ))}
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -604,6 +664,9 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
   captionPosX,
   captionPosY = 75,
   captionFontSize = 36,
+  captionWordsPerLine = 3,
+  captionLinesPerSegment = 1,
+  captionFont = "AcuminProCondensedBlack",
   showLabels = true,
   showCaptions = true,
   transcript = [],
@@ -710,6 +773,9 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
           captionPosX={captionPosX}
           captionPosY={captionPosY}
           captionFontSize={captionFontSize}
+          captionWordsPerLine={captionWordsPerLine}
+          captionLinesPerSegment={captionLinesPerSegment}
+          captionFont={captionFont}
         />
       )}
     </AbsoluteFill>

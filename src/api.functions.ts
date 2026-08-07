@@ -48,6 +48,9 @@ function defaultSettings(id: string): SettingsDoc {
     captionPosX: 50,
     captionPosY: 75,
     captionFontSize: 36,
+    captionWordsPerLine: 3,
+    captionLinesPerSegment: 1,
+    captionFont: "AcuminProCondensedBlack",
     enableGradientOverlay: true,
     showCaptions: true,
     enableOverlayLayer: true,
@@ -200,7 +203,7 @@ function repairMarkers(raw: unknown, words: { text: string; start: number; end: 
 
 function sentenceFallbackMarkers(fullText: string, words: { text: string; start: number; end: number }[]) {
   if (!words.length) return [] as MarkerDoc[];
-  const sentences = String(fullText || "").split(/[.!?]/).map((s) => s.trim()).filter(Boolean);
+  const sentences = String(fullText || "").split(/[.!?,]/).map((s) => s.trim()).filter(Boolean);
   if (!sentences.length) {
     return [{ id: randomUUID(), start: words[0].start, label: normalizeMarkerLabel(words.slice(0, 4).map((w) => w.text).join(" ")) || "Start", kind: "topic" }];
   }

@@ -315,9 +315,8 @@ function EditorPage() {
 
   const onSearchMediaImport = useCallback(async (imageUrl: string) => {
     try {
-      const uploaded = await fetchAndUploadImageUrl(imageUrl);
       isImportingFromSearchRef.current = true;
-      addImageClips([{ key: uploaded.key, url: uploaded.publicUrl }]);
+      addImageClips([{ key: imageUrl, url: imageUrl }]);
       const selectedId = useEditor.getState().selectedClipId;
       const inserted = useEditor.getState().clips.find((c) => c.id === selectedId);
       if (inserted) {
@@ -575,6 +574,9 @@ function EditorPage() {
       captionPosX: settings.captionPosX,
       captionPosY: settings.captionPosY,
       captionFontSize: settings.captionFontSize,
+      captionWordsPerLine: settings.captionWordsPerLine,
+      captionLinesPerSegment: settings.captionLinesPerSegment,
+      captionFont: settings.captionFont,
       showCaptions: settings.showCaptions ?? true,
       transcript,
       enableGradientOverlay: settings.enableGradientOverlay ?? true,
@@ -593,6 +595,9 @@ function EditorPage() {
       settings.captionPosX,
       settings.captionPosY,
       settings.captionFontSize,
+      settings.captionWordsPerLine,
+      settings.captionLinesPerSegment,
+      settings.captionFont,
       settings.showCaptions,
       settings.enableGradientOverlay,
       clips,
@@ -862,7 +867,7 @@ function EditorPage() {
         <>
           <div className="flex flex-1 min-h-0 gap-2 px-2 pb-2 pt-2">
             {/* Left: Tabbed Sidebar with Vertical Selector Strip on the left & Active Panel on the right */}
-            <div className={`flex shrink-0 select-none transition-all duration-200 ${activeSidebarTab === "search" ? "w-[418px]" : "w-80"}`}>
+            <div className={`flex shrink-0 select-none transition-all duration-200 ${activeSidebarTab === "search" ? "w-[550px]" : "w-80"}`}>
 
               {/* Leftmost narrow vertical tab icon bar */}
               <nav className="w-[68px] bg-panel-2 border border-border border-r-0 rounded-l-md flex flex-col items-center py-4 gap-4.5 shrink-0">
@@ -932,7 +937,7 @@ function EditorPage() {
               </nav>
 
               {/* Right Sidebar Content Panel */}
-              <aside className={`shrink-0 overflow-hidden rounded-r-md border border-border bg-panel flex flex-col transition-all duration-200 ${activeSidebarTab === "search" ? "w-[350px]" : "w-[252px]"
+              <aside className={`shrink-0 overflow-hidden rounded-r-md border border-border bg-panel flex flex-col transition-all duration-200 ${activeSidebarTab === "search" ? "w-[482px]" : "w-[252px]"
                 }`}>
                 <div className="flex-1 overflow-hidden min-h-0 relative">
                   <div className={activeSidebarTab !== "search" ? "hidden" : "h-full"}>

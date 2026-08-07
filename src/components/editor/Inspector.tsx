@@ -704,23 +704,25 @@ export function CaptionsPanel() {
             </div>
           </div>
 
-          {/* Positions */}
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <div className="flex justify-between items-center text-[10px] text-muted-foreground">
-                <label>Position X (Horizontal)</label>
-                <span className="font-mono">{settings.captionPosX ?? 50}%</span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={settings.captionPosX ?? 50}
-                onChange={(e) => onChange({ captionPosX: Number(e.target.value) })}
-                className="w-full accent-primary"
-              />
-            </div>
+          {/* Font dropdown */}
+          <div className="space-y-1 pb-1">
+            <label className="text-[10px] text-muted-foreground block font-semibold uppercase">Font Family</label>
+            <select
+              value={settings.captionFont ?? "AcuminProCondensedBlack"}
+              onChange={(e) => onChange({ captionFont: e.target.value })}
+              className="w-full rounded border border-border bg-panel-2 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary cursor-pointer"
+            >
+              <option value="AcuminProCondensedBlack">Acumin Pro Black (Local)</option>
+              <option value="Montserrat">Montserrat Bold</option>
+              <option value="Inter">Inter ExtraBold</option>
+              <option value="Playfair Display">Playfair Display Black</option>
+              <option value="Anton">Anton</option>
+              <option value="Outfit">Outfit Bold</option>
+            </select>
+          </div>
 
+          {/* Positions & Size */}
+          <div className="space-y-3 border-t border-border/50 pt-2.5">
             <div className="space-y-1">
               <div className="flex justify-between items-center text-[10px] text-muted-foreground">
                 <label>Position Y (Vertical)</label>
@@ -732,25 +734,57 @@ export function CaptionsPanel() {
                 max={100}
                 value={settings.captionPosY ?? 75}
                 onChange={(e) => onChange({ captionPosY: Number(e.target.value) })}
-                className="w-full accent-primary"
+                className="w-full accent-primary cursor-pointer"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+                <label>Font Size</label>
+                <span className="font-mono">{settings.captionFontSize ?? 36}px</span>
+              </div>
+              <input
+                type="range"
+                min={12}
+                max={120}
+                value={settings.captionFontSize ?? 36}
+                onChange={(e) => onChange({ captionFontSize: Number(e.target.value) })}
+                className="w-full accent-primary cursor-pointer"
               />
             </div>
           </div>
 
-          {/* Size */}
-          <div className="space-y-1 pt-1">
-            <div className="flex justify-between items-center text-[10px] text-muted-foreground">
-              <label>Font Size</label>
-              <span className="font-mono">{settings.captionFontSize ?? 36}px</span>
+          {/* Lines & Words layout details */}
+          <div className="space-y-3 border-t border-border/50 pt-2.5">
+            <div className="space-y-1">
+              <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+                <label>Words Per Line</label>
+                <span className="font-mono">{settings.captionWordsPerLine ?? 3}</span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={15}
+                value={settings.captionWordsPerLine ?? 3}
+                onChange={(e) => onChange({ captionWordsPerLine: Number(e.target.value) })}
+                className="w-full accent-primary cursor-pointer"
+              />
             </div>
-            <input
-              type="range"
-              min={12}
-              max={120}
-              value={settings.captionFontSize ?? 36}
-              onChange={(e) => onChange({ captionFontSize: Number(e.target.value) })}
-              className="w-full accent-primary"
-            />
+
+            <div className="space-y-1">
+              <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+                <label>Lines Per Segment</label>
+                <span className="font-mono">{settings.captionLinesPerSegment ?? 1}</span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={5}
+                value={settings.captionLinesPerSegment ?? 1}
+                onChange={(e) => onChange({ captionLinesPerSegment: Number(e.target.value) })}
+                className="w-full accent-primary cursor-pointer"
+              />
+            </div>
           </div>
         </div>
       )}
