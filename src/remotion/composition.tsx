@@ -1,4 +1,4 @@
-import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate, staticFile, Video } from "remotion";
+import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate, staticFile, Video, AnimatedImage } from "remotion";
 import type { ClipDoc, AudioSegment } from "../server/mongo.server";
 import type { TemplateWindow } from "@/lib/templates";
 
@@ -179,6 +179,15 @@ function KenBurns({
               objectFit: "cover",
             }}
           />
+        ) : imageUrl && /\.gif($|\?)/i.test(imageUrl) ? (
+          <AnimatedImage
+            src={imageUrl}
+            fit="cover"
+            style={{
+              width: "100%",
+              height: "100%",
+            }}
+          />
         ) : (
           <Img
             src={imageUrl || ""}
@@ -272,6 +281,25 @@ function KenBurns({
       }}>
         {loops}
       </AbsoluteFill>
+    );
+  }
+
+  if (imageUrl && /\.gif($|\?)/i.test(imageUrl)) {
+    return (
+      <AnimatedImage
+        src={imageUrl}
+        fit="cover"
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectPosition: `${appliedPosX}% ${appliedPosY}%`,
+          filter: `contrast(${CONTRAST_MULTIPLIER})`,
+          opacity: appliedOpacity,
+          transform: `translate(${txPercent}%, 0%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        }}
+      />
     );
   }
 

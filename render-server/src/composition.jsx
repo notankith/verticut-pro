@@ -1,7 +1,7 @@
 // Mirror of src/remotion/composition.tsx in plain JSX so the render-server can
 // bundle the VertiCut composition without TypeScript.
 import React from "react";
-import { AbsoluteFill, Audio, Img, Sequence, staticFile, useCurrentFrame, useVideoConfig, interpolate, Video } from "remotion";
+import { AbsoluteFill, Audio, Img, Sequence, staticFile, useCurrentFrame, useVideoConfig, interpolate, Video, AnimatedImage } from "remotion";
 
 const ANIM_SHIFT = 0.6;
 const TRANSITION_FRAMES = 8;
@@ -91,6 +91,60 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
   const appliedPosY = kfPosY ?? clip.posY ?? anchorY;
   const appliedOpacity = kfOpacity ?? clip.opacity ?? 1;
 
+  const actualVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
+  const isGif = imageUrl && /\.gif($|\?)/i.test(imageUrl);
+
+  if (clip.layer === "overlay") {
+    return (
+      <AbsoluteFill style={{
+        transform: `translate(-50%, -50%) translate(${appliedPosX}%, ${appliedPosY}%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        opacity: appliedOpacity,
+        willChange: "transform, opacity",
+        width: "40%",
+        height: "22.5%",
+        transformOrigin: "center",
+        zIndex: 5,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+        borderRadius: 8,
+      }}>
+        {actualVideoUrl ? (
+          <Video
+            src={actualVideoUrl}
+            startFrom={Math.round((clip.trimStart ?? 0) * (fps || 30))}
+            muted={clip.muted ?? true}
+            volume={(clip.volume ?? 100) / 100}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+            }}
+          />
+        ) : isGif ? (
+          <AnimatedImage
+            src={imageUrl}
+            fit="cover"
+            style={{
+              width: "100%",
+              height: "100%",
+            }}
+          />
+        ) : (
+          <Img
+            src={imageUrl || ""}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+            }}
+          />
+        )}
+      </AbsoluteFill>
+    );
+  }
+
   if (clip.kind === "solid") {
     return (
       <AbsoluteFill style={{
@@ -134,8 +188,6 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
     );
   }
 
-  const actualVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
-
   if (actualVideoUrl) {
     const trimStartSec = (clip && clip.trimStart) || 0;
     const trimStartFrames = Math.round(trimStartSec * (fps || 30));
@@ -172,6 +224,25 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
       }}>
         {loops}
       </AbsoluteFill>
+    );
+  }
+
+  if (isGif) {
+    return (
+      <AnimatedImage
+        src={imageUrl}
+        fit="cover"
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectPosition: `${appliedPosX}% ${appliedPosY}%`,
+          filter: `contrast(${CONTRAST_MULTIPLIER})`,
+          opacity: appliedOpacity,
+          transform: `translate(${txPercent}%, ${ty}%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        }}
+      />
     );
   }
 

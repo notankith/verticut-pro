@@ -75,11 +75,27 @@ async function queryDuckDuckGoImages(keywords: string) {
     }
   });
   const html = await htmlRes.text();
-  const vqdMatch = html.match(/vqd=([0-9-]+)/) || html.match(/vqd=["']([0-9-]+)["']/);
-  if (!vqdMatch) {
+
+  // Robust, sequential multi-pattern vqd token matching
+  const patterns = [
+    /vqd=["']?([^&"'\s<>]+)/i,
+    /vqd\s*:\s*["']([^"']+)["']/i,
+    /value=["']([^"']+)["'][^>]*name=["']vqd["']/i,
+    /name=["']vqd["'][^>]*value=["']([^"']+)["']/i
+  ];
+
+  let vqd: string | null = null;
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match && match[1]) {
+      vqd = match[1];
+      break;
+    }
+  }
+
+  if (!vqd) {
     throw new Error("Could not extract vqd token from DuckDuckGo");
   }
-  const vqd = vqdMatch[1];
 
   const jsonUrl = `https://duckduckgo.com/i.js?o=json&q=${encodeURIComponent(keywords)}&vqd=${vqd}&f=,,,`;
   const jsonRes = await fetch(jsonUrl, {
