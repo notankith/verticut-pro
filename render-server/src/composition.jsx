@@ -126,9 +126,6 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
         ) : isGif ? (
           <AnimatedImage
             src={imageUrl}
-            fit="cover"
-            width={compWidth * 0.4}
-            height={compHeight * 0.225}
             style={{
               width: "100%",
               height: "100%",
@@ -235,9 +232,6 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, videoUrl, a
     return (
       <AnimatedImage
         src={imageUrl}
-        fit="cover"
-        width={compWidth}
-        height={compHeight}
         style={{
           position: "absolute",
           inset: 0,
