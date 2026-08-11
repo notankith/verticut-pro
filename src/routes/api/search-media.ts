@@ -68,7 +68,7 @@ function collectSearchImages(node: unknown, images: Map<string, ParsedImage>) {
 
 // Fallback search fetcher for DuckDuckGo
 async function queryDuckDuckGoImages(keywords: string) {
-  const htmlUrl = `https://duckduckgo.com/?q=${encodeURIComponent(keywords)}`;
+  const htmlUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(keywords)}`;
   const htmlRes = await fetch(htmlUrl, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"

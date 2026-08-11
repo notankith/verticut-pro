@@ -81,6 +81,7 @@ function KenBurns({
   clip: ClipDoc;
   fps: number;
 }) {
+  const { width: compWidth, height: compHeight } = useVideoConfig();
   const actualVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
   const t = interpolate(frame, [0, duration], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const range = ANIM_SHIFT * intensity;
@@ -183,9 +184,12 @@ function KenBurns({
           <AnimatedImage
             src={imageUrl}
             fit="cover"
+            width={compWidth * 0.4}
+            height={compHeight * 0.225}
             style={{
               width: "100%",
               height: "100%",
+              objectFit: "cover",
             }}
           />
         ) : (
@@ -289,11 +293,14 @@ function KenBurns({
       <AnimatedImage
         src={imageUrl}
         fit="cover"
+        width={compWidth}
+        height={compHeight}
         style={{
           position: "absolute",
           inset: 0,
           width: "100%",
           height: "100%",
+          objectFit: "cover",
           objectPosition: `${appliedPosX}% ${appliedPosY}%`,
           filter: `contrast(${CONTRAST_MULTIPLIER})`,
           opacity: appliedOpacity,
