@@ -21,7 +21,7 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs
   const [showClearLogsConfirm, setShowClearLogsConfirm] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isClearingLogs, setIsClearingLogs] = useState(false);
-  const [subTab, setSubTab] = useState<"general" | "templates" | "captions">("general");
+  const [subTab, setSubTab] = useState<"general" | "templates" | "gemini">("general");
 
   const [durationVal, setDurationVal] = useState(
     (settings.defaultImageImportDuration ?? 3.5).toString()
@@ -143,6 +143,13 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs
         >
           Templates
         </button>
+        <button
+          type="button"
+          onClick={() => setSubTab("gemini")}
+          className={`rounded-t px-3 py-2 text-xs ${subTab === "gemini" ? "bg-panel text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          Gemini Voiceover
+        </button>
       </div>
 
       {subTab === "general" ? (
@@ -230,6 +237,11 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs
             </div>
           </section>
         </>
+      ) : subTab === "gemini" ? (
+        <GeminiSettings
+          settings={settings}
+          onChange={onChange}
+        />
       ) : (
         <TemplateEditor
           activeTemplate={activeTemplate}
@@ -478,6 +490,92 @@ function ConfirmDialog({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function GeminiSettings({
+  settings,
+  onChange,
+}: {
+  settings: SettingsDoc;
+  onChange: (patch: Partial<SettingsDoc>) => void;
+}) {
+  const [showApiKey, setShowApiKey] = useState(false);
+
+  return (
+    <div className="space-y-6">
+      <section className="space-y-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Gemini API Configuration</h3>
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground font-medium">Gemini API Key</label>
+            <div className="relative max-w-md">
+              <input
+                type={showApiKey ? "text" : "password"}
+                placeholder="AIzaSy..."
+                value={settings.geminiApiKey ?? ""}
+                onChange={(e) => onChange({ geminiApiKey: e.target.value })}
+                className="w-full rounded border border-border bg-[#161619] px-3 py-1.5 text-xs text-foreground outline-none focus:border-violet-500/50 pr-16"
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-neutral-400 hover:text-white px-1.5 py-0.5 rounded bg-[#1c1c1f] hover:bg-neutral-800 transition-colors"
+              >
+                {showApiKey ? "Hide" : "Show"}
+              </button>
+            </div>
+            <p className="mt-1 text-[10px] text-muted-foreground font-light">
+              Your API key is stored securely in your dashboard setting profile.
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground font-medium">TTS Model</label>
+            <select
+              value={settings.geminiTtsModel ?? "gemini-3.1-flash-tts-preview"}
+              onChange={(e) => onChange({ geminiTtsModel: e.target.value })}
+              className="w-full max-w-md rounded border border-border bg-[#161619] px-2 py-1.5 text-xs text-foreground outline-none focus:border-violet-500/50"
+            >
+              <option value="gemini-3.1-flash-tts-preview">gemini-3.1-flash-tts-preview (Recommended for TTS)</option>
+              <option value="gemini-2.5-flash-preview-tts">gemini-2.5-flash-preview-tts</option>
+              <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+              <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground font-medium">Prebuilt Voice</label>
+            <select
+              value={settings.geminiVoice ?? "Kore"}
+              onChange={(e) => onChange({ geminiVoice: e.target.value })}
+              className="w-full max-w-md rounded border border-border bg-[#161619] px-2 py-1.5 text-xs text-foreground outline-none focus:border-violet-500/50"
+            >
+              <option value="Aoede">Aoede (Female, expressive)</option>
+              <option value="Charon">Charon (Male, deep)</option>
+              <option value="Fenrir">Fenrir (Male, professional)</option>
+              <option value="Kore">Kore (Female, standard)</option>
+              <option value="Orus">Orus (Male, expressive)</option>
+              <option value="Puck">Puck (Male, enthusiastic)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground font-medium">Performance Scene / Context Instructions</label>
+            <textarea
+              placeholder="e.g. Speak with an excited, fast-paced announcer tone. Emphasize keywords like 'amazing' and 'incredible' with a dramatic pause before them."
+              value={settings.geminiSceneInstructions ?? ""}
+              onChange={(e) => onChange({ geminiSceneInstructions: e.target.value })}
+              rows={4}
+              className="w-full rounded border border-border bg-[#161619] p-3 text-xs text-[#e4e4e7] outline-none focus:border-violet-500/50 placeholder:text-neutral-600 transition-colors"
+            />
+            <p className="mt-1 text-[10px] text-muted-foreground font-light">
+              These guidelines are sent as system instructions to guide speech performance, pacing, or emotional tone.
+            </p>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

@@ -67,53 +67,18 @@ function collectSearchImages(node: unknown, images: Map<string, ParsedImage>) {
 }
 
 // Fallback search fetcher for DuckDuckGo
-async function queryDuckDuckGoImages(keywords: string) {
-  const htmlUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(keywords)}`;
-  const htmlRes = await fetch(htmlUrl, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-  });
-  const html = await htmlRes.text();
-
-  // Robust, sequential multi-pattern vqd token matching
-  const patterns = [
-    /vqd=["']?([^&"'\s<>]+)/i,
-    /vqd\s*:\s*["']([^"']+)["']/i,
-    /value=["']([^"']+)["'][^>]*name=["']vqd["']/i,
-    /name=["']vqd["'][^>]*value=["']([^"']+)["']/i
-  ];
-
-  let vqd: string | null = null;
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match && match[1]) {
-      vqd = match[1];
-      break;
-    }
+async function queryDuckDuckGoImages(keywords: string, page: number, size: number) {
+  const url = `http://37.60.234.106:1252/images?query=${encodeURIComponent(keywords)}&page=${page}&size=${size}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`General search endpoint returned status ${res.status}`);
   }
+  const data = await res.json();
+  if (!data?.images || !Array.isArray(data.images)) return [];
 
-  if (!vqd) {
-    throw new Error("Could not extract vqd token from DuckDuckGo");
-  }
-
-  const jsonUrl = `https://duckduckgo.com/i.js?o=json&q=${encodeURIComponent(keywords)}&vqd=${vqd}&f=,,,`;
-  const jsonRes = await fetch(jsonUrl, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept": "application/json",
-      "Referer": "https://duckduckgo.com/"
-    }
-  });
-  if (!jsonRes.ok) {
-    throw new Error(`DuckDuckGo image search failed with HTTP ${jsonRes.status}`);
-  }
-  const data = await jsonRes.json();
-  if (!data?.results) return [];
-
-  return data.results.map((r: any) => ({
-    id: r.image || r.thumbnail,
-    url: r.image || r.thumbnail,
+  return data.images.map((r: any) => ({
+    id: r.url || r.id,
+    url: r.url || r.id,
     title: r.title || ""
   }));
 }
@@ -188,11 +153,11 @@ export const Route = createFileRoute("/api/search-media")({
 
         if (source === "duckduckgo") {
           try {
-            const results = await queryDuckDuckGoImages(query);
+            const results = await queryDuckDuckGoImages(query, page, size);
 
             const images = results.map((r: any) => ({
-              id: r.image || r.url || r.thumbnail,
-              url: r.image || r.url || r.thumbnail,
+              id: r.url || r.id,
+              url: r.url || r.id,
               title: r.title || ""
             }));
 

@@ -106,6 +106,10 @@ export type SettingsDoc = {
   captionWordsPerLine?: number;
   captionLinesPerSegment?: number;
   captionFont?: string;
+  geminiApiKey?: string;
+  geminiTtsModel?: string;
+  geminiVoice?: string;
+  geminiSceneInstructions?: string;
 };
 
 export type RenderDoc = {

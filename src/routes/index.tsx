@@ -19,7 +19,8 @@ import {
   Copy,
   Edit2,
   Filter,
-  Check
+  Check,
+  Mic,
 } from "lucide-react";
 import {
   createProjectFromAudio,
@@ -34,6 +35,7 @@ import {
   logoutUser,
   duplicateProject,
   saveProject,
+  generateGeminiVoiceover,
   type ProjectListItem,
   type RenderItem,
 } from "@/api.functions";
@@ -60,6 +62,9 @@ function Home() {
   const [authLoading, setAuthLoading] = useState(true);
 
   const [busy, setBusy] = useState(false);
+  const [busyMessage, setBusyMessage] = useState("Processing...");
+  const [isVoiceoverModalOpen, setIsVoiceoverModalOpen] = useState(false);
+  const [voiceoverScript, setVoiceoverScript] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [renders, setRenders] = useState<RenderItem[]>([]);
@@ -120,10 +125,28 @@ function Home() {
       return;
     }
     setBusy(true);
+    setBusyMessage("Uploading soundtrack...");
     setError(null);
     try {
       const { key, url } = await uploadToR2(f, "audio");
       const { id } = await createProjectFromAudio({ data: { audioKey: key, audioUrl: url } });
+      nav({ to: "/project/$id", params: { id } });
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleGenerateVoiceover() {
+    if (!voiceoverScript.trim()) return;
+    setBusy(true);
+    setBusyMessage("Synthesizing voiceover via Gemini...");
+    setError(null);
+    try {
+      const { id } = await generateGeminiVoiceover({ data: { script: voiceoverScript } });
+      setBusyMessage("Setting up project timeline...");
+      setIsVoiceoverModalOpen(false);
       nav({ to: "/project/$id", params: { id } });
     } catch (e) {
       setError(String(e));
@@ -503,39 +526,24 @@ function Home() {
           </main>
         ) : (
           <main className="mx-auto max-w-6xl px-6 py-8 space-y-8">
-            {/* Drop Zone */}
+            {/* Create Project + Button card */}
             <section>
               <div
-                onClick={() => inputRef.current?.click()}
-                className={`flex h-44 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed transition-all relative overflow-hidden ${busy
-                  ? "border-violet-500/40 bg-violet-500/[0.02]"
-                  : "border-white/[0.08] bg-[#0c0c0e] hover:bg-[#121214] hover:border-violet-500/20"
-                  }`}
+                onClick={() => {
+                  setVoiceoverScript("");
+                  setError(null);
+                  setIsVoiceoverModalOpen(true);
+                }}
+                className="flex h-44 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-white/[0.08] bg-[#0c0c0e] hover:bg-[#121214] hover:border-violet-500/20 transition-all select-none group"
               >
-                {busy ? (
-                  <div className="space-y-2 text-center">
-                    <Loader2 className="mx-auto h-8 w-8 animate-spin text-violet-500" />
-                    <p className="text-xs font-semibold text-white">Uploading soundtrack...</p>
-                    <p className="text-[10px] text-neutral-500">Parsing transcript timestamps via AssemblyAI</p>
+                <div className="space-y-2 text-center">
+                  <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-full bg-violet-600/10 text-violet-400 group-hover:scale-105 transition-transform duration-200 ring-1 ring-violet-500/10">
+                    <Plus className="h-5 w-5" />
                   </div>
-                ) : (
-                  <div className="space-y-1.5 text-center">
-                    <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-full bg-violet-600/10 text-violet-400 ring-1 ring-violet-500/10">
-                      <Upload className="h-4.5 w-4.5" />
-                    </div>
-                    <p className="text-sm font-semibold text-white">Create New Project</p>
-                    <p className="text-xs text-neutral-500">Drag or drop voiceover audio notes here (mp3 / wav)</p>
-                  </div>
-                )}
+                  <p className="text-sm font-semibold text-white font-medium">Create New Project</p>
+                  <p className="text-xs text-neutral-500 font-light">Generate via Gemini TTS or upload audio</p>
+                </div>
               </div>
-              <input
-                ref={inputRef}
-                type="file"
-                accept="audio/*,.mp3,.wav,.m4a,.ogg"
-                className="hidden"
-                onChange={(e) => handleFiles(e.target.files)}
-              />
-              {error && <p className="mt-3 text-xs text-red-500 text-center">{error}</p>}
             </section>
 
             {/* Redesigned Projects Grid Section */}
@@ -745,6 +753,115 @@ function Home() {
           </main>
         )}
       </div>
+
+      {isVoiceoverModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="relative w-full max-w-2xl rounded-2xl border border-white/[0.08] bg-[#0c0c0e] p-6 shadow-xl flex flex-col gap-6 animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600/10 text-violet-500">
+                  <Mic className="h-4.5 w-4.5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Create Voiceover & Project</h3>
+                  <p className="text-[10px] text-neutral-400 font-light">Provide a script or upload an existing file</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!busy) setIsVoiceoverModalOpen(false);
+                }}
+                className="text-neutral-400 hover:text-white text-xs font-semibold hover:bg-neutral-800 px-2.5 py-1.5 rounded transition-all"
+                disabled={busy}
+              >
+                Cancel
+              </button>
+            </div>
+
+            {/* Split Panels */}
+            {busy ? (
+              <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
+                <div className="text-center">
+                  <p className="text-xs font-semibold text-white">{busyMessage}</p>
+                  <p className="text-[9px] text-neutral-450 mt-1 font-light">
+                    Processing audio alignment and setting up your project dashboard
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 divide-y md:divide-y-0 md:divide-x divide-white/[0.06]">
+                {/* Left side: Gemini Speech Creator */}
+                <div className="space-y-4 flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-extrabold uppercase tracking-widest text-violet-400">Gemini Voice Generation</h4>
+                    <p className="text-[10px] text-neutral-450 font-light leading-snug">
+                      Write or paste a script. The project timeline is created matching the exact synthesized voice duration.
+                    </p>
+                  </div>
+
+                  <textarea
+                    placeholder="Enter script content here..."
+                    rows={6}
+                    value={voiceoverScript}
+                    onChange={(e) => setVoiceoverScript(e.target.value)}
+                    className="w-full rounded-lg border border-white/[0.08] bg-[#161619] p-3 text-xs text-white outline-none focus:border-violet-500/50 placeholder:text-neutral-600 transition-colors resize-none"
+                  />
+
+                  <div className="space-y-1.5">
+                    <button
+                      type="button"
+                      onClick={handleGenerateVoiceover}
+                      disabled={!voiceoverScript.trim()}
+                      className="w-full inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-4 text-xs font-semibold text-white hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" /> Generate Voiceover
+                    </button>
+                    <p className="text-[9px] text-center text-neutral-500 font-light leading-tight">
+                      Generates using model and voice configs saved in your profile Settings.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Right side: File Upload Dropzone */}
+                <div className="space-y-4 flex flex-col justify-between pt-6 md:pt-0 md:pl-6">
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-extrabold uppercase tracking-widest text-[#a1a1aa]">Upload Voiceover</h4>
+                    <p className="text-[10px] text-neutral-450 font-light leading-snug">
+                      Already have an audio file ready? Drop or browse your pre-recorded mp3/wav/ogg track here.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => inputRef.current?.click()}
+                    className="flex-1 flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] hover:border-violet-500/30 bg-[#121214]/30 hover:bg-[#121214]/65 transition-all p-8 text-center cursor-pointer min-h-[140px]"
+                  >
+                    <Upload className="h-6 w-6 text-neutral-400 mb-2" />
+                    <p className="text-xs font-bold text-white">Select File</p>
+                    <p className="text-[9px] text-neutral-500 font-light mt-0.5 font-sans">MP3, WAV, OGG up to 20MB</p>
+                  </div>
+
+                  <input
+                    ref={inputRef}
+                    type="file"
+                    accept="audio/*,.mp3,.wav,.m4a,.ogg"
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        handleFiles(e.target.files);
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {error && <p className="text-xs text-red-500 text-center font-medium bg-red-950/20 border border-red-500/10 rounded-lg p-2.5">{error}</p>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

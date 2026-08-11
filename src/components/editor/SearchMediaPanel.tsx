@@ -198,7 +198,7 @@ export default function SearchMediaPanel({ open, onOpenChange, onImport }: Props
             title="Search provider"
           >
             <option value="verticut">VertiCut Search</option>
-            <option value="duckduckgo">DuckDuckGo</option>
+            <option value="duckduckgo">General Search</option>
             <option value="giphy">Giphy GIFs</option>
             <option value="pexels">Pexels Photos</option>
           </select>
