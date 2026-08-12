@@ -1,4 +1,6 @@
 import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate, staticFile, Video, AnimatedImage } from "remotion";
+import { Audio } from "@remotion/media";
+import { useEffect, useRef } from "react";
 import type { ClipDoc, AudioSegment } from "../server/mongo.server";
 import type { TemplateWindow } from "@/lib/templates";
 
@@ -30,6 +32,7 @@ export type CompositionProps = {
   transcript?: { text: string; start: number; end: number }[];
   enableGradientOverlay?: boolean;
   gradientOverlayUrl?: string;
+  isRendering?: boolean;
 };
 
 const ANIM_SHIFT = 0.6; // base scale/translate range (increased for stronger pan)
@@ -37,6 +40,64 @@ const TRANSITION_FRAMES = 8;
 const CONTRAST_MULTIPLIER = 1.3;
 const TRANSITION_DIRECTIONS = ["slide-left", "slide-right", "slide-up", "slide-down"] as const;
 const DEFAULT_GRADIENT_OVERLAY_URL = "https://i.ibb.co/C5phXbpz/Gradient-Overlay.png";
+
+export function logDiagnostic(
+  category: "render" | "image" | "remotion" | "proxy" | "browser",
+  level: "info" | "success" | "warning" | "error",
+  message: string,
+  details?: any
+) {
+  if (typeof window !== "undefined" && (window as any).__addClientRenderLog) {
+    (window as any).__addClientRenderLog(category, level, message, details);
+  } else {
+    console.log(`[${category.toUpperCase()}][${level.toUpperCase()}] ${message}`, details);
+  }
+}
+
+interface DiagnosticAudioProps extends React.ComponentProps<typeof Audio> {
+  label?: string;
+  startFrom?: number;
+  pauseWhenBuffering?: boolean;
+  acceptableTimeShiftInSeconds?: number;
+}
+
+function DiagnosticAudio({
+  label,
+  pauseWhenBuffering,
+  acceptableTimeShiftInSeconds,
+  startFrom,
+  trimBefore,
+  ...props
+}: DiagnosticAudioProps) {
+  const mountedLogged = useRef(false);
+
+  useEffect(() => {
+    if (!mountedLogged.current) {
+      mountedLogged.current = true;
+      logDiagnostic(
+        "remotion",
+        "info",
+        `[AUDIO] Remotion audio mounted (${label || "unknown"})\nsrc: ${props.src}\nvolume: ${props.volume ?? 1}`
+      );
+      logDiagnostic(
+        "remotion",
+        "info",
+        `[AUDIO] REQUEST\noriginal URL: ${props.src}\nresolved URL: ${resolveProxyUrl(props.src || "")}`
+      );
+    }
+  }, [props.src, props.volume, label]);
+
+  const handleError = (error: Error) => {
+    logDiagnostic(
+      "remotion",
+      "error",
+      `[AUDIO] FAILED (${label || "unknown"})\nerror: ${error.message || error.toString()}`
+    );
+    return undefined;
+  };
+
+  return <Audio {...props} trimBefore={trimBefore ?? startFrom} src={resolveProxyUrl(props.src || "")} onError={handleError} />;
+}
 
 export function resolveProxyUrl(url: string) {
   if (!url) return "";
@@ -100,6 +161,39 @@ function KenBurns({
 }) {
   const { width: compWidth, height: compHeight } = useVideoConfig();
   const actualVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
+
+  const frameRef = useRef(frame);
+  frameRef.current = frame;
+
+  useEffect(() => {
+    if (!imageUrl || actualVideoUrl) return;
+    const resolvedUrl = resolveProxyUrl(imageUrl);
+    const method = imageUrl && /\.gif($|\?)/i.test(imageUrl) ? "AnimatedImage" : "Remotion <Img>";
+
+    // Check duplication
+    if (typeof window !== "undefined" && (window as any).__trackImageRequest) {
+      (window as any).__trackImageRequest(imageUrl, method);
+    }
+
+    logDiagnostic("image", "info", `[IMAGE] REQUEST\noriginal: ${imageUrl}\nresolved: ${resolvedUrl}\ncrossOrigin: anonymous\nloading method: ${method}`);
+    logDiagnostic("remotion", "info", `[REMOTION][IMAGE]\nsrc: ${resolvedUrl}`);
+
+    // Fetch proxy url concurrently for network logs
+    if (resolvedUrl.includes("/api/proxy-image")) {
+      fetch(resolvedUrl, { method: "HEAD" }).catch(() => { });
+    }
+
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      logDiagnostic("image", "success", `[IMAGE] LOADED\nURL: ${imageUrl}\nnaturalWidth: ${img.naturalWidth}\nnaturalHeight: ${img.naturalHeight}\nloading method: ${method}`);
+    };
+    img.onerror = (err) => {
+      logDiagnostic("image", "error", `[IMAGE] FAILED\noriginal URL: ${imageUrl}\nresolved URL: ${resolvedUrl}\ncrossOrigin: anonymous\nloading method: ${method}\nerror message: ${String(err)}\ncurrent frame: ${frameRef.current}\nclip ID: ${clip.id}`);
+    };
+    img.src = resolvedUrl;
+  }, [imageUrl, clip.id]);
+
   const t = interpolate(frame, [0, duration], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const range = ANIM_SHIFT * intensity;
   let baseScale = 1.05;
@@ -325,7 +419,8 @@ function KenBurns({
 
   return (
     <Img
-      src={imageUrl || ""}
+      src={resolveProxyUrl(imageUrl || "")}
+      crossOrigin="anonymous"
       style={{
         position: "absolute",
         inset: 0,
@@ -720,6 +815,7 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
   transcript = [],
   enableGradientOverlay = true,
   gradientOverlayUrl = DEFAULT_GRADIENT_OVERLAY_URL,
+  isRendering = false,
 }) => {
   const renderClips = (subset: { c: typeof clips[0]; originalIndex: number }[]) => (
     <>
@@ -756,6 +852,32 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
           (see $id.tsx <PreviewAudio>), so the browser's audio clock is the source
           of truth. Server-side rendering uses worker/composition.jsx which keeps
           its own <Audio> tags. */}
+      {isRendering && (
+        <>
+          {audioSegments && audioSegments.length > 0 ? (
+            audioSegments.map((seg) => {
+              const from = Math.round(seg.projStart * fps);
+              const dur = Math.max(1, Math.round(seg.duration * fps));
+              const startFrom = Math.round(seg.srcStart * fps);
+              return (
+                <Sequence key={seg.id} from={from} durationInFrames={dur}>
+                  <DiagnosticAudio label={`voiceover-segment-${seg.id}`} src={audioUrl} startFrom={startFrom} pauseWhenBuffering acceptableTimeShiftInSeconds={2} />
+                </Sequence>
+              );
+            })
+          ) : audioUrl ? (
+            <Sequence from={0} durationInFrames={durationInFrames}>
+              <DiagnosticAudio label="voiceover-full" src={audioUrl} pauseWhenBuffering acceptableTimeShiftInSeconds={2} />
+            </Sequence>
+          ) : null}
+          {musicUrl ? (
+            <Sequence from={0} durationInFrames={durationInFrames}>
+              <DiagnosticAudio label="bg-music" src={musicUrl} volume={musicVolume} loop acceptableTimeShiftInSeconds={2} />
+            </Sequence>
+          ) : null}
+        </>
+      )}
+
       {renderClips(solidClips)}
 
       {hasTemplate ? (

@@ -11,7 +11,7 @@ import {
   saveProject,
   type ProjectFull,
 } from "@/api.functions";
-import { VertiCutComposition, resolveProxyUrl } from "@/remotion/composition";
+import { VertiCutComposition, resolveProxyUrl, logDiagnostic } from "@/remotion/composition";
 import { useEditor } from "@/store/editor";
 import { Timeline } from "@/components/editor/Timeline";
 import { ImportSourcingModal } from "@/components/editor/ImportSourcingModal";
@@ -37,6 +37,65 @@ const COMP_HEIGHT = 1920;
 const GRADIENT_OVERLAY_URL = "https://i.ibb.co/C5phXbpz/Gradient-Overlay.png";
 const MediaDownloadModal = lazy(() => import("@/components/editor/MediaDownloadModal"));
 const SearchMediaPanel = lazy(() => import("@/components/editor/SearchMediaPanel"));
+
+// Define global diagnostic logger attachments and fetch intercepts
+if (typeof window !== "undefined") {
+  (window as any).__clientRenderLogs = (window as any).__clientRenderLogs || [];
+  (window as any).__addClientRenderLog = (
+    category: "render" | "image" | "remotion" | "proxy" | "browser",
+    level: "info" | "success" | "warning" | "error",
+    message: string,
+    details?: any
+  ) => {
+    const timestamp = new Date().toLocaleTimeString("it-IT"); // "HH:MM:SS"
+    const logEntry = { timestamp, category, level, message, details };
+    (window as any).__clientRenderLogs.push(logEntry);
+    window.dispatchEvent(new CustomEvent("client-render-log-added", { detail: logEntry }));
+  };
+
+  (window as any).__imageRequestCounts = (window as any).__imageRequestCounts || {};
+  (window as any).__trackImageRequest = (url: string, method: string) => {
+    const counts = (window as any).__imageRequestCounts;
+    const timestamp = new Date().toLocaleTimeString("it-IT");
+    if (counts[url]) {
+      counts[url].count += 1;
+      const count = counts[url].count;
+      (window as any).__addClientRenderLog(
+        "image",
+        "warning",
+        `[IMAGE] DUPLICATE REQUEST\nURL: ${url}\ncount: ${count}\nfirst request: ${counts[url].first}\nlatest request: ${timestamp}\nmethod: ${method}`
+      );
+    } else {
+      counts[url] = { count: 1, first: timestamp };
+    }
+  };
+
+  // Intercept fetch to track proxy network calls
+  const originalFetch = window.fetch;
+  window.fetch = async function (input, init) {
+    const urlStr = typeof input === "string" ? input : (input as any).url || "";
+    const isProxy = urlStr.includes("/api/proxy-image");
+    if (isProxy) {
+      (window as any).__addClientRenderLog("proxy", "info", `[PROXY] REQUEST\nurl: ${urlStr}`);
+    }
+    try {
+      const response = await originalFetch(input, init);
+      if (isProxy) {
+        (window as any).__addClientRenderLog(
+          "proxy",
+          response.ok ? "success" : "error",
+          `[PROXY] RESPONSE\nstatus: ${response.status}\nok: ${response.ok}\ncontent-type: ${response.headers.get("content-type") || ""}\nresponse URL: ${response.url}`
+        );
+      }
+      return response;
+    } catch (err) {
+      if (isProxy) {
+        (window as any).__addClientRenderLog("proxy", "error", `[PROXY] FAILED\nurl: ${urlStr}\nerror: ${String(err)}`);
+      }
+      throw err;
+    }
+  };
+}
 
 export const Route = createFileRoute("/project/$id")({
   component: EditorPage,
@@ -67,11 +126,79 @@ function EditorPage() {
   const [clientRenderEstimatedTime, setClientRenderEstimatedTime] = useState<number | null>(null);
   const [clientRenderFileUrl, setClientRenderFileUrl] = useState<string | null>(null);
   const [clientRenderError, setClientRenderError] = useState<string | null>(null);
+  const [logs, setLogs] = useState<{ timestamp: string; category: string; level: string; message: string; details?: any }[]>([]);
+  const [showLogs, setShowLogs] = useState(true);
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  const copyLogs = useCallback(() => {
+    const text = logs.map(l => `${l.timestamp} [${l.category.toUpperCase()}] ${l.message}`).join("\n");
+    navigator.clipboard.writeText(text);
+  }, [logs]);
+
+  const clearLogs = useCallback(() => {
+    if (typeof window !== "undefined") {
+      (window as any).__clientRenderLogs = [];
+      (window as any).__imageRequestCounts = {};
+    }
+    setLogs([]);
+  }, []);
+
+  // Auto-scroll logic
+  useEffect(() => {
+    if (logEndRef.current) {
+      logEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [logs]);
+
+  // Listen to CustomEvent for diagnostic logging
+  useEffect(() => {
+    const handleLog = (ev: Event) => {
+      const entry = (ev as CustomEvent).detail;
+      if (entry === null) {
+        setLogs([]);
+      } else {
+        setLogs((prev) => [...prev, entry]);
+      }
+    };
+    window.addEventListener("client-render-log-added", handleLog);
+    return () => window.removeEventListener("client-render-log-added", handleLog);
+  }, []);
+
+  // Set up global error capture
+  useEffect(() => {
+    const onError = (msg: string | Event, url?: string, line?: number, col?: number, error?: Error) => {
+      if (typeof window !== "undefined" && (window as any).__addClientRenderLog) {
+        (window as any).__addClientRenderLog(
+          "browser",
+          "error",
+          `[BROWSER ERROR]\nmessage: ${msg}\nsource: ${url}:${line}:${col}\nstack: ${error?.stack || ""}`
+        );
+      }
+    };
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      if (typeof window !== "undefined" && (window as any).__addClientRenderLog) {
+        (window as any).__addClientRenderLog(
+          "browser",
+          "error",
+          `[BROWSER ERROR]\nunhandled rejection: ${String(event.reason)}`
+        );
+      }
+    };
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onUnhandledRejection);
+    };
+  }, []);
 
   // Timeline height (resizable)
   const [timelineHeight, setTimelineHeight] = useState<number>(() => {
-    const saved = localStorage.getItem("verticut_timeline_height");
-    return saved ? Math.max(120, parseInt(saved, 10)) : 380;
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("verticut_timeline_height");
+      return saved ? Math.max(120, parseInt(saved, 10)) : 380;
+    }
+    return 380;
   });
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [durationOpen, setDurationOpen] = useState(false);
@@ -224,7 +351,42 @@ function EditorPage() {
       const img = new Image();
       img.decoding = "async";
       img.crossOrigin = "anonymous";
-      img.src = resolveProxyUrl(u);
+
+      const resolved = resolveProxyUrl(u);
+
+      // Duplication check
+      if (typeof window !== "undefined" && (window as any).__trackImageRequest) {
+        (window as any).__trackImageRequest(u, "preload");
+      }
+
+      logDiagnostic(
+        "image",
+        "info",
+        `[IMAGE] REQUEST\noriginal: ${u}\nresolved: ${resolved}\ncrossOrigin: anonymous\nloading method: preload`
+      );
+
+      // Silent HEAD check for proxy diagnostics
+      if (resolved.includes("/api/proxy-image")) {
+        fetch(resolved, { method: "HEAD" }).catch(() => { });
+      }
+
+      img.onload = () => {
+        logDiagnostic(
+          "image",
+          "success",
+          `[IMAGE] LOADED\nURL: ${u}\nnaturalWidth: ${img.naturalWidth}\nnaturalHeight: ${img.naturalHeight}\nloading method: preload`
+        );
+      };
+
+      img.onerror = (err) => {
+        logDiagnostic(
+          "image",
+          "error",
+          `[IMAGE] FAILED\noriginal URL: ${u}\nresolved URL: ${resolved}\ncrossOrigin: anonymous\nloading method: preload\nerror message: ${String(err)}`
+        );
+      };
+
+      img.src = resolved;
       imgs.push(img);
     }
     return () => {
@@ -414,16 +576,80 @@ function EditorPage() {
     }
   }
 
+  function scanMP4Tracks(arrayBuffer: ArrayBuffer) {
+    const view = new DataView(arrayBuffer);
+    const len = view.byteLength;
+    let soundTrackFound = false;
+    let mp4aCodecFound = false;
+    let trackCount = 0;
+
+    for (let i = 0; i < len - 4; i += 1) {
+      const c1 = view.getUint8(i);
+      const c2 = view.getUint8(i + 1);
+      const c3 = view.getUint8(i + 2);
+      const c4 = view.getUint8(i + 3);
+
+      if (c1 === 116 && c2 === 114 && c3 === 97 && c4 === 107) { // 'trak'
+        trackCount++;
+      }
+      if (c1 === 115 && c2 === 111 && c3 === 117 && c4 === 110) { // 'soun'
+        soundTrackFound = true;
+      }
+      if (c1 === 109 && c2 === 112 && c3 === 52 && c4 === 97) { // 'mp4a'
+        mp4aCodecFound = true;
+      }
+    }
+
+    return {
+      trackCount,
+      soundTrackFound,
+      mp4aCodecFound,
+    };
+  }
+
   async function onClientRender() {
     setClientRenderError(null);
     setClientRenderFileUrl(null);
     setClientRenderProgress(0);
     setClientRenderEstimatedTime(null);
+
+    // RESET log buffers
+    if (typeof window !== "undefined") {
+      (window as any).__clientRenderLogs = [];
+      (window as any).__imageRequestCounts = {};
+      window.dispatchEvent(new CustomEvent("client-render-log-added", { detail: null }));
+    }
+
+    logDiagnostic("render", "info", `[RENDER] START`);
+    logDiagnostic("render", "info", `[RENDER] Preparing`);
+    logDiagnostic("render", "info", `[RENDER] Configuration:\n- Composition ID: verticut-video\n- Width: ${COMP_WIDTH}\n- Height: ${COMP_HEIGHT}\n- FPS: ${FPS}\n- Duration: ${audioDuration}s\n- Total frames: ${totalFrames}\n- Current URL: ${window.location.href}\n- Render mode: Browser Client Render\n- Host origin: ${window.location.origin}`);
+
+    logDiagnostic("render", "info", `[AUDIO] Project audio tracks: ${audioUrl ? 1 : 0}`);
+    logDiagnostic("render", "info", `[AUDIO] Active audio clips: ${audioSegments ? audioSegments.length : 0}`);
+    if (audioUrl) {
+      logDiagnostic("render", "info", `[AUDIO] Clip:\n  id: VOICEOVER\n  src: ${audioUrl}\n  startFrame: 0\n  durationInFrames: ${totalFrames}\n  volume: 1\n  muted: false`);
+    }
+    if (settings.musicUrl) {
+      logDiagnostic("render", "info", `[AUDIO] Clip:\n  id: MUSIC\n  src: ${settings.musicUrl}\n  startFrame: 0\n  durationInFrames: ${totalFrames}\n  volume: ${settings.musicVolume / 100}\n  muted: false`);
+    }
+    if (audioSegments) {
+      audioSegments.forEach((seg, idx) => {
+        logDiagnostic("render", "info", `[AUDIO] Clip:\n  id: ${seg.id || idx}\n  src: ${audioUrl}\n  startFrame: ${Math.round(seg.projStart * FPS)}\n  durationInFrames: ${Math.round(seg.duration * FPS)}\n  volume: 1\n  muted: false`);
+      });
+    }
+
     try {
+      logDiagnostic("render", "info", `[RENDER] Loading assets`);
       await saveProject({ data: { id, clips } });
       await saveGlobalSettings({ data: { settings } });
 
-      const { getBlob } = await renderMediaOnWeb({
+      logDiagnostic("render", "info", `[RENDER] Assets ready`);
+      logDiagnostic("render", "info", `[RENDER] Remotion render started`);
+      logDiagnostic("render", "info", `[RENDER] WebCodecs started`);
+
+      let lastLoggedProgress = -1;
+
+      const renderOptions = {
         composition: {
           component: VertiCutComposition as any,
           durationInFrames: totalFrames,
@@ -432,21 +658,59 @@ function EditorPage() {
           height: COMP_HEIGHT,
           calculateMetadata: null,
           id: "verticut-video",
-          defaultProps: inputProps as any,
+          defaultProps: { ...inputProps, isRendering: true } as any,
         } as any,
-        inputProps: inputProps,
+        inputProps: { ...inputProps, isRendering: true },
+        audioCodec: "aac" as const,
+      };
+
+      logDiagnostic("render", "info", `[AUDIO] renderMediaOnWeb options:\n` + JSON.stringify({
+        compositionId: renderOptions.composition.id,
+        durationInFrames: renderOptions.composition.durationInFrames,
+        audioCodec: renderOptions.audioCodec,
+        hasInputProps: !!renderOptions.inputProps,
+        audioUrl: renderOptions.inputProps?.audioUrl,
+        musicUrl: renderOptions.inputProps?.musicUrl,
+        isRenderingProp: renderOptions.inputProps?.isRendering,
+      }, null, 2));
+
+      const { getBlob } = await renderMediaOnWeb({
+        ...renderOptions,
         onProgress: ({ progress, renderEstimatedTime }) => {
           setClientRenderProgress(progress);
           setClientRenderEstimatedTime(renderEstimatedTime);
+
+          const pct = Math.round(progress * 100);
+          if (pct >= lastLoggedProgress + 5 || pct === 100) {
+            logDiagnostic("render", "info", `[RENDER] Progress ${pct}%`);
+            lastLoggedProgress = pct - (pct % 5);
+          }
         },
       });
 
       const blob = await getBlob();
       const url = URL.createObjectURL(blob);
       setClientRenderFileUrl(url);
+      logDiagnostic("render", "success", `[RENDER] COMPLETE`);
+
+      logDiagnostic("render", "info", `[AUDIO] Output MIME: ${blob.type}`);
+      logDiagnostic("render", "info", `[AUDIO] Output size: ${blob.size} bytes`);
+
+      try {
+        const slice = blob.slice(0, Math.min(blob.size, 2 * 1024 * 1024));
+        const arrayBuffer = await slice.arrayBuffer();
+        const scanResult = scanMP4Tracks(arrayBuffer);
+        logDiagnostic("render", "info", `[AUDIO] MP4 Structural verification:`);
+        logDiagnostic("render", "info", `  Total trak boxes found: ${scanResult.trackCount}`);
+        logDiagnostic("render", "info", `  Sound media handler (soun) found: ${scanResult.soundTrackFound}`);
+        logDiagnostic("render", "info", `  AAC Audio codec descriptor (mp4a) found: ${scanResult.mp4aCodecFound}`);
+      } catch (scanErr) {
+        logDiagnostic("render", "warning", `[AUDIO] Scanning MP4 binary failed: ${String(scanErr)}`);
+      }
     } catch (e) {
       console.error(e);
       setClientRenderError(String(e));
+      logDiagnostic("render", "error", `[RENDER] FAILED\nprogress: ${Math.round((clientRenderProgress || 0) * 100)}%\nerror message: ${String(e)}\nstack: ${(e as any)?.stack || ""}`);
     }
   }
 
@@ -1511,7 +1775,7 @@ function EditorPage() {
       {/* Browser Client Rendering Modal */}
       {clientRenderProgress !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm rounded-lg border border-border bg-panel p-6 shadow-2xl">
+          <div className="w-full max-w-lg rounded-lg border border-border bg-panel p-6 shadow-2xl">
             <h3 className="text-sm font-bold text-foreground">Browser Rendering</h3>
             <p className="mt-1 text-[11px] text-muted-foreground font-light">
               We are encoding your video directly in the browser using WebCodecs.
@@ -1556,6 +1820,49 @@ function EditorPage() {
                 )}
               </div>
             )}
+
+            {/* Debug Logs Panel */}
+            <div className="mt-5 border-t border-border pt-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-[11px] font-bold text-foreground uppercase tracking-wider">Debug Logs</span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={copyLogs}
+                    className="h-5 rounded bg-neutral-800 hover:bg-neutral-700 px-2 text-[9px] font-bold text-foreground transition-colors"
+                  >
+                    Copy Logs
+                  </button>
+                  <button
+                    onClick={clearLogs}
+                    className="h-5 rounded bg-neutral-800 border border-border px-2 text-[9px] font-bold text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    Clear Logs
+                  </button>
+                </div>
+              </div>
+              <div className="bg-black/35 rounded border border-border/50 p-2.5 max-h-48 overflow-y-auto font-mono text-[9px] leading-relaxed text-neutral-300">
+                {logs.length === 0 ? (
+                  <p className="text-muted-foreground italic font-light">No logs recorded yet.</p>
+                ) : (
+                  <div className="space-y-1 whitespace-pre-wrap">
+                    {logs.map((log, idx) => (
+                      <div key={idx} className={
+                        log.level === 'error' ? 'text-destructive' :
+                          log.level === 'warning' ? 'text-amber-400' :
+                            log.level === 'success' ? 'text-emerald-400' : 'text-neutral-300'
+                      }>
+                        <span className="text-muted-foreground mr-1.5 font-light">{log.timestamp}</span>
+                        <span className="font-semibold uppercase mr-1.5 text-[8px] opacity-75">
+                          [{log.category}]
+                        </span>
+                        {log.message}
+                      </div>
+                    ))}
+                    <div ref={logEndRef} />
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div className="mt-5 flex justify-end">
               <button
