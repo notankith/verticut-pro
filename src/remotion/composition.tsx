@@ -38,6 +38,23 @@ const CONTRAST_MULTIPLIER = 1.3;
 const TRANSITION_DIRECTIONS = ["slide-left", "slide-right", "slide-up", "slide-down"] as const;
 const DEFAULT_GRADIENT_OVERLAY_URL = "https://i.ibb.co/C5phXbpz/Gradient-Overlay.png";
 
+export function resolveProxyUrl(url: string) {
+  if (!url) return "";
+  if (
+    url.startsWith("/") ||
+    url.startsWith("data:") ||
+    url.startsWith("blob:") ||
+    url.startsWith("http://localhost") ||
+    url.startsWith("https://localhost")
+  ) {
+    return url;
+  }
+  if (typeof window !== "undefined" && window.location) {
+    return `${window.location.origin}/api/proxy-image?url=${encodeURIComponent(url)}`;
+  }
+  return `/api/proxy-image?url=${encodeURIComponent(url)}`;
+}
+
 type TransitionKind = (typeof TRANSITION_DIRECTIONS)[number];
 
 function getBoundaryTransition(index: number): TransitionKind | null {
@@ -182,7 +199,8 @@ function KenBurns({
           />
         ) : imageUrl && /\.gif($|\?)/i.test(imageUrl) ? (
           <AnimatedImage
-            src={imageUrl}
+            src={resolveProxyUrl(imageUrl)}
+            {...({ crossOrigin: "anonymous" } as any)}
             style={{
               width: "100%",
               height: "100%",
@@ -191,7 +209,8 @@ function KenBurns({
           />
         ) : (
           <Img
-            src={imageUrl || ""}
+            src={resolveProxyUrl(imageUrl || "")}
+            crossOrigin="anonymous"
             style={{
               width: "100%",
               height: "100%",
@@ -758,7 +777,8 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
 
       {enableGradientOverlay ? (
         <Img
-          src={gradientOverlayUrl || DEFAULT_GRADIENT_OVERLAY_URL}
+          src={resolveProxyUrl(gradientOverlayUrl || DEFAULT_GRADIENT_OVERLAY_URL)}
+          crossOrigin="anonymous"
           style={{
             position: "absolute",
             left: 0,
@@ -776,7 +796,8 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
 
       {overlayUrl ? (
         <Img
-          src={overlayUrl}
+          src={resolveProxyUrl(overlayUrl)}
+          crossOrigin="anonymous"
           style={{
             position: "absolute",
             left: 0,

@@ -11,7 +11,7 @@ import {
   saveProject,
   type ProjectFull,
 } from "@/api.functions";
-import { VertiCutComposition } from "@/remotion/composition";
+import { VertiCutComposition, resolveProxyUrl } from "@/remotion/composition";
 import { useEditor } from "@/store/editor";
 import { Timeline } from "@/components/editor/Timeline";
 import { ImportSourcingModal } from "@/components/editor/ImportSourcingModal";
@@ -22,6 +22,13 @@ import { useAutoSave, useTimelineActions, findNextStart } from "@/components/edi
 import { extractAndUploadImagesFromClipboard, extractAndUploadPastedImages, fetchAndUploadImageUrl, uploadToR2 } from "@/lib/upload";
 import { getTemplateById, TEMPLATES } from "@/lib/templates";
 import type { AudioSegment, ClipDoc } from "@/server/mongo.server";
+import { renderMediaOnWeb } from "@remotion/web-renderer";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 
 const FPS = 30;
@@ -55,6 +62,11 @@ function EditorPage() {
   const fileImportRef = useRef<HTMLInputElement>(null);
   const previewDropRef = useRef<HTMLElement | null>(null);
   const dragDepthRef = useRef(0);
+
+  const [clientRenderProgress, setClientRenderProgress] = useState<number | null>(null);
+  const [clientRenderEstimatedTime, setClientRenderEstimatedTime] = useState<number | null>(null);
+  const [clientRenderFileUrl, setClientRenderFileUrl] = useState<string | null>(null);
+  const [clientRenderError, setClientRenderError] = useState<string | null>(null);
 
   // Timeline height (resizable)
   const [timelineHeight, setTimelineHeight] = useState<number>(() => {
@@ -211,7 +223,8 @@ function EditorPage() {
     for (const u of urls) {
       const img = new Image();
       img.decoding = "async";
-      img.src = u;
+      img.crossOrigin = "anonymous";
+      img.src = resolveProxyUrl(u);
       imgs.push(img);
     }
     return () => {
@@ -398,6 +411,42 @@ function EditorPage() {
       alert("Failed to enqueue render: " + e);
     } finally {
       setEnqueuing(false);
+    }
+  }
+
+  async function onClientRender() {
+    setClientRenderError(null);
+    setClientRenderFileUrl(null);
+    setClientRenderProgress(0);
+    setClientRenderEstimatedTime(null);
+    try {
+      await saveProject({ data: { id, clips } });
+      await saveGlobalSettings({ data: { settings } });
+
+      const { getBlob } = await renderMediaOnWeb({
+        composition: {
+          component: VertiCutComposition as any,
+          durationInFrames: totalFrames,
+          fps: FPS,
+          width: COMP_WIDTH,
+          height: COMP_HEIGHT,
+          calculateMetadata: null,
+          id: "verticut-video",
+          defaultProps: inputProps as any,
+        } as any,
+        inputProps: inputProps,
+        onProgress: ({ progress, renderEstimatedTime }) => {
+          setClientRenderProgress(progress);
+          setClientRenderEstimatedTime(renderEstimatedTime);
+        },
+      });
+
+      const blob = await getBlob();
+      const url = URL.createObjectURL(blob);
+      setClientRenderFileUrl(url);
+    } catch (e) {
+      console.error(e);
+      setClientRenderError(String(e));
     }
   }
 
@@ -841,14 +890,25 @@ function EditorPage() {
             </button>
           </div>
 
-          {/* Red Export Button */}
-          <button
-            onClick={onExport}
-            disabled={enqueuing || clips.length === 0}
-            className="flex items-center gap-1.5 h-7.5 rounded bg-primary text-primary-foreground font-bold text-[11px] px-4 py-1.5 shadow hover:opacity-90 disabled:opacity-50"
-          >
-            <Share className="h-3.5 w-3.5" /> Export
-          </button>
+          {/* Red Export Button Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                disabled={enqueuing || clips.length === 0}
+                className="flex items-center gap-1.5 h-7.5 rounded bg-primary text-primary-foreground font-bold text-[11px] px-4 py-1.5 shadow hover:opacity-90 disabled:opacity-50"
+              >
+                <Share className="h-3.5 w-3.5" /> Export <ChevronDown className="h-3 w-3 opacity-70" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="bg-panel border border-border text-foreground">
+              <DropdownMenuItem onClick={onExport} className="text-xs cursor-pointer hover:bg-accent px-3 py-2 flex items-center gap-2 text-foreground/90">
+                Server Render (VPS)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onClientRender} className="text-xs cursor-pointer hover:bg-accent px-3 py-2 flex items-center gap-2 text-foreground/90">
+                Client Render (Browser)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
@@ -1447,6 +1507,74 @@ function EditorPage() {
       <Suspense fallback={null}>
         <MediaDownloadModal open={mediaDownloadOpen} onOpenChange={setMediaDownloadOpen} />
       </Suspense>
+
+      {/* Browser Client Rendering Modal */}
+      {clientRenderProgress !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-lg border border-border bg-panel p-6 shadow-2xl">
+            <h3 className="text-sm font-bold text-foreground">Browser Rendering</h3>
+            <p className="mt-1 text-[11px] text-muted-foreground font-light">
+              We are encoding your video directly in the browser using WebCodecs.
+            </p>
+
+            {clientRenderError ? (
+              <div className="mt-4 rounded border border-destructive/25 bg-destructive/10 p-3 text-xs text-destructive">
+                {clientRenderError}
+              </div>
+            ) : clientRenderFileUrl ? (
+              <div className="mt-4 text-center">
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/12 text-emerald-400 mb-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                  </svg>
+                </span>
+                <p className="text-xs font-semibold text-emerald-400">Render complete!</p>
+                <a
+                  href={clientRenderFileUrl}
+                  download={`verticut_${id}.mp4`}
+                  className="mt-3.5 inline-flex w-full items-center justify-center gap-1.5 h-8.5 rounded bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold shadow"
+                >
+                  Download Video
+                </a>
+              </div>
+            ) : (
+              <div className="mt-5">
+                <div className="flex justify-between text-[10px] text-muted-foreground mb-1 font-medium">
+                  <span>Progress</span>
+                  <span>{Math.round(clientRenderProgress * 100)}%</span>
+                </div>
+                <div className="h-1.5 w-full rounded-full bg-neutral-800 overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all duration-300 ease-out"
+                    style={{ width: `${clientRenderProgress * 100}%` }}
+                  />
+                </div>
+                {clientRenderEstimatedTime !== null && (
+                  <p className="mt-2 text-[10px] text-neutral-400 text-right">
+                    Estimated time remaining: {Math.ceil(clientRenderEstimatedTime / 1000)}s
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="mt-5 flex justify-end">
+              <button
+                onClick={() => {
+                  setClientRenderProgress(null);
+                  setClientRenderError(null);
+                  if (clientRenderFileUrl) {
+                    URL.revokeObjectURL(clientRenderFileUrl);
+                    setClientRenderFileUrl(null);
+                  }
+                }}
+                className="h-8 rounded border border-border bg-panel-2 hover:bg-accent px-4 text-xs font-semibold text-foreground transition-colors"
+              >
+                {clientRenderFileUrl || clientRenderError ? "Close" : "Cancel"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

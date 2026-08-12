@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProjectIdRouteImport } from './routes/project/$id'
 import { Route as ApiSearchMediaRouteImport } from './routes/api/search-media'
+import { Route as ApiProxyImageRouteImport } from './routes/api/proxy-image'
 import { Route as ApiPresignUploadRouteImport } from './routes/api/presign-upload'
 import { Route as ApiFetchAndUploadImageRouteImport } from './routes/api/fetch-and-upload-image'
 import { Route as ApiPublicRenderCompleteRouteImport } from './routes/api/public/render-complete'
@@ -43,6 +44,11 @@ const ApiSearchMediaRoute = ApiSearchMediaRouteImport.update({
   path: '/api/search-media',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiProxyImageRoute = ApiProxyImageRouteImport.update({
+  id: '/api/proxy-image',
+  path: '/api/proxy-image',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPresignUploadRoute = ApiPresignUploadRouteImport.update({
   id: '/api/presign-upload',
   path: '/api/presign-upload',
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/signup': typeof SignupRoute
   '/api/fetch-and-upload-image': typeof ApiFetchAndUploadImageRoute
   '/api/presign-upload': typeof ApiPresignUploadRoute
+  '/api/proxy-image': typeof ApiProxyImageRoute
   '/api/search-media': typeof ApiSearchMediaRoute
   '/project/$id': typeof ProjectIdRoute
   '/api/public/render-complete': typeof ApiPublicRenderCompleteRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/api/fetch-and-upload-image': typeof ApiFetchAndUploadImageRoute
   '/api/presign-upload': typeof ApiPresignUploadRoute
+  '/api/proxy-image': typeof ApiProxyImageRoute
   '/api/search-media': typeof ApiSearchMediaRoute
   '/project/$id': typeof ProjectIdRoute
   '/api/public/render-complete': typeof ApiPublicRenderCompleteRoute
@@ -86,6 +94,7 @@ export interface FileRoutesById {
   '/signup': typeof SignupRoute
   '/api/fetch-and-upload-image': typeof ApiFetchAndUploadImageRoute
   '/api/presign-upload': typeof ApiPresignUploadRoute
+  '/api/proxy-image': typeof ApiProxyImageRoute
   '/api/search-media': typeof ApiSearchMediaRoute
   '/project/$id': typeof ProjectIdRoute
   '/api/public/render-complete': typeof ApiPublicRenderCompleteRoute
@@ -98,6 +107,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/api/fetch-and-upload-image'
     | '/api/presign-upload'
+    | '/api/proxy-image'
     | '/api/search-media'
     | '/project/$id'
     | '/api/public/render-complete'
@@ -108,6 +118,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/api/fetch-and-upload-image'
     | '/api/presign-upload'
+    | '/api/proxy-image'
     | '/api/search-media'
     | '/project/$id'
     | '/api/public/render-complete'
@@ -118,6 +129,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/api/fetch-and-upload-image'
     | '/api/presign-upload'
+    | '/api/proxy-image'
     | '/api/search-media'
     | '/project/$id'
     | '/api/public/render-complete'
@@ -129,6 +141,7 @@ export interface RootRouteChildren {
   SignupRoute: typeof SignupRoute
   ApiFetchAndUploadImageRoute: typeof ApiFetchAndUploadImageRoute
   ApiPresignUploadRoute: typeof ApiPresignUploadRoute
+  ApiProxyImageRoute: typeof ApiProxyImageRoute
   ApiSearchMediaRoute: typeof ApiSearchMediaRoute
   ProjectIdRoute: typeof ProjectIdRoute
   ApiPublicRenderCompleteRoute: typeof ApiPublicRenderCompleteRoute
@@ -171,6 +184,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSearchMediaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/proxy-image': {
+      id: '/api/proxy-image'
+      path: '/api/proxy-image'
+      fullPath: '/api/proxy-image'
+      preLoaderRoute: typeof ApiProxyImageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/presign-upload': {
       id: '/api/presign-upload'
       path: '/api/presign-upload'
@@ -201,6 +221,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignupRoute: SignupRoute,
   ApiFetchAndUploadImageRoute: ApiFetchAndUploadImageRoute,
   ApiPresignUploadRoute: ApiPresignUploadRoute,
+  ApiProxyImageRoute: ApiProxyImageRoute,
   ApiSearchMediaRoute: ApiSearchMediaRoute,
   ProjectIdRoute: ProjectIdRoute,
   ApiPublicRenderCompleteRoute: ApiPublicRenderCompleteRoute,
