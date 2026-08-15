@@ -210,6 +210,7 @@ function EditorPage() {
   const [activeSidebarTab, setActiveSidebarTab] = useState<"search" | "animation" | "media" | "captions">("search");
   const [mediaOpen, setMediaOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<"media" | "preview" | "transcript" | "timeline">("preview");
   const mediaTimeoutRef = useRef<any>(null);
   const newTimeoutRef = useRef<any>(null);
 
@@ -1201,12 +1202,12 @@ function EditorPage() {
         </div>
       ) : (
         <>
-          <div className="flex flex-1 min-h-0 gap-2 px-2 pb-2 pt-2">
+          <div className="flex flex-col lg:flex-row flex-grow min-h-0 gap-2 px-2 pb-2 pt-2">
             {/* Left: Tabbed Sidebar with Vertical Selector Strip on the left & Active Panel on the right */}
-            <div className={`flex shrink-0 select-none transition-all duration-200 ${activeSidebarTab === "search" ? "w-[550px]" : "w-80"}`}>
+            <div className={`shrink-0 select-none transition-all duration-200 ${activeSidebarTab === "search" ? "lg:w-[550px]" : "lg:w-80"} w-full lg:flex ${mobileTab === "media" ? "flex flex-col lg:flex-row" : "hidden"}`}>
 
               {/* Leftmost narrow vertical tab icon bar */}
-              <nav className="w-[68px] bg-panel-2 border border-border border-r-0 rounded-l-md flex flex-col items-center py-4 gap-4.5 shrink-0">
+              <nav className="w-full lg:w-[68px] bg-panel-2 border border-border lg:border-r-0 rounded-t-md lg:rounded-l-md lg:rounded-tr-none flex flex-row lg:flex-col items-center justify-around lg:justify-start py-2 lg:py-4 gap-2 lg:gap-4.5 shrink-0">
                 {/* Search Media tab button */}
                 <button
                   type="button"
@@ -1215,12 +1216,12 @@ function EditorPage() {
                     }`}
                 >
                   {activeSidebarTab === "search" && (
-                    <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary rounded-r" />
+                    <div className="absolute left-0 right-0 bottom-0 lg:bottom-0 lg:top-0 lg:left-0 lg:right-auto h-[3px] lg:h-auto lg:w-[3px] bg-primary rounded-t lg:rounded-r" />
                   )}
                   <div className={`p-1.5 rounded-lg transition-colors ${activeSidebarTab === "search" ? "bg-primary/10 text-primary" : "group-hover:bg-accent"}`}>
                     <SearchIcon className="h-4.5 w-4.5" />
                   </div>
-                  <span className="text-[9px] font-bold tracking-tight text-center leading-tight">Search<br />Media</span>
+                  <span className="text-[9px] font-bold tracking-tight text-center leading-tight">Search<br className="hidden lg:inline" /> Media</span>
                 </button>
 
                 {/* Animation tab button */}
@@ -1231,7 +1232,7 @@ function EditorPage() {
                     }`}
                 >
                   {activeSidebarTab === "animation" && (
-                    <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary rounded-r" />
+                    <div className="absolute left-0 right-0 bottom-0 lg:bottom-0 lg:top-0 lg:left-0 lg:right-auto h-[3px] lg:h-auto lg:w-[3px] bg-primary rounded-t lg:rounded-r" />
                   )}
                   <div className={`p-1.5 rounded-lg transition-colors ${activeSidebarTab === "animation" ? "bg-primary/10 text-primary" : "group-hover:bg-accent"}`}>
                     <Settings className="h-4.5 w-4.5" />
@@ -1247,7 +1248,7 @@ function EditorPage() {
                     }`}
                 >
                   {activeSidebarTab === "media" && (
-                    <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary rounded-r" />
+                    <div className="absolute left-0 right-0 bottom-0 lg:bottom-0 lg:top-0 lg:left-0 lg:right-auto h-[3px] lg:h-auto lg:w-[3px] bg-primary rounded-t lg:rounded-r" />
                   )}
                   <div className={`p-1.5 rounded-lg transition-colors ${activeSidebarTab === "media" ? "bg-primary/10 text-primary" : "group-hover:bg-accent"}`}>
                     <ImageIcon className="h-4.5 w-4.5" />
@@ -1263,7 +1264,7 @@ function EditorPage() {
                     }`}
                 >
                   {activeSidebarTab === "captions" && (
-                    <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary rounded-r" />
+                    <div className="absolute left-0 right-0 bottom-0 lg:bottom-0 lg:top-0 lg:left-0 lg:right-auto h-[3px] lg:h-auto lg:w-[3px] bg-primary rounded-t lg:rounded-r" />
                   )}
                   <div className={`p-1.5 rounded-lg transition-colors ${activeSidebarTab === "captions" ? "bg-primary/10 text-primary" : "group-hover:bg-accent"}`}>
                     <FileText className="h-4.5 w-4.5" />
@@ -1273,7 +1274,7 @@ function EditorPage() {
               </nav>
 
               {/* Right Sidebar Content Panel */}
-              <aside className={`shrink-0 overflow-hidden rounded-r-md border border-border bg-panel flex flex-col transition-all duration-200 ${activeSidebarTab === "search" ? "w-[482px]" : "w-[252px]"
+              <aside className={`w-full lg:shrink-0 overflow-hidden rounded-b-md lg:rounded-r-md lg:rounded-bl-none border border-border bg-panel flex flex-col transition-all duration-200 ${activeSidebarTab === "search" ? "lg:w-[482px]" : "lg:w-[252px]"
                 }`}>
                 <div className="flex-1 overflow-hidden min-h-0 relative">
                   <div className={activeSidebarTab !== "search" ? "hidden" : "h-full"}>
@@ -1300,7 +1301,7 @@ function EditorPage() {
             {/* Center preview */}
             <main
               ref={previewDropRef}
-              className={`relative flex flex-1 min-w-0 flex-col items-center justify-center gap-4 rounded-md border border-border bg-track p-4 transition-colors ${dragOver ? "bg-primary/10 ring-2 ring-primary" : ""}`}
+              className={`relative flex flex-1 min-w-0 flex-col items-center justify-center gap-4 rounded-md border border-border bg-track p-4 transition-colors ${dragOver ? "bg-primary/10 ring-2 ring-primary" : ""} ${mobileTab === "preview" ? "flex" : "hidden lg:flex"}`}
             >
               {dragOver && (
                 <div className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-primary/5 backdrop-blur-sm">
@@ -1318,7 +1319,7 @@ function EditorPage() {
               >
                 <ImageIcon className="h-3 w-3" /> Import images
               </button>
-              <div className="relative" style={{ aspectRatio: "9 / 16", height: "min(100%, 90vh)" }}>
+              <div className="relative h-[360px] sm:h-[480px] lg:h-[min(100%,90vh)]" style={{ aspectRatio: "9 / 16" }}>
                 <Player
                   ref={playerRef}
                   component={VertiCutComposition}
@@ -1434,13 +1435,16 @@ function EditorPage() {
             </main>
 
             {/* Right: word-level transcript */}
-            <aside className="w-80 shrink-0 overflow-hidden rounded-md border border-border bg-panel">
+            <aside className={`w-full lg:w-80 lg:shrink-0 overflow-hidden rounded-md border border-border bg-panel h-[calc(100vh-140px)] lg:h-auto ${mobileTab === "transcript" ? "flex flex-col" : "hidden lg:flex lg:flex-col"}`}>
               <WordTranscript playerRef={playerRef} fps={FPS} onSeek={seekTo} />
             </aside>
           </div>
 
           {/* Timeline: resizable */}
-          <div className="mx-2 mb-2 overflow-hidden rounded-md border border-border" style={{ height: timelineHeight }}>
+          <div
+            className={`mx-2 mb-2 overflow-hidden rounded-md border border-border ${mobileTab === "timeline" ? "block" : "hidden lg:block"}`}
+            style={{ height: mobileTab === "timeline" ? "calc(100vh - 120px)" : timelineHeight }}
+          >
             {/* Divider / handle */}
             <div
               onPointerDown={(e) => {
@@ -1465,6 +1469,49 @@ function EditorPage() {
               className="h-2.5 w-full cursor-row-resize bg-panel/70"
             />
             <Timeline playerRef={playerRef} fps={FPS} onSeek={seekTo} />
+          </div>
+
+          {/* Mobile Tab Bar Selector */}
+          <div className="lg:hidden sticky bottom-0 z-38 flex items-center justify-around border-t border-border bg-panel px-2 py-1.5 shadow-lg select-none">
+            <button
+              type="button"
+              onClick={() => setMobileTab("media")}
+              className={`flex flex-col items-center gap-1 py-1 px-3 rounded-md transition ${mobileTab === "media" ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
+                }`}
+            >
+              <ImageIcon className="h-4.5 w-4.5" />
+              <span className="text-[10px] font-bold">Media</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMobileTab("preview")}
+              className={`flex flex-col items-center gap-1 py-1 px-3 rounded-md transition ${mobileTab === "preview" ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
+                }`}
+            >
+              <Play className="h-4.5 w-4.5" />
+              <span className="text-[10px] font-bold">Preview</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMobileTab("transcript")}
+              className={`flex flex-col items-center gap-1 py-1 px-3 rounded-md transition ${mobileTab === "transcript" ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
+                }`}
+            >
+              <FileText className="h-4.5 w-4.5" />
+              <span className="text-[10px] font-bold">Transcript</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMobileTab("timeline")}
+              className={`flex flex-col items-center gap-1 py-1 px-3 rounded-md transition ${mobileTab === "timeline" ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
+                }`}
+            >
+              <Film className="h-4.5 w-4.5" />
+              <span className="text-[10px] font-bold">Timeline</span>
+            </button>
           </div>
         </>
       )}

@@ -36,7 +36,7 @@ export function Timeline({
   const clipsEnd = clips.reduce((max, c) => Math.max(max, c.start + c.duration), 0);
   const projectDuration = Math.max(audioDuration || 0, clipsEnd, 1);
   const totalWidth = Math.max(projectDuration * zoom, 1);
-  const headerWidth = 140;
+  const headerWidth = 110;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -132,7 +132,8 @@ export function Timeline({
             >
               <div className="flex items-center gap-1.5 min-w-0">
                 <Film className="h-3.5 w-3.5 text-primary shrink-0" />
-                <span className="text-[10.5px] font-bold text-foreground truncate">Media Layer</span>
+                <span className="text-[10.5px] font-bold text-foreground truncate sm:inline hidden">Media Layer</span>
+                <span className="text-[10.5px] font-bold text-foreground truncate sm:hidden inline">Media</span>
               </div>
               <button
                 type="button"
@@ -186,7 +187,8 @@ export function Timeline({
               >
                 <div className="flex items-center gap-1.5 min-w-0">
                   <Layers className="h-3.5 w-3.5 text-primary shrink-0" />
-                  <span className="text-[10.5px] font-bold text-foreground truncate">Overlay Layer</span>
+                  <span className="text-[10.5px] font-bold text-foreground truncate sm:inline hidden">Overlay Layer</span>
+                  <span className="text-[10.5px] font-bold text-foreground truncate sm:hidden inline">Overlay</span>
                 </div>
                 <button
                   type="button"
@@ -233,7 +235,8 @@ export function Timeline({
             >
               <div className="flex items-center gap-1.5 min-w-0">
                 <Music className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                <span className="text-[10.5px] font-bold text-foreground truncate divide-y">Audio Layer</span>
+                <span className="text-[10.5px] font-bold text-foreground truncate sm:inline hidden">Audio Layer</span>
+                <span className="text-[10.5px] font-bold text-foreground truncate sm:hidden inline">Audio</span>
               </div>
               <button
                 type="button"

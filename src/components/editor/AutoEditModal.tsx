@@ -451,7 +451,7 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
 
     return (
         <Dialog open={open} onOpenChange={(val) => !processing && onOpenChange(val)}>
-            <DialogContent className="w-full sm:max-w-[780px] bg-panel border-border text-foreground overflow-hidden flex flex-col max-h-[95vh] p-0 animate-scale-in">
+            <DialogContent className="fixed left-[50%] translate-x-[-50%] top-6 translate-y-0 sm:top-[50%] sm:translate-y-[-50%] w-[94vw] sm:max-w-[780px] bg-panel border-border text-foreground overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[95vh] p-0 animate-scale-in">
                 <DialogHeader className="border-b border-border p-4">
                     <DialogTitle className="flex items-center justify-between text-sm uppercase tracking-wider font-bold text-foreground w-full pr-6">
                         <span className="flex items-center gap-2">
@@ -477,11 +477,11 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                             <textarea
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
-                                className="w-full h-[220px] bg-panel-2 border border-border rounded-md p-3 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary resize-none placeholder:text-muted-foreground/50 transition"
+                                className="w-full h-[120px] sm:h-[220px] bg-panel-2 border border-border rounded-md p-3 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary resize-none placeholder:text-muted-foreground/50 transition shrink-0"
                                 placeholder={`{\n  "segments": [\n    {\n      "start": 0.0,\n      "end": 2.8,\n      "query": "Cristiano Ronaldo playing"\n    },\n    {\n      "start": 2.8,\n      "end": 5.7,\n      "query": "Real Madrid stadium crowd"\n    }\n  ]\n}`}
                             />
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-panel-2 p-3.5 rounded-lg border border-border/60">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-panel-2 p-3.5 rounded-lg border border-border/60 shrink-0">
                                 <div className="flex items-center gap-2">
                                     <input
                                         type="checkbox"
@@ -514,22 +514,6 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                                     <span>{error}</span>
                                 </div>
                             )}
-
-                            <div className="flex justify-end gap-2 border-t border-border pt-4">
-                                <button
-                                    onClick={() => onOpenChange(false)}
-                                    className="px-4 py-2 text-xs border border-border rounded hover:bg-accent transition cursor-pointer font-semibold"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleStart}
-                                    className="px-4 py-2 text-xs bg-primary text-primary-foreground rounded hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5 transition cursor-pointer font-semibold"
-                                    disabled={!input.trim()}
-                                >
-                                    <Play className="h-3 w-3" /> Start Auto Edit
-                                </button>
-                            </div>
                         </>
                     ) : autoImport ? (
                         // AUTOMATIC PROGRESS LOG VIEW
@@ -552,12 +536,12 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                                     <div
                                         key={log.segmentIndex}
                                         className={`flex items-start gap-2 py-0.5 border-b border-border/20 last:border-none ${log.status === "success"
-                                                ? "text-green-400"
-                                                : log.status === "warning"
-                                                    ? "text-yellow-500"
-                                                    : log.status === "pending"
-                                                        ? "text-muted-foreground/60"
-                                                        : "text-primary animate-pulse"
+                                            ? "text-green-400"
+                                            : log.status === "warning"
+                                                ? "text-yellow-500"
+                                                : log.status === "pending"
+                                                    ? "text-muted-foreground/60"
+                                                    : "text-primary animate-pulse"
                                             }`}
                                     >
                                         <span className="shrink-0 font-bold">[{log.segmentIndex + 1}]</span>
@@ -607,8 +591,8 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                                         type="button"
                                         onClick={() => setActiveSlot("top")}
                                         className={`flex-1 flex items-center justify-between p-2 rounded border text-left transition ${activeSlot === "top"
-                                                ? "border-primary bg-primary/10"
-                                                : "border-border/60 hover:bg-neutral-800/15"
+                                            ? "border-primary bg-primary/10"
+                                            : "border-border/60 hover:bg-neutral-800/15"
                                             }`}
                                     >
                                         <div>
@@ -626,8 +610,8 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                                         type="button"
                                         onClick={() => setActiveSlot("bottom")}
                                         className={`flex-1 flex items-center justify-between p-2 rounded border text-left transition ${activeSlot === "bottom"
-                                                ? "border-primary bg-primary/10"
-                                                : "border-border/60 hover:bg-neutral-800/15"
+                                            ? "border-primary bg-primary/10"
+                                            : "border-border/60 hover:bg-neutral-800/15"
                                             }`}
                                     >
                                         <div>
@@ -644,9 +628,9 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                             )}
 
                             {/* Side-by-side search results display: big image gallery cards */}
-                            <div className="flex-1 grid grid-cols-2 gap-3 min-h-0 min-h-[320px]">
+                            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 min-h-0 min-h-[320px] overflow-y-auto md:overflow-visible">
                                 {/* Column 1: VertiCut vertical images */}
-                                <div className="flex flex-col border border-border rounded-lg bg-panel-2 overflow-hidden">
+                                <div className="flex flex-col border border-border rounded-lg bg-panel-2 overflow-hidden h-[240px] md:h-auto">
                                     <div className="p-2 border-b border-border/85 bg-panel-3 flex justify-between items-center text-[10px] font-bold text-primary shrink-0">
                                         <span>VertiCut Stocks</span>
                                         {searching && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
@@ -664,8 +648,8 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                                                             disabled={isUsed || searching}
                                                             onClick={() => handleImageClick(img)}
                                                             className={`relative w-full aspect-video rounded overflow-hidden border bg-black/45 transition ${isUsed
-                                                                    ? "border-emerald-500/40 opacity-70 cursor-not-allowed"
-                                                                    : "border-border hover:border-primary hover:scale-[1.02] cursor-pointer"
+                                                                ? "border-emerald-500/40 opacity-70 cursor-not-allowed"
+                                                                : "border-border hover:border-primary hover:scale-[1.02] cursor-pointer"
                                                                 }`}
                                                         >
                                                             <img src={img.url} className={`w-full h-full object-cover ${isUsed ? "filter saturate-50 brightness-75 rgba-overlay" : ""}`} />
@@ -685,7 +669,7 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                                 </div>
 
                                 {/* Column 2: DuckDuckGo images */}
-                                <div className="flex flex-col border border-border rounded-lg bg-panel-2 overflow-hidden">
+                                <div className="flex flex-col border border-border rounded-lg bg-panel-2 overflow-hidden h-[240px] md:h-auto">
                                     <div className="p-2 border-b border-border/85 bg-panel-3 flex justify-between items-center text-[10px] font-bold text-foreground shrink-0">
                                         <span>General (DDG)</span>
                                         {searching && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
@@ -703,8 +687,8 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                                                             disabled={isUsed || searching}
                                                             onClick={() => handleImageClick(img)}
                                                             className={`relative w-full aspect-video rounded overflow-hidden border bg-black/45 transition ${isUsed
-                                                                    ? "border-emerald-500/40 opacity-70 cursor-not-allowed"
-                                                                    : "border-border hover:border-primary hover:scale-[1.02] cursor-pointer"
+                                                                ? "border-emerald-500/40 opacity-70 cursor-not-allowed"
+                                                                : "border-border hover:border-primary hover:scale-[1.02] cursor-pointer"
                                                                 }`}
                                                         >
                                                             <img src={img.url} className={`w-full h-full object-cover ${isUsed ? "filter saturate-50 brightness-75 rgba-overlay" : ""}`} />
@@ -745,6 +729,24 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                         </div>
                     )}
                 </div>
+
+                {!processing && (
+                    <div className="flex justify-end gap-2 border-t border-border p-4 bg-panel shrink-0">
+                        <button
+                            onClick={() => onOpenChange(false)}
+                            className="px-4 py-2 text-xs border border-border rounded hover:bg-accent transition cursor-pointer font-semibold"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleStart}
+                            className="px-4 py-2 text-xs bg-primary text-primary-foreground rounded hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5 transition cursor-pointer font-semibold"
+                            disabled={!input.trim()}
+                        >
+                            <Play className="h-3 w-3" /> Start Auto Edit
+                        </button>
+                    </div>
+                )}
             </DialogContent>
         </Dialog>
     );
