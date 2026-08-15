@@ -659,6 +659,29 @@ async function processRender(jobId, params) {
   }
 }
 
+// Helper to pre-fetch external images in the VPS render pipeline to bypass CORS and Cloudflare blocks
+async function getBase64DataUri(url) {
+  if (!url || !/^https?:\/\//i.test(url)) return url;
+  try {
+    log('DOWNLOAD_ASSET', `Fetching & converting to base64: ${url}`);
+    const resp = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      }
+    });
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    const arrayBuffer = await resp.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const contentType = resp.headers.get('Content-Type') || 'image/jpeg';
+    return `data:${contentType};base64,${buffer.toString('base64')}`;
+  } catch (err) {
+    log('DOWNLOAD_ASSET_WARNING', `Failed to download/proxy ${url}: ${err.message}. Using original URL.`);
+    return url; // fallback to original URL
+  }
+}
+
 // ────────────────────────────────────────────────────────────────
 // VertiCut render processor
 // ────────────────────────────────────────────────────────────────
@@ -677,6 +700,22 @@ async function processVerticutRender(jobId, params) {
 
   try {
     await updateJob({ status: 'rendering', started_at: new Date() });
+
+    // Pre-download external images for clips and split-screen to Base64 to bypass browser fetch blocks during Remotion export
+    const processedClips = [];
+    for (const clip of (clips || [])) {
+      const copy = { ...clip };
+      if (copy.imageUrl) {
+        copy.imageUrl = await getBase64DataUri(copy.imageUrl);
+      }
+      if (copy.splitScreen && copy.splitScreen.bottomImageUrl) {
+        copy.splitScreen = {
+          ...copy.splitScreen,
+          bottomImageUrl: await getBase64DataUri(copy.splitScreen.bottomImageUrl),
+        };
+      }
+      processedClips.push(copy);
+    }
 
     // Bundle the VertiCut Remotion entry (cached after first build)
     const verticutEntry = process.env.REMOTION_VERTICUT_ENTRY
@@ -700,7 +739,7 @@ async function processVerticutRender(jobId, params) {
       audioUrl: project.audioUrl,
       musicUrl: settings.musicUrl || undefined,
       musicVolume: (settings.musicVolume ?? 30) / 100,
-      clips: clips || [],
+      clips: processedClips,
       defaultLabelText: settings.defaultLabelText || '',
       defaultFontSize: settings.defaultFontSize ?? 18,
       intensity: settings.animationIntensity ?? 1,

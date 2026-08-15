@@ -449,7 +449,7 @@ export const saveGlobalSettings = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-function slugFilename(name: string) {
+export function slugFilename(name: string) {
   return (
     (name
       .toLowerCase()

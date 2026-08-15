@@ -9,6 +9,7 @@ import {
   getRenderProgress,
   saveGlobalSettings,
   saveProject,
+  slugFilename,
   type ProjectFull,
 } from "@/api.functions";
 import { VertiCutComposition, resolveProxyUrl, logDiagnostic } from "@/remotion/composition";
@@ -643,8 +644,40 @@ function EditorPage() {
 
     try {
       logDiagnostic("render", "info", `[RENDER] Loading assets`);
-      await saveProject({ data: { id, clips } });
-      await saveGlobalSettings({ data: { settings } });
+
+      const state = useEditor.getState();
+      const freshClips = state.clips;
+      const freshSettings = state.settings;
+      const freshName = state.name;
+
+      const freshInputProps = {
+        audioUrl: state.audioUrl,
+        musicUrl: freshSettings.musicUrl || undefined,
+        musicVolume: freshSettings.musicVolume / 100,
+        clips: freshClips,
+        intensity: freshSettings.animationIntensity,
+        durationInFrames: totalFrames,
+        fps: FPS,
+        overlayUrl: getTemplateById(freshSettings.activeTemplateId)?.overlayUrl,
+        templateWindow: freshSettings.templateWindow,
+        enableTransitions: freshSettings.transitionAnimation ?? true,
+        audioSegments: state.audioSegments,
+        captionTextColor: freshSettings.captionTextColor,
+        captionBgColor: freshSettings.captionBgColor,
+        captionPosX: freshSettings.captionPosX,
+        captionPosY: freshSettings.captionPosY,
+        captionFontSize: freshSettings.captionFontSize,
+        captionWordsPerLine: freshSettings.captionWordsPerLine,
+        captionLinesPerSegment: freshSettings.captionLinesPerSegment,
+        captionFont: freshSettings.captionFont,
+        showCaptions: freshSettings.showCaptions ?? true,
+        transcript: state.transcript,
+        enableGradientOverlay: freshSettings.enableGradientOverlay ?? true,
+        gradientOverlayUrl: GRADIENT_OVERLAY_URL,
+      };
+
+      await saveProject({ data: { id, clips: freshClips } });
+      await saveGlobalSettings({ data: { settings: freshSettings } });
 
       logDiagnostic("render", "info", `[RENDER] Assets ready`);
       logDiagnostic("render", "info", `[RENDER] Remotion render started`);
@@ -661,9 +694,9 @@ function EditorPage() {
           height: COMP_HEIGHT,
           calculateMetadata: null,
           id: "verticut-video",
-          defaultProps: { ...inputProps, isRendering: true } as any,
+          defaultProps: { ...freshInputProps, isRendering: true } as any,
         } as any,
-        inputProps: { ...inputProps, isRendering: true },
+        inputProps: { ...freshInputProps, isRendering: true },
         audioCodec: "aac" as const,
       };
 
@@ -1849,7 +1882,7 @@ function EditorPage() {
                 <p className="text-xs font-semibold text-emerald-400">Render complete!</p>
                 <a
                   href={clientRenderFileUrl}
-                  download={`verticut_${id}.mp4`}
+                  download={slugFilename(name)}
                   className="mt-3.5 inline-flex w-full items-center justify-center gap-1.5 h-8.5 rounded bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold shadow"
                 >
                   Download Video
