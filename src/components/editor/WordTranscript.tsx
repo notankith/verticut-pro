@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { PlayerRef } from "@remotion/player";
 import { usePlayerFrame } from "./usePlayerFrame";
 import type { AudioSegment } from "@/server/mongo.server";
+import { Copy, Check } from "lucide-react";
 
 type Word = { text: string; start: number; end: number };
 
@@ -66,6 +67,13 @@ export function WordTranscript({
   const [viewMode, setViewMode] = useState<"plain" | "segmented">("plain");
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLSpanElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(JSON.stringify(transcript, null, 2));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const activeTime = useMemo(() => {
     if (!audioSegments || audioSegments.length === 0) return currentTime;
@@ -124,7 +132,17 @@ export function WordTranscript({
             Transcript
           </h3>
           {transcript.length > 0 && (
-            <span className="text-[9px] text-muted-foreground px-1 bg-border rounded-sm">{transcript.length} words</span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="flex items-center gap-1 rounded bg-panel-3 hover:bg-accent hover:text-foreground text-[9px] text-muted-foreground px-1.5 py-0.5 font-semibold border border-border transition-colors cursor-pointer"
+                title="Copy Transcript JSON"
+              >
+                {copied ? <Check className="h-2.5 w-2.5 text-green-500" /> : <Copy className="h-2.5 w-2.5" />}
+                Copy JSON
+              </button>
+            </div>
           )}
         </div>
 
@@ -133,22 +151,20 @@ export function WordTranscript({
           <button
             type="button"
             onClick={() => setViewMode("plain")}
-            className={`px-2 py-0.5 rounded transition-colors ${
-              viewMode === "plain"
-                ? "bg-primary text-primary-foreground font-bold"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+            className={`px-2 py-0.5 rounded transition-colors ${viewMode === "plain"
+              ? "bg-primary text-primary-foreground font-bold"
+              : "text-muted-foreground hover:text-foreground"
+              }`}
           >
             Normal
           </button>
           <button
             type="button"
             onClick={() => setViewMode("segmented")}
-            className={`px-2 py-0.5 rounded transition-colors ${
-              viewMode === "segmented"
-                ? "bg-primary text-primary-foreground font-bold"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+            className={`px-2 py-0.5 rounded transition-colors ${viewMode === "segmented"
+              ? "bg-primary text-primary-foreground font-bold"
+              : "text-muted-foreground hover:text-foreground"
+              }`}
           >
             Segmented
           </button>
@@ -180,13 +196,12 @@ export function WordTranscript({
                         }
                       }}
                       title={`${w.start.toFixed(2)}s`}
-                      className={`mr-1 inline-block cursor-pointer rounded px-1 py-0.5 transition-colors ${
-                        isActive
-                          ? "bg-primary text-primary-foreground font-semibold"
-                          : isPast
+                      className={`mr-1 inline-block cursor-pointer rounded px-1 py-0.5 transition-colors ${isActive
+                        ? "bg-primary text-primary-foreground font-semibold"
+                        : isPast
                           ? "text-foreground hover:bg-accent font-medium mt-0.5"
                           : "text-muted-foreground hover:bg-accent mt-0.5"
-                      }`}
+                        }`}
                     >
                       {w.text}
                     </span>
@@ -199,7 +214,7 @@ export function WordTranscript({
                 {sentences.map((sentence, sIdx) => {
                   const firstWord = sentence.words[0];
                   const tStr = firstWord ? fmtTime(firstWord.start) : "00:00";
-                  
+
                   return (
                     <div key={sIdx} className="flex items-start gap-3">
                       <span className="text-[10px] font-bold text-primary/70 select-none bg-panel-3 px-1.5 py-0.5 rounded shrink-0 w-11 text-center font-mono">
@@ -222,13 +237,12 @@ export function WordTranscript({
                                 }
                               }}
                               title={`${w.start.toFixed(2)}s`}
-                              className={`mr-1 inline-block cursor-pointer rounded px-1 py-0.5 transition-colors ${
-                                isActive
-                                  ? "bg-primary text-primary-foreground font-semibold"
-                                  : isPast
+                              className={`mr-1 inline-block cursor-pointer rounded px-1 py-0.5 transition-colors ${isActive
+                                ? "bg-primary text-primary-foreground font-semibold"
+                                : isPast
                                   ? "text-foreground hover:bg-accent font-medium mt-0.5"
                                   : "text-muted-foreground hover:bg-accent mt-0.5"
-                              }`}
+                                }`}
                             >
                               {w.text}
                             </span>

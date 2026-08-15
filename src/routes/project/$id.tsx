@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 import { usePlayerFrame } from "@/components/editor/usePlayerFrame";
-import { Film, Settings, Undo2, Redo2, Loader2, Image as ImageIcon, Play, Pause, Rewind, Clock, Plus, Minus, FileText, Square, Type, DownloadCloud, Search as SearchIcon, ChevronDown, Pencil, Share } from "lucide-react";
+import { Film, Settings, Undo2, Redo2, Loader2, Image as ImageIcon, Play, Pause, Rewind, Clock, Plus, Minus, FileText, Square, Type, DownloadCloud, Search as SearchIcon, ChevronDown, Pencil, Share, Sparkles } from "lucide-react";
 import {
   enqueueRender,
   getProject,
@@ -15,6 +15,7 @@ import { VertiCutComposition, resolveProxyUrl, logDiagnostic } from "@/remotion/
 import { useEditor } from "@/store/editor";
 import { Timeline } from "@/components/editor/Timeline";
 import { ImportSourcingModal } from "@/components/editor/ImportSourcingModal";
+import { AutoEditModal } from "@/components/editor/AutoEditModal";
 import { AnimationPanel, MediaPanel, CaptionsPanel } from "@/components/editor/Inspector";
 import { WordTranscript } from "@/components/editor/WordTranscript";
 import { SettingsPanel } from "@/components/editor/SettingsPanel";
@@ -205,6 +206,7 @@ function EditorPage() {
   const [sourcingModalOpen, setSourcingModalOpen] = useState(false);
   const [mediaDownloadOpen, setMediaDownloadOpen] = useState(false);
   const [searchMediaOpen, setSearchMediaOpen] = useState(false);
+  const [autoEditOpen, setAutoEditOpen] = useState(false);
   const [activeSidebarTab, setActiveSidebarTab] = useState<"search" | "animation" | "media" | "captions">("search");
   const [mediaOpen, setMediaOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
@@ -1136,6 +1138,16 @@ function EditorPage() {
 
         {/* Right Section: Undo, Redo, Export */}
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setAutoEditOpen(true)}
+            className="flex items-center gap-1.5 h-7.5 rounded border border-border bg-panel hover:bg-accent text-foreground font-semibold text-[11px] px-3 py-1.5 shadow-sm transition-colors cursor-pointer"
+            title="Auto edit timeline using AI segments"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-yellow-500 fill-yellow-500/25" />
+            Auto Edit
+          </button>
+
           {/* Undo/Redo pair */}
           <div className="flex items-center rounded border border-border bg-panel p-0.5 transition-shadow shadow-sm">
             <button
@@ -1298,13 +1310,7 @@ function EditorPage() {
                   </div>
                 </div>
               )}
-              <button
-                onClick={() => setTemplatesOpen(true)}
-                className="absolute right-44 top-3 z-10 flex items-center gap-1.5 rounded-md border border-border bg-panel/90 px-3 py-1.5 text-[11px] backdrop-blur hover:bg-accent"
-                title="Templates"
-              >
-                Templates
-              </button>
+
               <button
                 onClick={() => fileImportRef.current?.click()}
                 className="absolute right-3 top-3 z-10 flex items-center gap-1.5 rounded-md border border-border bg-panel/90 px-3 py-1.5 text-[11px] backdrop-blur hover:bg-accent"
@@ -1768,6 +1774,7 @@ function EditorPage() {
       ) : null}
 
       <ImportSourcingModal open={sourcingModalOpen} onOpenChange={setSourcingModalOpen} />
+      <AutoEditModal open={autoEditOpen} onOpenChange={setAutoEditOpen} playerRef={playerRef} />
       <Suspense fallback={null}>
         <MediaDownloadModal open={mediaDownloadOpen} onOpenChange={setMediaDownloadOpen} />
       </Suspense>

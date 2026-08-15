@@ -93,95 +93,43 @@ export const createProjectFromAudio = createServerFn({ method: "POST" })
     return { id };
   });
 
-function buildWavBuffer(pcmBuffer: Buffer): Buffer {
-  const wavHeader = Buffer.alloc(44);
-  const dataLength = pcmBuffer.length;
-  wavHeader.write("RIFF", 0);
-  wavHeader.writeUInt32LE(36 + dataLength, 4);
-  wavHeader.write("WAVE", 8);
-  wavHeader.write("fmt ", 12);
-  wavHeader.writeUInt32LE(16, 16);
-  wavHeader.writeUInt16LE(1, 20);
-  wavHeader.writeUInt16LE(1, 22);
-  wavHeader.writeUInt32LE(24000, 24);
-  wavHeader.writeUInt32LE(48000, 28);
-  wavHeader.writeUInt16LE(2, 32);
-  wavHeader.writeUInt16LE(16, 34);
-  wavHeader.write("data", 36);
-  wavHeader.writeUInt32LE(dataLength, 40);
-  return Buffer.concat([wavHeader, pcmBuffer]);
-}
-
 export const generateGeminiVoiceover = createServerFn({ method: "POST" })
   .inputValidator((d: { script: string }) => d)
   .handler(async ({ data }) => {
     const user = await requireAuthUser();
-    const settings = await readGlobalSettings(user._id);
 
-    const apiKey = settings.geminiApiKey || process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error("Gemini API key is not configured. Please add your key in Settings.");
-    }
+    console.log("[Voiceover] Synthesizing text via VPS: ", data.script.slice(0, 50));
 
-    const model = settings.geminiTtsModel || "gemini-3.1-flash-tts-preview";
-    const voice = settings.geminiVoice || "Kore";
-    const instructions = settings.geminiSceneInstructions || "";
-
-    console.log("[Gemini TTS] Request model:", model, "voice:", voice, "apiKey length:", apiKey?.length ?? 0);
-
-    let inputScript = data.script;
-    if (instructions.trim()) {
-      inputScript = `Context instructions/Scene: ${instructions.trim()}\n\nTranscript:\n${data.script}`;
-    }
-
-    const url = "https://generativelanguage.googleapis.com/v1beta/interactions";
-    const body: any = {
-      model: model,
-      input: inputScript,
-      response_format: {
-        type: "audio"
-      },
-      generation_config: {
-        speech_config: [
-          {
-            voice: voice
-          }
-        ]
-      }
-    };
-
-    const res = await fetch(url, {
+    const res = await fetch("http://37.60.234.106:8420/generate", {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-goog-api-key": apiKey
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ text: data.script }),
     });
 
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
-      throw new Error(`Gemini TTS API error: ${res.statusText}${errText ? ` - ${errText}` : ""}`);
+      throw new Error(`Voiceover generate endpoint error: ${res.statusText}${errText ? ` - ${errText}` : ""}`);
     }
 
     const json = await res.json();
-    const outputAudio = json?.outputs?.[0]?.output_audio;
-
-    if (!outputAudio || !outputAudio.data) {
-      throw new Error("No audio content returned from Gemini. Make sure the model supports voice outputs.");
+    const endpointUrl = json?.url;
+    if (!endpointUrl) {
+      throw new Error("No audio URL returned from remote voice generator endpoint.");
     }
 
-    const pcmBuffer = Buffer.from(outputAudio.data, "base64");
-    const wavBuffer = buildWavBuffer(pcmBuffer);
-    const duration = pcmBuffer.length / 48000;
+    console.log("[Voiceover] VPS URL:", endpointUrl);
 
-    const fileId = randomUUID();
-    const key = `audio/${fileId}.wav`;
-    const audioUrl = await uploadBuffer(key, wavBuffer, "audio/wav");
+    // Estimate duration based on word count to avoid download and R2 upload
+    const wordsCount = data.script.split(/\s+/).filter(Boolean).length || 1;
+    const duration = Math.max(1.5, wordsCount * 0.45);
+
+    console.log("[Voiceover] Script word count:", wordsCount, "Estimated duration:", duration);
 
     const projects = await C<ProjectDoc>("projects");
     const projectId = randomUUID();
-    const transcriptId = await submitTranscript(audioUrl);
+    const transcriptId = await submitTranscript(endpointUrl);
     const now = Date.now();
 
     const initialSegment = {
@@ -195,8 +143,8 @@ export const generateGeminiVoiceover = createServerFn({ method: "POST" })
       _id: projectId,
       userId: user._id,
       name: data.script.slice(0, 30).trim() || "AI Voiceover Project",
-      audioKey: key,
-      audioUrl: audioUrl,
+      audioKey: "",
+      audioUrl: endpointUrl,
       audioDuration: duration,
       transcript: [],
       transcriptStatus: "pending",

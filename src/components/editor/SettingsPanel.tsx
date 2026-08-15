@@ -21,7 +21,7 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs
   const [showClearLogsConfirm, setShowClearLogsConfirm] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isClearingLogs, setIsClearingLogs] = useState(false);
-  const [subTab, setSubTab] = useState<"general" | "templates" | "gemini">("general");
+  const [subTab, setSubTab] = useState<"general" | "gemini">("general");
 
   const [durationVal, setDurationVal] = useState(
     (settings.defaultImageImportDuration ?? 3.5).toString()
@@ -138,13 +138,6 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs
         </button>
         <button
           type="button"
-          onClick={() => setSubTab("templates")}
-          className={`rounded-t px-3 py-2 text-xs ${subTab === "templates" ? "bg-panel text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-        >
-          Templates
-        </button>
-        <button
-          type="button"
           onClick={() => setSubTab("gemini")}
           className={`rounded-t px-3 py-2 text-xs ${subTab === "gemini" ? "bg-panel text-foreground" : "text-muted-foreground hover:text-foreground"}`}
         >
@@ -237,17 +230,10 @@ export function SettingsPanel({ settings, onChange, onSave, onReset, onClearLogs
             </div>
           </section>
         </>
-      ) : subTab === "gemini" ? (
+      ) : (
         <GeminiSettings
           settings={settings}
           onChange={onChange}
-        />
-      ) : (
-        <TemplateEditor
-          activeTemplate={activeTemplate}
-          windowRect={templateWindow}
-          onSelectTemplate={(id) => onChange({ activeTemplateId: id })}
-          onWindowChange={(next) => onChange({ templateWindow: next })}
         />
       )}
 

@@ -360,34 +360,28 @@ export function AnimationPanel() {
         />
       </div>
 
-      {/* Anchor point X and Y sliders */}
-      <div className="space-y-2 border-t border-border pt-3">
-        <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Ken Burns Focus (Anchor)</label>
-        <div className="space-y-3 mt-1.5">
-          <AnchorInput
-            axis="X"
-            value={clip.anchorX ?? 50}
-            maxPx={imgDims?.w}
-            onChange={(v) => updateClip(clip.id, { anchorX: v })}
-          />
-          <AnchorInput
-            axis="Y"
-            value={clip.anchorY ?? 50}
-            maxPx={imgDims?.h}
-            onChange={(v) => updateClip(clip.id, { anchorY: v })}
-          />
+      {/* Anchor point X slider */}
+      <div className="space-y-1.5 border-t border-border pt-3">
+        <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+          <label>Ken Burns Focus (Anchor X)</label>
+          <span className="font-mono">{(clip.anchorX ?? 50)}%</span>
         </div>
-
-        <div className="mt-1 flex items-center justify-between">
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={1}
+          value={clip.anchorX ?? 50}
+          onChange={(e) => updateClip(clip.id, { anchorX: Number(e.target.value) })}
+          className="w-full accent-primary"
+        />
+        <div className="mt-1.5 flex items-center justify-between">
           <button
             onClick={() => updateClip(clip.id, { anchorX: 50, anchorY: 50 })}
             className="text-[10px] text-muted-foreground hover:text-foreground"
           >
             Reset to center
           </button>
-          <span className="text-[10px] font-mono text-muted-foreground">
-            {(clip.anchorX ?? 50)}% / {(clip.anchorY ?? 50)}%
-          </span>
         </div>
       </div>
 
@@ -493,20 +487,8 @@ export function MediaPanel({
             <p className="text-[9.5px] text-muted-foreground">Modify settings for the selected track element</p>
           </div>
 
-          {/* Replace Main Media */}
-          <div>
-            <button
-              type="button"
-              onClick={() => replaceRef.current?.click()}
-              className="w-full flex items-center justify-center gap-1.5 rounded border border-border bg-panel py-2.5 text-[11px] font-semibold hover:bg-accent"
-            >
-              <RefreshCw className="h-3.5 w-3.5 text-primary" />
-              Replace Main Media
-            </button>
-          </div>
-
           {/* Split Screen Control */}
-          <div className="border-t border-border/60 pt-3">
+          <div>
             <button
               type="button"
               onClick={() =>
@@ -516,9 +498,9 @@ export function MediaPanel({
                     : { ...(clip.splitScreen ?? {}), enabled: true },
                 })
               }
-              className={`w-full rounded border py-2 text-[11.5px] font-semibold transition-all ${clip.splitScreen?.enabled
-                  ? "border-primary bg-primary/10 text-primary shadow-sm"
-                  : "border-border bg-panel text-muted-foreground hover:bg-accent"
+              className={`w-full rounded border py-2.5 text-[11.5px] font-semibold transition-all ${clip.splitScreen?.enabled
+                ? "border-primary bg-primary/10 text-primary shadow-sm"
+                : "border-border bg-panel text-muted-foreground hover:bg-accent"
                 }`}
             >
               Split Screen Interface: {clip.splitScreen?.enabled ? "ON" : "OFF"}
@@ -555,6 +537,18 @@ export function MediaPanel({
                 </p>
               </div>
             )}
+          </div>
+
+          {/* Replace Main Media */}
+          <div className="border-t border-border/60 pt-3">
+            <button
+              type="button"
+              onClick={() => replaceRef.current?.click()}
+              className="w-full flex items-center justify-center gap-1.5 rounded border border-border bg-panel py-2 text-[11px] font-semibold hover:bg-accent"
+            >
+              <RefreshCw className="h-3.5 w-3.5 text-primary" />
+              Replace Main Media
+            </button>
           </div>
 
           {/* Delete Clip */}
