@@ -205,14 +205,21 @@ export default function SearchMediaPanel({ open, onOpenChange, onImport }: Props
         </div>
       </header>
 
-      <div className="border-b border-border p-3">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleSearchSubmit();
+        }}
+        className="border-b border-border p-3"
+      >
         <div className="flex gap-1.5">
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <input
+              type="search"
+              enterKeyHint="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={handleSearchKeyDown}
               placeholder="Search media..."
               className="h-8.5 w-full rounded-md border border-border bg-panel-2 pl-8.5 pr-2 text-xs outline-none transition-colors focus:border-primary/60"
             />
@@ -228,7 +235,7 @@ export default function SearchMediaPanel({ open, onOpenChange, onImport }: Props
             <option value={36}>36</option>
           </select>
         </div>
-      </div>
+      </form>
 
       <div className="flex-1 overflow-y-auto p-3">
         {!normalizedQuery ? (

@@ -44,7 +44,8 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
     const [input, setInput] = useState("");
     const [processing, setProcessing] = useState(false);
     const [clearExisting, setClearExisting] = useState(true);
-    const [autoImport, setAutoImport] = useState(true);
+    const [autoImport, setAutoImport] = useState(false);
+    const [hookType, setHookType] = useState<"gifs" | "split-screens">("gifs");
 
     // Parsed segments
     const [segments, setSegments] = useState<Segment[]>([]);
@@ -58,6 +59,7 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
     const [overrideQuery, setOverrideQuery] = useState("");
     const [verticutImages, setVerticutImages] = useState<SearchImage[]>([]);
     const [ddgImages, setDdgImages] = useState<SearchImage[]>([]);
+    const [giphyImages, setGiphyImages] = useState<SearchImage[]>([]);
     const [topSelectedImage, setTopSelectedImage] = useState<SearchImage | null>(null);
     const [bottomSelectedImage, setBottomSelectedImage] = useState<SearchImage | null>(null);
     const [activeSlot, setActiveSlot] = useState<"top" | "bottom">("top");
@@ -81,6 +83,7 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
         setLogs([]);
         setVerticutImages([]);
         setDdgImages([]);
+        setGiphyImages([]);
         setTopSelectedImage(null);
         setBottomSelectedImage(null);
         setActiveSlot("top");
@@ -157,66 +160,96 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
             );
 
             let foundImages: SearchImage[] = [];
+            const isHookGif = idx === 0 && hookType === "gifs";
 
-            // Query verticut
-            try {
-                const res = await fetch("/api/search-media", {
-                    method: "POST",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ query: segment.query, page: 1, size: 24, source: "verticut" }),
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (Array.isArray(data.images)) {
-                        // FILTER OUT already used images
-                        foundImages = data.images
-                            .filter((img: any) => !usedUrls.includes(img.url))
-                            .map((img: any) => ({
-                                id: img.id || img.url,
-                                url: img.url,
-                                title: img.title
-                            }));
-                    }
-                }
-            } catch (err) {
-                console.error("Vertical search failed for:", segment.query, err);
-            }
-
-            // Fallback to DDG if index 0 and needs at least 2 images, or index > 0 and needs 1 image but found none
-            const minNeeded = idx === 0 ? 2 : 1;
-            if (foundImages.length < minNeeded) {
+            if (isHookGif) {
                 setLogs((prev) =>
                     prev.map((l, i) =>
                         i === idx
-                            ? { ...l, status: "ddg", message: `Found ${foundImages.length} images. Querying General Search for "${segment.query}"...` }
+                            ? { ...l, status: "verticut", message: `Querying Giphy for "${segment.query}"...` }
                             : l
                     )
                 );
-
                 try {
                     const res = await fetch("/api/search-media", {
                         method: "POST",
                         headers: { "content-type": "application/json" },
-                        body: JSON.stringify({ query: segment.query, page: 1, size: 24, source: "duckduckgo" }),
+                        body: JSON.stringify({ query: segment.query, page: 1, size: 24, source: "giphy" }),
                     });
                     if (res.ok) {
                         const data = await res.json();
                         if (Array.isArray(data.images)) {
-                            for (const img of data.images) {
-                                // FILTER OUT duplicates
-                                if (!usedUrls.includes(img.url) && !foundImages.some((fi) => fi.url === img.url)) {
-                                    foundImages.push({
-                                        id: img.id || img.url,
-                                        url: img.url,
-                                        title: img.title
-                                    });
-                                    if (foundImages.length >= minNeeded) break;
-                                }
-                            }
+                            foundImages = data.images.map((img: any) => ({
+                                id: img.id || img.url,
+                                url: img.url,
+                                title: img.title
+                            }));
                         }
                     }
                 } catch (err) {
-                    console.error("General search failed for:", segment.query, err);
+                    console.error("Giphy Search failed for:", segment.query, err);
+                }
+            } else {
+                // Query verticut
+                try {
+                    const res = await fetch("/api/search-media", {
+                        method: "POST",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({ query: segment.query, page: 1, size: 24, source: "verticut" }),
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (Array.isArray(data.images)) {
+                            // FILTER OUT already used images
+                            foundImages = data.images
+                                .filter((img: any) => !usedUrls.includes(img.url))
+                                .map((img: any) => ({
+                                    id: img.id || img.url,
+                                    url: img.url,
+                                    title: img.title
+                                }));
+                        }
+                    }
+                } catch (err) {
+                    console.error("Vertical search failed for:", segment.query, err);
+                }
+
+                // Fallback to DDG if index 0 and needs at least 2 images, or index > 0 and needs 1 image but found none
+                const minNeeded = idx === 0 ? 2 : 1;
+                if (foundImages.length < minNeeded) {
+                    setLogs((prev) =>
+                        prev.map((l, i) =>
+                            i === idx
+                                ? { ...l, status: "ddg", message: `Found ${foundImages.length} images. Querying General Search for "${segment.query}"...` }
+                                : l
+                        )
+                    );
+
+                    try {
+                        const res = await fetch("/api/search-media", {
+                            method: "POST",
+                            headers: { "content-type": "application/json" },
+                            body: JSON.stringify({ query: segment.query, page: 1, size: 24, source: "duckduckgo" }),
+                        });
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (Array.isArray(data.images)) {
+                                for (const img of data.images) {
+                                    // FILTER OUT duplicates
+                                    if (!usedUrls.includes(img.url) && !foundImages.some((fi) => fi.url === img.url)) {
+                                        foundImages.push({
+                                            id: img.id || img.url,
+                                            url: img.url,
+                                            title: img.title
+                                        });
+                                        if (foundImages.length >= minNeeded) break;
+                                    }
+                                }
+                            }
+                        }
+                    } catch (err) {
+                        console.error("General search failed for:", segment.query, err);
+                    }
                 }
             }
 
@@ -224,8 +257,8 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
             let successStatus: "success" | "warning" = "success";
             let statusMsg = "";
 
-            // SPLIT-SCREEN is strictly for the first segment (idx === 0)
-            if (idx === 0) {
+            // SPLIT-SCREEN is strictly for the first segment (idx === 0) if hookType is split-screens
+            if (idx === 0 && hookType === "split-screens") {
                 let topImg = FALLBACK_IMAGE;
                 let topKey = "fallback-stock-image";
                 let bottomImg = FALLBACK_IMAGE;
@@ -267,7 +300,7 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                     },
                 };
             } else {
-                // Normal single media for all subsequent segments
+                // Gifs or subsequent normal pages (no split-screen)
                 let mainImg = FALLBACK_IMAGE;
                 let mainKey = "fallback-stock-image";
 
@@ -275,7 +308,9 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                     mainImg = foundImages[0].url;
                     mainKey = foundImages[0].id;
                     usedUrls.push(mainImg);
-                    statusMsg = `Imported normal image layout for "${segment.query}"`;
+                    statusMsg = isHookGif
+                        ? `Imported Giphy GIF for "${segment.query}"`
+                        : `Imported normal image layout for "${segment.query}"`;
                 } else {
                     successStatus = "warning";
                     statusMsg = `No images found; used fallback artwork.`;
@@ -319,6 +354,7 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
         setSearching(true);
         setVerticutImages([]);
         setDdgImages([]);
+        setGiphyImages([]);
         setTopSelectedImage(null);
         setBottomSelectedImage(null);
         setActiveSlot("top");
@@ -331,33 +367,52 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
             playerRef.current.seekTo(frame);
         }
 
+        const isHookGif = idx === 0 && hookType === "gifs";
+
         try {
-            // Parallel searches
-            const [resVert, resDDG] = await Promise.all([
-                fetch("/api/search-media", {
+            if (isHookGif) {
+                const resGiphy = await fetch("/api/search-media", {
                     method: "POST",
                     headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ query: queryText, page: 1, size: 24, source: "verticut" }),
-                }).then(async (r) => (r.ok ? r.json() : { images: [] })).catch(() => ({ images: [] })),
-                fetch("/api/search-media", {
-                    method: "POST",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ query: queryText, page: 1, size: 24, source: "duckduckgo" }),
-                }).then(async (r) => (r.ok ? r.json() : { images: [] })).catch(() => ({ images: [] })),
-            ]);
+                    body: JSON.stringify({ query: queryText, page: 1, size: 24, source: "giphy" }),
+                }).then(async (r) => (r.ok ? r.json() : { images: [] })).catch(() => ({ images: [] }));
 
-            const vImgs: SearchImage[] = Array.isArray(resVert.images) ? resVert.images : [];
-            const dImgs: SearchImage[] = Array.isArray(resDDG.images) ? resDDG.images : [];
+                const gImgs: SearchImage[] = Array.isArray(resGiphy.images) ? resGiphy.images : [];
+                setGiphyImages(gImgs);
 
-            setVerticutImages(vImgs);
-            setDdgImages(dImgs);
+                // Pre-fill top selected image in manual mode
+                const combined = gImgs.filter((img) => !usedImageUrls.includes(img.url));
+                if (combined[0]) {
+                    setTopSelectedImage(combined[0]);
+                }
+            } else {
+                // Parallel searches
+                const [resVert, resDDG] = await Promise.all([
+                    fetch("/api/search-media", {
+                        method: "POST",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({ query: queryText, page: 1, size: 24, source: "verticut" }),
+                    }).then(async (r) => (r.ok ? r.json() : { images: [] })).catch(() => ({ images: [] })),
+                    fetch("/api/search-media", {
+                        method: "POST",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({ query: queryText, page: 1, size: 24, source: "duckduckgo" }),
+                    }).then(async (r) => (r.ok ? r.json() : { images: [] })).catch(() => ({ images: [] })),
+                ]);
 
-            // Pre-fill selections using non-used image candidates
-            const combined = [...vImgs, ...dImgs].filter((img) => !usedImageUrls.includes(img.url));
+                const vImgs: SearchImage[] = Array.isArray(resVert.images) ? resVert.images : [];
+                const dImgs: SearchImage[] = Array.isArray(resDDG.images) ? resDDG.images : [];
 
-            if (idx === 0) {
-                setTopSelectedImage(combined[0] ? combined[0] : { id: "fallback-stock-image", url: FALLBACK_IMAGE });
-                setBottomSelectedImage(combined[1] ? combined[1] : combined[0] ? combined[0] : { id: "fallback-stock-image", url: FALLBACK_IMAGE });
+                setVerticutImages(vImgs);
+                setDdgImages(dImgs);
+
+                // Pre-fill selections using non-used image candidates
+                const combined = [...vImgs, ...dImgs].filter((img) => !usedImageUrls.includes(img.url));
+
+                if (idx === 0) {
+                    setTopSelectedImage(combined[0] ? combined[0] : { id: "fallback-stock-image", url: FALLBACK_IMAGE });
+                    setBottomSelectedImage(combined[1] ? combined[1] : combined[0] ? combined[0] : { id: "fallback-stock-image", url: FALLBACK_IMAGE });
+                }
             }
         } catch (err) {
             console.error("Search failed during manual matching trigger:", err);
@@ -375,7 +430,7 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
         const segment = segments[currentStepIndex];
         let newClip: ClipDoc;
 
-        if (currentStepIndex === 0) {
+        if (currentStepIndex === 0 && hookType === "split-screens") {
             newClip = {
                 id: crypto.randomUUID(),
                 kind: "media",
@@ -434,7 +489,7 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
         // Prevent selecting same image twice
         if (usedImageUrls.includes(img.url)) return;
 
-        if (currentStepIndex === 0) {
+        if (currentStepIndex === 0 && hookType === "split-screens") {
             if (activeSlot === "top") {
                 setTopSelectedImage(img);
                 setActiveSlot("bottom"); // switch selections slot to bottom automatically
@@ -444,7 +499,7 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                 confirmAndAdvanceWithMedia(topSelectedImage || img, img, currentBuildingClips);
             }
         } else {
-            // Normal single layout: click and immediately advance!
+            // Normal single layout or gif hook: click and immediately advance!
             confirmAndAdvanceWithMedia(img, null, currentBuildingClips);
         }
     };
@@ -505,6 +560,36 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                                     <label htmlFor="clear-existing" className="text-xs text-muted-foreground select-none cursor-pointer">
                                         Clear existing media clips before import
                                     </label>
+                                </div>
+                            </div>
+
+                            {/* Hook type switcher toggle */}
+                            <div className="flex items-center justify-between bg-panel-2 p-3 rounded-lg border border-border/60 shrink-0">
+                                <div className="flex flex-col gap-0.5">
+                                    <span className="text-xs font-semibold text-foreground">First Clip (Hook) Layout</span>
+                                    <span className="text-[10px] text-muted-foreground">Select whether the hook uses a Giphy GIF or Split Screens</span>
+                                </div>
+                                <div className="flex bg-panel border border-border p-0.5 rounded-md shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => setHookType("gifs")}
+                                        className={`px-3 py-1 rounded text-xs transition font-semibold cursor-pointer ${hookType === "gifs"
+                                            ? "bg-primary text-primary-foreground shadow"
+                                            : "text-muted-foreground hover:text-foreground"
+                                            }`}
+                                    >
+                                        Gifs (Single Layout)
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setHookType("split-screens")}
+                                        className={`px-3 py-1 rounded text-xs transition font-semibold cursor-pointer ${hookType === "split-screens"
+                                            ? "bg-primary text-primary-foreground shadow"
+                                            : "text-muted-foreground hover:text-foreground"
+                                            }`}
+                                    >
+                                        Split Screens (2 Images)
+                                    </button>
                                 </div>
                             </div>
 
@@ -584,8 +669,8 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                                 </button>
                             </div>
 
-                            {/* Slot indicators display (RENDER ONLY FOR SEGMENT 0) */}
-                            {currentStepIndex === 0 && (
+                            {/* Slot indicators display (RENDER ONLY FOR SEGMENT 0 and split-screens) */}
+                            {currentStepIndex === 0 && hookType === "split-screens" && (
                                 <div className="flex gap-3 bg-panel-2 p-2 rounded-lg border border-border shrink-0 animate-fade-in">
                                     <button
                                         type="button"
@@ -627,20 +712,19 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                                 </div>
                             )}
 
-                            {/* Side-by-side search results display: big image gallery cards */}
-                            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 min-h-0 min-h-[320px] overflow-y-auto md:overflow-visible">
-                                {/* Column 1: VertiCut vertical images */}
-                                <div className="flex flex-col border border-border rounded-lg bg-panel-2 overflow-hidden h-[240px] md:h-auto">
+                            {currentStepIndex === 0 && hookType === "gifs" ? (
+                                /* Giphy search grid for Gifs Hook */
+                                <div className="flex-1 flex flex-col border border-border rounded-lg bg-panel-2 overflow-hidden h-[320px] md:h-auto">
                                     <div className="p-2 border-b border-border/85 bg-panel-3 flex justify-between items-center text-[10px] font-bold text-primary shrink-0">
-                                        <span>VertiCut Stocks</span>
+                                        <span>Giphy GIFs</span>
                                         {searching && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
                                     </div>
                                     <div className="flex-1 overflow-y-auto p-2">
-                                        {verticutImages.length === 0 && !searching ? (
-                                            <div className="text-center py-12 text-[10px] text-muted-foreground">No vertical images found.</div>
+                                        {giphyImages.length === 0 && !searching ? (
+                                            <div className="text-center py-12 text-[10px] text-muted-foreground">No vertical GIFs found.</div>
                                         ) : (
-                                            <div className="grid grid-cols-2 gap-2">
-                                                {verticutImages.map((img) => {
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                                {giphyImages.map((img) => {
                                                     const isUsed = usedImageUrls.includes(img.url);
                                                     return (
                                                         <button
@@ -667,46 +751,88 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                                         )}
                                     </div>
                                 </div>
+                            ) : (
+                                /* Side-by-side search results display: big image gallery cards */
+                                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 min-h-0 min-h-[320px] overflow-y-auto md:overflow-visible">
+                                    {/* Column 1: VertiCut vertical images */}
+                                    <div className="flex flex-col border border-border rounded-lg bg-panel-2 overflow-hidden h-[240px] md:h-auto">
+                                        <div className="p-2 border-b border-border/85 bg-panel-3 flex justify-between items-center text-[10px] font-bold text-primary shrink-0">
+                                            <span>VertiCut Stocks</span>
+                                            {searching && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto p-2">
+                                            {verticutImages.length === 0 && !searching ? (
+                                                <div className="text-center py-12 text-[10px] text-muted-foreground">No vertical images found.</div>
+                                            ) : (
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    {verticutImages.map((img) => {
+                                                        const isUsed = usedImageUrls.includes(img.url);
+                                                        return (
+                                                            <button
+                                                                key={img.url}
+                                                                disabled={isUsed || searching}
+                                                                onClick={() => handleImageClick(img)}
+                                                                className={`relative w-full aspect-video rounded overflow-hidden border bg-black/45 transition ${isUsed
+                                                                    ? "border-emerald-500/40 opacity-70 cursor-not-allowed"
+                                                                    : "border-border hover:border-primary hover:scale-[1.02] cursor-pointer"
+                                                                    }`}
+                                                            >
+                                                                <img src={img.url} className={`w-full h-full object-cover ${isUsed ? "filter saturate-50 brightness-75 rgba-overlay" : ""}`} />
+                                                                {isUsed && (
+                                                                    <div className="absolute inset-0 bg-emerald-950/45 backdrop-blur-[0.5px] flex items-center justify-center">
+                                                                        <div className="bg-emerald-500 text-white rounded-full p-1 shadow">
+                                                                            <Check className="h-3 w-3" />
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
 
-                                {/* Column 2: DuckDuckGo images */}
-                                <div className="flex flex-col border border-border rounded-lg bg-panel-2 overflow-hidden h-[240px] md:h-auto">
-                                    <div className="p-2 border-b border-border/85 bg-panel-3 flex justify-between items-center text-[10px] font-bold text-foreground shrink-0">
-                                        <span>General (DDG)</span>
-                                        {searching && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
-                                    </div>
-                                    <div className="flex-1 overflow-y-auto p-2">
-                                        {ddgImages.length === 0 && !searching ? (
-                                            <div className="text-center py-12 text-[10px] text-muted-foreground">No general images found.</div>
-                                        ) : (
-                                            <div className="grid grid-cols-2 gap-2">
-                                                {ddgImages.map((img) => {
-                                                    const isUsed = usedImageUrls.includes(img.url);
-                                                    return (
-                                                        <button
-                                                            key={img.url}
-                                                            disabled={isUsed || searching}
-                                                            onClick={() => handleImageClick(img)}
-                                                            className={`relative w-full aspect-video rounded overflow-hidden border bg-black/45 transition ${isUsed
-                                                                ? "border-emerald-500/40 opacity-70 cursor-not-allowed"
-                                                                : "border-border hover:border-primary hover:scale-[1.02] cursor-pointer"
-                                                                }`}
-                                                        >
-                                                            <img src={img.url} className={`w-full h-full object-cover ${isUsed ? "filter saturate-50 brightness-75 rgba-overlay" : ""}`} />
-                                                            {isUsed && (
-                                                                <div className="absolute inset-0 bg-emerald-950/45 backdrop-blur-[0.5px] flex items-center justify-center">
-                                                                    <div className="bg-emerald-500 text-white rounded-full p-1 shadow">
-                                                                        <Check className="h-3 w-3" />
+                                    {/* Column 2: DuckDuckGo images */}
+                                    <div className="flex flex-col border border-border rounded-lg bg-panel-2 overflow-hidden h-[240px] md:h-auto">
+                                        <div className="p-2 border-b border-border/85 bg-panel-3 flex justify-between items-center text-[10px] font-bold text-foreground shrink-0">
+                                            <span>General (DDG)</span>
+                                            {searching && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto p-2">
+                                            {ddgImages.length === 0 && !searching ? (
+                                                <div className="text-center py-12 text-[10px] text-muted-foreground">No general images found.</div>
+                                            ) : (
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    {ddgImages.map((img) => {
+                                                        const isUsed = usedImageUrls.includes(img.url);
+                                                        return (
+                                                            <button
+                                                                key={img.url}
+                                                                disabled={isUsed || searching}
+                                                                onClick={() => handleImageClick(img)}
+                                                                className={`relative w-full aspect-video rounded overflow-hidden border bg-black/45 transition ${isUsed
+                                                                    ? "border-emerald-500/40 opacity-70 cursor-not-allowed"
+                                                                    : "border-border hover:border-primary hover:scale-[1.02] cursor-pointer"
+                                                                    }`}
+                                                            >
+                                                                <img src={img.url} className={`w-full h-full object-cover ${isUsed ? "filter saturate-50 brightness-75 rgba-overlay" : ""}`} />
+                                                                {isUsed && (
+                                                                    <div className="absolute inset-0 bg-emerald-950/45 backdrop-blur-[0.5px] flex items-center justify-center">
+                                                                        <div className="bg-emerald-500 text-white rounded-full p-1 shadow">
+                                                                            <Check className="h-3 w-3" />
+                                                                        </div>
                                                                     </div>
-                                                                </div>
-                                                            )}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
+                                                                )}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            )}
 
                             {/* Confirm Step Buttons */}
                             <div className="flex justify-between items-center border-t border-border pt-3 shrink-0">
@@ -722,7 +848,7 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                                 </button>
                                 <div className="text-[10px] text-muted-foreground italic">
                                     {currentStepIndex === 0
-                                        ? (activeSlot === "top" ? "Click visual image to set Slot 1 (Top)" : "Click visual image to set Slot 2 (Bottom) & advance")
+                                        ? (hookType === "gifs" ? "Click GIF to assign and automatically advance" : activeSlot === "top" ? "Click visual image to set Slot 1 (Top)" : "Click visual image to set Slot 2 (Bottom) & advance")
                                         : "Click visual image to assign and automatically advance"}
                                 </div>
                             </div>
