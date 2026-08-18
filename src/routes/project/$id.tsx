@@ -72,17 +72,20 @@ if (typeof window !== "undefined") {
     }
   };
 
-  // Intercept fetch to track proxy network calls
+  // Intercept fetch to track proxy network calls. Only emit React-facing
+  // log events during an explicit client render — preview Range requests
+  // would otherwise setState on every chunk and blow the update depth.
   const originalFetch = window.fetch;
   window.fetch = async function (input, init) {
     const urlStr = typeof input === "string" ? input : (input as any).url || "";
     const isProxy = urlStr.includes("/api/proxy-image");
-    if (isProxy) {
+    const logProxy = isProxy && (window as any).__clientRenderActive;
+    if (logProxy) {
       (window as any).__addClientRenderLog("proxy", "info", `[PROXY] REQUEST\nurl: ${urlStr}`);
     }
     try {
       const response = await originalFetch(input, init);
-      if (isProxy) {
+      if (logProxy) {
         (window as any).__addClientRenderLog(
           "proxy",
           response.ok ? "success" : "error",
@@ -91,7 +94,7 @@ if (typeof window !== "undefined") {
       }
       return response;
     } catch (err) {
-      if (isProxy) {
+      if (logProxy) {
         (window as any).__addClientRenderLog("proxy", "error", `[PROXY] FAILED\nurl: ${urlStr}\nerror: ${String(err)}`);
       }
       throw err;
@@ -152,18 +155,32 @@ function EditorPage() {
     }
   }, [logs]);
 
-  // Listen to CustomEvent for diagnostic logging
+  // Listen to CustomEvent for diagnostic logging. Batch into one setState per
+  // frame so a burst of proxy/media logs cannot nest React updates.
   useEffect(() => {
+    const pending: any[] = [];
+    let raf = 0;
+    const flush = () => {
+      raf = 0;
+      const batch = pending.splice(0);
+      if (batch.length === 0) return;
+      setLogs((prev) => {
+        let next = prev;
+        for (const entry of batch) {
+          next = entry === null ? [] : [...next, entry];
+        }
+        return next;
+      });
+    };
     const handleLog = (ev: Event) => {
-      const entry = (ev as CustomEvent).detail;
-      if (entry === null) {
-        setLogs([]);
-      } else {
-        setLogs((prev) => [...prev, entry]);
-      }
+      pending.push((ev as CustomEvent).detail);
+      if (!raf) raf = requestAnimationFrame(flush);
     };
     window.addEventListener("client-render-log-added", handleLog);
-    return () => window.removeEventListener("client-render-log-added", handleLog);
+    return () => {
+      window.removeEventListener("client-render-log-added", handleLog);
+      if (raf) cancelAnimationFrame(raf);
+    };
   }, []);
 
   // Set up global error capture
@@ -627,6 +644,9 @@ function EditorPage() {
       window.dispatchEvent(new CustomEvent("client-render-log-added", { detail: null }));
     }
 
+    if (typeof window !== "undefined") {
+      (window as any).__clientRenderActive = true;
+    }
     logDiagnostic("render", "info", `[RENDER] START`);
     logDiagnostic("render", "info", `[RENDER] Preparing`);
     logDiagnostic("render", "info", `[RENDER] Configuration:\n- Composition ID: verticut-video\n- Width: ${COMP_WIDTH}\n- Height: ${COMP_HEIGHT}\n- FPS: ${FPS}\n- Duration: ${audioDuration}s\n- Total frames: ${totalFrames}\n- Current URL: ${window.location.href}\n- Render mode: Browser Client Render\n- Host origin: ${window.location.origin}`);
@@ -750,6 +770,10 @@ function EditorPage() {
       console.error(e);
       setClientRenderError(String(e));
       logDiagnostic("render", "error", `[RENDER] FAILED\nprogress: ${Math.round((clientRenderProgress || 0) * 100)}%\nerror message: ${String(e)}\nstack: ${(e as any)?.stack || ""}`);
+    } finally {
+      if (typeof window !== "undefined") {
+        (window as any).__clientRenderActive = false;
+      }
     }
   }
 

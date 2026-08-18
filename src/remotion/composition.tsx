@@ -110,9 +110,7 @@ export function resolveProxyUrl(url: string) {
   ) {
     return url;
   }
-  if (typeof window !== "undefined" && window.location) {
-    return `${window.location.origin}/api/proxy-image?url=${encodeURIComponent(url)}`;
-  }
+  // Always relative so SSR and the client produce the same string.
   return `/api/proxy-image?url=${encodeURIComponent(url)}`;
 }
 
@@ -150,6 +148,7 @@ function KenBurns({
   overrideTrimStart,
   overrideTrimEnd,
   overrideVideoDuration,
+  isRendering = false,
 }: {
   frame: number;
   duration: number;
@@ -164,23 +163,21 @@ function KenBurns({
   overrideTrimStart?: number;
   overrideTrimEnd?: number;
   overrideVideoDuration?: number;
+  isRendering?: boolean;
 }) {
   const { width: compWidth, height: compHeight } = useVideoConfig();
   const rawVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
-  const actualVideoUrl = rawVideoUrl ? resolveProxyUrl(rawVideoUrl) : undefined;
+  // Only rewrite through the same-origin proxy during WebCodecs export.
+  // Preview keeps the raw URL so @remotion/media does not fire a storm of
+  // Range fetches that log into React state and loop the Player.
+  const actualVideoUrl = rawVideoUrl
+    ? (isRendering ? resolveProxyUrl(rawVideoUrl) : rawVideoUrl)
+    : undefined;
 
   const frameRef = useRef(frame);
   frameRef.current = frame;
 
   useEffect(() => {
-    if (rawVideoUrl && actualVideoUrl) {
-      logDiagnostic(
-        "remotion",
-        "info",
-        `[VIDEO] REQUEST\noriginal: ${rawVideoUrl}\nresolved: ${actualVideoUrl}\nclip ID: ${clip.id}`
-      );
-      return;
-    }
     if (!imageUrl || actualVideoUrl) return;
     const resolvedUrl = resolveProxyUrl(imageUrl);
     const method = imageUrl && /\.gif($|\?)/i.test(imageUrl) ? "AnimatedImage" : "Remotion <Img>";
@@ -207,7 +204,7 @@ function KenBurns({
       logDiagnostic("image", "error", `[IMAGE] FAILED\noriginal URL: ${imageUrl}\nresolved URL: ${resolvedUrl}\ncrossOrigin: anonymous\nloading method: ${method}\nerror message: ${String(err)}\ncurrent frame: ${frameRef.current}\nclip ID: ${clip.id}`);
     };
     img.src = resolvedUrl;
-  }, [imageUrl, rawVideoUrl, actualVideoUrl, clip.id]);
+  }, [imageUrl, actualVideoUrl, clip.id]);
 
   const t = interpolate(frame, [0, duration], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const range = ANIM_SHIFT * intensity;
@@ -300,10 +297,6 @@ function KenBurns({
             trimBefore={Math.round((clip.trimStart ?? 0) * fps)}
             muted={clip.muted ?? true}
             volume={(clip.volume ?? 100) / 100}
-            onError={(error) => {
-              logDiagnostic("remotion", "error", `[VIDEO] FAILED\noriginal: ${rawVideoUrl}\nresolved: ${actualVideoUrl}\nerror: ${error.message || error}`);
-              return undefined;
-            }}
             style={{
               width: "100%",
               height: "100%",
@@ -402,10 +395,6 @@ function KenBurns({
             trimBefore={trimStartFrames}
             muted={clip.muted ?? true}
             volume={(clip.volume ?? 100) / 100}
-            onError={(error) => {
-              logDiagnostic("remotion", "error", `[VIDEO] FAILED\noriginal: ${rawVideoUrl}\nresolved: ${actualVideoUrl}\nerror: ${error.message || error}`);
-              return undefined;
-            }}
             style={{
               width: "100%",
               height: "100%",
@@ -483,12 +472,14 @@ function ClipLayer({
   clipIndex,
   totalClips,
   enableTransitions = true,
+  isRendering = false,
 }: {
   clip: ClipDoc;
   intensity: number;
   clipIndex: number;
   totalClips: number;
   enableTransitions?: boolean;
+  isRendering?: boolean;
 }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -543,6 +534,7 @@ function ClipLayer({
               anchorY={anchorY}
               clip={clip}
               fps={fps}
+              isRendering={isRendering}
             />
           </div>
           <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 3, backgroundColor: "#000", zIndex: 1 }} />
@@ -562,6 +554,7 @@ function ClipLayer({
                 overrideTrimStart={clip.splitScreen.bottomTrimStart}
                 overrideTrimEnd={clip.splitScreen.bottomTrimEnd}
                 overrideVideoDuration={clip.splitScreen.bottomVideoDuration}
+                isRendering={isRendering}
               />
             </div>
           ) : (
@@ -587,6 +580,7 @@ function ClipLayer({
           duration={dur}
           animation={clip.animation}
           intensity={scaledIntensity}
+          isRendering={isRendering}
           imageUrl={clip.imageUrl}
           videoUrl={clip.videoUrl}
           anchorX={anchorX}
@@ -869,6 +863,7 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
               totalClips={clips.length}
               intensity={intensity}
               enableTransitions={enableTransitions && c.kind !== "text" && c.kind !== "solid"}
+              isRendering={isRendering}
             />
           </Sequence>
         );
