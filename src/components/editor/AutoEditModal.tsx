@@ -27,6 +27,10 @@ interface SearchImage {
     id: string;
     url: string;
     title?: string;
+    duration?: number;
+    thumbnail?: string;
+    trimStart?: number;
+    trimEnd?: number;
 }
 
 const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1080&auto=format&fit=crop&q=80";
@@ -63,6 +67,11 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
     const [topSelectedImage, setTopSelectedImage] = useState<SearchImage | null>(null);
     const [bottomSelectedImage, setBottomSelectedImage] = useState<SearchImage | null>(null);
     const [activeSlot, setActiveSlot] = useState<"top" | "bottom">("top");
+    const [pexelsVideos, setPexelsVideos] = useState<SearchImage[]>([]);
+    const [bottomMediaType, setBottomMediaType] = useState<"image" | "video">("image");
+    const [trimVideoItem, setTrimVideoItem] = useState<SearchImage | null>(null);
+    const [trimStart, setTrimStart] = useState(0);
+    const [trimEnd, setTrimEnd] = useState(0);
 
     // Keep track of all image URLs imported during this active session
     const [usedImageUrls, setUsedImageUrls] = useState<string[]>([]);
@@ -387,7 +396,7 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                 }
             } else {
                 // Parallel searches
-                const [resVert, resDDG] = await Promise.all([
+                const [resVert, resDDG, resPexVid] = await Promise.all([
                     fetch("/api/search-media", {
                         method: "POST",
                         headers: { "content-type": "application/json" },
@@ -398,13 +407,20 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                         headers: { "content-type": "application/json" },
                         body: JSON.stringify({ query: queryText, page: 1, size: 24, source: "duckduckgo" }),
                     }).then(async (r) => (r.ok ? r.json() : { images: [] })).catch(() => ({ images: [] })),
+                    fetch("/api/search-media", {
+                        method: "POST",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({ query: queryText, page: 1, size: 24, source: "pexels-video" }),
+                    }).then(async (r) => (r.ok ? r.json() : { images: [] })).catch(() => ({ images: [] })),
                 ]);
 
                 const vImgs: SearchImage[] = Array.isArray(resVert.images) ? resVert.images : [];
                 const dImgs: SearchImage[] = Array.isArray(resDDG.images) ? resDDG.images : [];
+                const pvVideos: SearchImage[] = Array.isArray(resPexVid.images) ? resPexVid.images : [];
 
                 setVerticutImages(vImgs);
                 setDdgImages(dImgs);
+                setPexelsVideos(pvVideos);
 
                 // Pre-fill selections using non-used image candidates
                 const combined = [...vImgs, ...dImgs].filter((img) => !usedImageUrls.includes(img.url));
@@ -419,6 +435,25 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
         } finally {
             setSearching(false);
         }
+    };
+
+    const handleVideoClick = (vid: SearchImage) => {
+        const durationLimit = segments[0]?.end - segments[0]?.start || 3;
+        setTrimVideoItem(vid);
+        setTrimStart(0);
+        setTrimEnd(Math.min(vid.duration || 10, durationLimit));
+    };
+
+    const handleConfirmVideoTrim = () => {
+        if (!trimVideoItem) return;
+        const trimmedVideo: SearchImage = {
+            ...trimVideoItem,
+            trimStart,
+            trimEnd,
+        };
+        setBottomSelectedImage(trimmedVideo);
+        setTrimVideoItem(null);
+        confirmAndAdvanceWithMedia(topSelectedImage || { id: "fallback-stock-image", url: FALLBACK_IMAGE }, trimmedVideo, currentBuildingClips);
     };
 
     const handleOverrideSearch = () => {
@@ -443,7 +478,12 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                 splitScreen: {
                     enabled: true,
                     bottomImageKey: bottom?.id || top.id,
-                    bottomImageUrl: bottom?.url || top.url,
+                    bottomImageUrl: bottom?.thumbnail || bottom?.url || top.url,
+                    bottomVideoKey: bottom?.thumbnail ? bottom?.id : undefined,
+                    bottomVideoUrl: bottom?.thumbnail ? bottom?.url : undefined,
+                    bottomVideoDuration: bottom?.thumbnail ? bottom?.duration : undefined,
+                    bottomTrimStart: bottom?.thumbnail ? (bottom?.trimStart ?? 0) : undefined,
+                    bottomTrimEnd: bottom?.thumbnail ? (bottom?.trimEnd ?? bottom?.duration) : undefined,
                 },
             };
 
@@ -505,7 +545,8 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
     };
 
     return (
-        <Dialog open={open} onOpenChange={(val) => !processing && onOpenChange(val)}>
+        <>
+            <Dialog open={open} onOpenChange={(val) => !processing && onOpenChange(val)}>
             <DialogContent className="fixed left-[50%] translate-x-[-50%] top-6 translate-y-0 sm:top-[50%] sm:translate-y-[-50%] w-[94vw] sm:max-w-[780px] bg-panel border-border text-foreground overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[95vh] p-0 animate-scale-in">
                 <DialogHeader className="border-b border-border p-4">
                     <DialogTitle className="flex items-center justify-between text-sm uppercase tracking-wider font-bold text-foreground w-full pr-6">
@@ -712,9 +753,35 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                                 </div>
                             )}
 
+                            {/* Tabs to select Images vs Videos for Slot 2 */}
+                            {currentStepIndex === 0 && hookType === "split-screens" && activeSlot === "bottom" && (
+                                <div className="flex bg-panel border border-border p-0.5 rounded-md shrink-0 self-start">
+                                    <button
+                                        type="button"
+                                        onClick={() => setBottomMediaType("image")}
+                                        className={`px-3 py-1 rounded text-[10px] transition font-semibold cursor-pointer ${bottomMediaType === "image"
+                                            ? "bg-primary/20 text-primary border border-primary/30"
+                                            : "text-muted-foreground hover:text-foreground"
+                                            }`}
+                                    >
+                                        Images
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setBottomMediaType("video")}
+                                        className={`px-3 py-1 rounded text-[10px] transition font-semibold cursor-pointer ${bottomMediaType === "video"
+                                            ? "bg-primary/20 text-primary border border-primary/30"
+                                            : "text-muted-foreground hover:text-foreground"
+                                            }`}
+                                    >
+                                        Videos (Pexels)
+                                    </button>
+                                </div>
+                            )}
+
                             {currentStepIndex === 0 && hookType === "gifs" ? (
                                 /* Giphy search grid for Gifs Hook */
-                                <div className="flex-1 flex flex-col border border-border rounded-lg bg-panel-2 overflow-hidden h-[320px] md:h-auto">
+                                <div className="flex-1 flex flex-col border border-border rounded-lg bg-panel-2 overflow-hidden h-[320px] md:h-auto font-sans">
                                     <div className="p-2 border-b border-border/85 bg-panel-3 flex justify-between items-center text-[10px] font-bold text-primary shrink-0">
                                         <span>Giphy GIFs</span>
                                         {searching && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
@@ -737,6 +804,48 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                                                                 }`}
                                                         >
                                                             <img src={img.url} className={`w-full h-full object-cover ${isUsed ? "filter saturate-50 brightness-75 rgba-overlay" : ""}`} />
+                                                            {isUsed && (
+                                                                <div className="absolute inset-0 bg-emerald-950/45 backdrop-blur-[0.5px] flex items-center justify-center">
+                                                                    <div className="bg-emerald-500 text-white rounded-full p-1 shadow">
+                                                                        <Check className="h-3 w-3" />
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : bottomMediaType === "video" && activeSlot === "bottom" ? (
+                                /* Pexels Videos Search Grid */
+                                <div className="flex-1 flex flex-col border border-border rounded-lg bg-panel-2 overflow-hidden h-[320px] md:h-auto">
+                                    <div className="p-2 border-b border-border/85 bg-panel-3 flex justify-between items-center text-[10px] font-bold text-primary shrink-0">
+                                        <span>Pexels Videos</span>
+                                        {searching && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto p-2">
+                                        {pexelsVideos.length === 0 && !searching ? (
+                                            <div className="text-center py-12 text-[10px] text-muted-foreground">No videos found.</div>
+                                        ) : (
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                                {pexelsVideos.map((vid) => {
+                                                    const isUsed = usedImageUrls.includes(vid.url);
+                                                    return (
+                                                        <button
+                                                            key={vid.url}
+                                                            disabled={isUsed || searching}
+                                                            onClick={() => handleVideoClick(vid)}
+                                                            className={`relative w-full aspect-video rounded overflow-hidden border bg-black/45 transition ${isUsed
+                                                                ? "border-emerald-500/40 opacity-70 cursor-not-allowed"
+                                                                : "border-border hover:border-primary hover:scale-[1.02] cursor-pointer"
+                                                                }`}
+                                                        >
+                                                            <img src={vid.thumbnail} className={`w-full h-full object-cover ${isUsed ? "filter saturate-50 brightness-75 rgba-overlay" : ""}`} />
+                                                            <div className="absolute bottom-1 right-1 bg-black/70 px-1 py-0.5 rounded text-[8px] text-white">
+                                                                {vid.duration}s
+                                                            </div>
                                                             {isUsed && (
                                                                 <div className="absolute inset-0 bg-emerald-950/45 backdrop-blur-[0.5px] flex items-center justify-center">
                                                                     <div className="bg-emerald-500 text-white rounded-full p-1 shadow">
@@ -875,5 +984,82 @@ export function AutoEditModal({ open, onOpenChange, playerRef }: AutoEditModalPr
                 )}
             </DialogContent>
         </Dialog>
+
+        {trimVideoItem && (
+            <Dialog open={!!trimVideoItem} onOpenChange={(val) => !val && setTrimVideoItem(null)}>
+                <DialogContent className="fixed left-[50%] translate-x-[-50%] top-[50%] translate-y-[-50%] w-[90vw] sm:max-w-[480px] bg-panel border-border text-foreground p-4 rounded-lg flex flex-col z-[9999] animate-scale-in">
+                    <DialogHeader>
+                        <DialogTitle className="text-sm font-semibold flex items-center gap-2">
+                            Trim Video Segment
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 my-2 flex-grow">
+                        <div className="relative aspect-video rounded overflow-hidden bg-black border border-border">
+                            <video
+                                src={trimVideoItem.url}
+                                controls
+                                className="w-full h-full object-contain"
+                                preload="metadata"
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <div className="text-[10px] text-muted-foreground flex justify-between font-mono">
+                                <span>Video Length: {trimVideoItem.duration?.toFixed(1)}s</span>
+                                <span>Layer Limit: {(segments[currentStepIndex]?.end - segments[currentStepIndex]?.start || 3).toFixed(1)}s</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label className="text-[10px] text-muted-foreground block mb-1">Start Trim (sec)</label>
+                                    <input
+                                        type="number"
+                                        value={trimStart}
+                                        onChange={(e) => setTrimStart(Math.max(0, Math.min(trimEnd - 0.1, Number(e.target.value))))}
+                                        className="w-full bg-panel-2 border border-border rounded px-2 py-1 text-xs focus:ring-1 focus:ring-primary focus:outline-none"
+                                        step="0.1"
+                                        min="0"
+                                        max={trimEnd}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] text-muted-foreground block mb-1">End Trim (sec)</label>
+                                    <input
+                                        type="number"
+                                        value={trimEnd}
+                                        onChange={(e) => setTrimEnd(Math.min(trimVideoItem.duration || 100, Math.max(trimStart + 0.1, Number(e.target.value))))}
+                                        className="w-full bg-panel-2 border border-border rounded px-2 py-1 text-xs focus:ring-1 focus:ring-primary focus:outline-none"
+                                        step="0.1"
+                                        min={trimStart}
+                                        max={trimVideoItem.duration || 100}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="text-[11px] text-foreground font-semibold flex justify-between">
+                            <span>Trimmed Clip Duration:</span>
+                            <span className={trimEnd - trimStart < (segments[currentStepIndex]?.end - segments[currentStepIndex]?.start || 0) ? "text-yellow-500 font-semibold" : "text-emerald-500 font-semibold"}>
+                                {(trimEnd - trimStart).toFixed(2)}s {trimEnd - trimStart < (segments[currentStepIndex]?.end - segments[currentStepIndex]?.start || 0) ? "(Will Loop Video)" : ""}
+                            </span>
+                        </div>
+                    </div>
+                    <div className="flex justify-end gap-2 border-t border-border pt-3 mt-1">
+                        <button
+                            type="button"
+                            onClick={() => setTrimVideoItem(null)}
+                            className="px-4 py-2 text-xs border border-border rounded hover:bg-accent transition font-semibold cursor-pointer"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleConfirmVideoTrim}
+                            className="px-4 py-2 text-xs bg-primary text-primary-foreground rounded hover:opacity-90 transition font-semibold cursor-pointer"
+                        >
+                            Add Trimmed Video
+                        </button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        )}
+        </>
     );
 }

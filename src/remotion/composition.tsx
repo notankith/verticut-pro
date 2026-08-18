@@ -147,6 +147,9 @@ function KenBurns({
   anchorY,
   clip,
   fps,
+  overrideTrimStart,
+  overrideTrimEnd,
+  overrideVideoDuration,
 }: {
   frame: number;
   duration: number;
@@ -158,6 +161,9 @@ function KenBurns({
   anchorY: number;
   clip: ClipDoc;
   fps: number;
+  overrideTrimStart?: number;
+  overrideTrimEnd?: number;
+  overrideVideoDuration?: number;
 }) {
   const { width: compWidth, height: compHeight } = useVideoConfig();
   const actualVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
@@ -295,10 +301,10 @@ function KenBurns({
           <AnimatedImage
             src={resolveProxyUrl(imageUrl)}
             {...({ crossOrigin: "anonymous" } as any)}
+            fit="cover"
             style={{
               width: "100%",
               height: "100%",
-              objectFit: "cover",
             }}
           />
         ) : (
@@ -360,11 +366,17 @@ function KenBurns({
   }
 
   if (actualVideoUrl) {
-    const trimStartSec = (clip && clip.trimStart) || 0;
+    const trimStartSec = overrideTrimStart !== undefined ? overrideTrimStart : ((clip && clip.trimStart) || 0);
     const trimStartFrames = Math.round(trimStartSec * fps);
 
-    const vidDurFrames = clip.videoDuration ? Math.max(1, Math.round((clip.videoDuration - trimStartSec) * fps)) : Math.max(1, duration);
-    const loopCount = clip.videoDuration ? Math.ceil(duration / vidDurFrames) : 1;
+    const actualTrimEndSec = overrideTrimEnd !== undefined ? overrideTrimEnd : (clip && clip.trimEnd);
+    const actualVideoDuration = overrideVideoDuration !== undefined ? overrideVideoDuration : (clip && clip.videoDuration);
+
+    const trimmedDuration = (actualTrimEndSec !== undefined && trimStartSec !== undefined) ? (actualTrimEndSec - trimStartSec) : undefined;
+    const loopDurationSec = trimmedDuration ?? (actualVideoDuration ? (actualVideoDuration - trimStartSec) : undefined);
+
+    const vidDurFrames = loopDurationSec ? Math.max(1, Math.round(loopDurationSec * fps)) : Math.max(1, duration);
+    const loopCount = loopDurationSec ? Math.ceil(duration / vidDurFrames) : 1;
 
     const loops = [];
     for (let i = 0; i < loopCount; i++) {
@@ -389,6 +401,7 @@ function KenBurns({
     return (
       <AbsoluteFill style={{
         transform: `translate(${txPercent}%, 0%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        transformOrigin: `${appliedPosX}% ${appliedPosY}%`,
         opacity: appliedOpacity,
         filter: `contrast(${CONTRAST_MULTIPLIER})`,
         willChange: "transform, opacity",
@@ -402,16 +415,17 @@ function KenBurns({
     return (
       <AnimatedImage
         src={imageUrl}
+        fit="cover"
         style={{
           position: "absolute",
           inset: 0,
           width: "100%",
           height: "100%",
-          objectFit: "cover",
           objectPosition: `${appliedPosX}% ${appliedPosY}%`,
           filter: `contrast(${CONTRAST_MULTIPLIER})`,
           opacity: appliedOpacity,
           transform: `translate(${txPercent}%, 0%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+          transformOrigin: `${appliedPosX}% ${appliedPosY}%`,
         }}
       />
     );
@@ -431,6 +445,7 @@ function KenBurns({
         filter: `contrast(${CONTRAST_MULTIPLIER})`,
         opacity: appliedOpacity,
         transform: `translate(${txPercent}%, 0%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        transformOrigin: `${appliedPosX}% ${appliedPosY}%`,
       }}
     />
   );
@@ -510,7 +525,7 @@ function ClipLayer({
             />
           </div>
           <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 3, backgroundColor: "#000", zIndex: 1 }} />
-          {clip.splitScreen.bottomImageUrl ? (
+          {clip.splitScreen.bottomImageUrl || clip.splitScreen.bottomVideoUrl ? (
             <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "50%", overflow: "hidden" }}>
               <KenBurns
                 frame={frame}
@@ -518,11 +533,14 @@ function ClipLayer({
                 animation="pan-right"
                 intensity={scaledIntensity}
                 imageUrl={clip.splitScreen.bottomImageUrl}
-                videoUrl={undefined}
+                videoUrl={clip.splitScreen.bottomVideoUrl}
                 anchorX={50}
                 anchorY={50}
                 clip={clip}
                 fps={fps}
+                overrideTrimStart={clip.splitScreen.bottomTrimStart}
+                overrideTrimEnd={clip.splitScreen.bottomTrimEnd}
+                overrideVideoDuration={clip.splitScreen.bottomVideoDuration}
               />
             </div>
           ) : (

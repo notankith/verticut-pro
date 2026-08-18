@@ -1,6 +1,6 @@
 // Mirror of src/remotion/composition.tsx in plain JSX so the worker can bundle without TS.
 import React from "react";
-import { AbsoluteFill, Audio, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate } from "remotion";
+import { AbsoluteFill, Audio, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate, Video } from "remotion";
 
 const ANIM_SHIFT = 0.6;
 const TRANSITION_FRAMES = 8;
@@ -26,7 +26,21 @@ function getTransitionTransform(kind, progress, mode) {
   return mode === "in" ? { x: 0, y: interpolate(p, [0, 1], [-100, 0]) } : { x: 0, y: interpolate(p, [0, 1], [0, 100]) };
 }
 
-function KenBurns({ frame, duration, animation, intensity, imageUrl, anchorX, anchorY, clip = {} }) {
+function KenBurns({
+  frame,
+  duration,
+  animation,
+  intensity,
+  imageUrl,
+  videoUrl,
+  anchorX,
+  anchorY,
+  clip = {},
+  fps,
+  overrideTrimStart,
+  overrideTrimEnd,
+  overrideVideoDuration,
+}) {
   const t = interpolate(frame, [0, duration], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const range = ANIM_SHIFT * intensity;
   let baseScale = 1.05;
@@ -46,6 +60,54 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, anchorX, an
   }
 
   const posX = Math.max(0, Math.min(100, anchorX));
+  const posY = Math.max(0, Math.min(100, anchorY));
+
+  const actualVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
+
+  if (actualVideoUrl) {
+    const trimStartSec = overrideTrimStart !== undefined ? overrideTrimStart : ((clip && clip.trimStart) || 0);
+    const trimStartFrames = Math.round(trimStartSec * (fps || 30));
+
+    const actualTrimEndSec = overrideTrimEnd !== undefined ? overrideTrimEnd : (clip && clip.trimEnd);
+    const actualVideoDuration = overrideVideoDuration !== undefined ? overrideVideoDuration : (clip && clip.videoDuration);
+
+    const trimmedDuration = (actualTrimEndSec !== undefined && trimStartSec !== undefined) ? (actualTrimEndSec - trimStartSec) : undefined;
+    const loopDurationSec = trimmedDuration ?? (actualVideoDuration ? (actualVideoDuration - trimStartSec) : undefined);
+
+    const vidDurFrames = loopDurationSec ? Math.max(1, Math.round(loopDurationSec * (fps || 30))) : Math.max(1, duration);
+    const loopCount = loopDurationSec ? Math.ceil(duration / vidDurFrames) : 1;
+
+    const loops = [];
+    for (let i = 0; i < loopCount; i++) {
+      loops.push(
+        <Sequence from={i * vidDurFrames} durationInFrames={vidDurFrames} key={i}>
+          <Video
+            src={actualVideoUrl}
+            startFrom={trimStartFrames}
+            muted={clip.muted ?? true}
+            volume={(clip.volume ?? 100) / 100}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              objectPosition: `${posX}% ${posY}%`,
+            }}
+          />
+        </Sequence>
+      );
+    }
+
+    return (
+      <AbsoluteFill style={{
+        transform: `translate(${txPercent}%, ${ty}%) scale(${baseScale})`,
+        transformOrigin: `${posX}% ${posY}%`,
+        willChange: "transform, opacity",
+      }}>
+        {loops}
+      </AbsoluteFill>
+    );
+  }
+
   return (
     <Img
       src={imageUrl}
@@ -55,9 +117,10 @@ function KenBurns({ frame, duration, animation, intensity, imageUrl, anchorX, an
         width: "100%",
         height: "100%",
         objectFit: "cover",
-        objectPosition: `${posX}% ${anchorY}%`,
+        objectPosition: `${posX}% ${posY}%`,
         filter: `contrast(${CONTRAST_MULTIPLIER})`,
         transform: `translate(${txPercent}%, ${ty}%) scale(${baseScale})`,
+        transformOrigin: `${posX}% ${posY}%`,
       }}
     />
   );
@@ -97,10 +160,60 @@ function ClipLayer({ clip, intensity, defaultLabelText, fontSize, clipIndex, tot
     transitionOpacity = Math.max(0, 1 - p);
   }
 
+  if (clip.splitScreen?.enabled) {
+    return (
+      <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
+        <AbsoluteFill style={{ transform: `translate3d(${transitionX}%, ${transitionY}%, 0)`, opacity: transitionOpacity, willChange: "transform, opacity" }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "50%", overflow: "hidden" }}>
+            <KenBurns frame={frame} duration={dur} animation="pan-left" intensity={scaledIntensity} imageUrl={clip.imageUrl} videoUrl={clip.videoUrl} anchorX={anchorX} anchorY={anchorY} clip={clip} fps={fps} />
+          </div>
+          <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 3, backgroundColor: "#000", zIndex: 1 }} />
+          {clip.splitScreen.bottomImageUrl || clip.splitScreen.bottomVideoUrl ? (
+            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "50%", overflow: "hidden" }}>
+              <KenBurns
+                frame={frame}
+                duration={dur}
+                animation="pan-right"
+                intensity={scaledIntensity}
+                imageUrl={clip.splitScreen.bottomImageUrl}
+                videoUrl={clip.splitScreen.bottomVideoUrl}
+                anchorX={50}
+                anchorY={50}
+                clip={clip}
+                fps={fps}
+                overrideTrimStart={clip.splitScreen.bottomTrimStart}
+                overrideTrimEnd={clip.splitScreen.bottomTrimEnd}
+                overrideVideoDuration={clip.splitScreen.bottomVideoDuration}
+              />
+            </div>
+          ) : (
+            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "50%", backgroundColor: "#111" }} />
+          )}
+          {clip.labelText || defaultLabelText ? (
+            <div
+              style={{
+                position: "absolute",
+                top: 40,
+                left: 40,
+                color: "white",
+                fontSize,
+                fontFamily: "Inter, system-ui, sans-serif",
+                fontWeight: 600,
+                textShadow: "0 2px 8px rgba(0,0,0,0.8)",
+              }}
+            >
+              {clip.labelText || defaultLabelText}
+            </div>
+          ) : null}
+        </AbsoluteFill>
+      </AbsoluteFill>
+    );
+  }
+
   return (
     <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
       <AbsoluteFill style={{ transform: `translate3d(${transitionX}%, ${transitionY}%, 0)`, opacity: transitionOpacity, willChange: "transform, opacity" }}>
-        <KenBurns frame={frame} duration={dur} animation={clip.animation} intensity={scaledIntensity} imageUrl={clip.imageUrl} anchorX={anchorX} anchorY={anchorY} />
+        <KenBurns frame={frame} duration={dur} animation={clip.animation} intensity={scaledIntensity} imageUrl={clip.imageUrl} anchorX={anchorX} anchorY={anchorY} clip={clip} fps={fps} />
         <div
           style={{
             position: "absolute",

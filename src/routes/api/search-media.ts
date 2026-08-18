@@ -10,7 +10,7 @@ type SearchRequest = {
   query: string;
   page?: number;
   size?: number;
-  source?: "verticut" | "duckduckgo" | "giphy" | "pexels";
+  source?: "verticut" | "duckduckgo" | "giphy" | "pexels" | "pexels-video";
 };
 
 function clampInt(value: unknown, fallback: number, min: number, max: number) {
@@ -125,6 +125,34 @@ async function queryPexels(keywords: string) {
   }));
 }
 
+async function queryPexelsVideos(keywords: string) {
+  const apiKey = process.env.PEXELS_API_KEY;
+  if (!apiKey) {
+    throw new Error("PEXELS_API_KEY is not configured");
+  }
+  const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(keywords)}&per_page=50`;
+  const response = await fetch(url, {
+    headers: {
+      "Authorization": apiKey
+    }
+  });
+  if (!response.ok) {
+    throw new Error(`Pexels Videos API request failed with status ${response.status}`);
+  }
+  const data = await response.json();
+  if (!data?.videos) return [];
+  return data.videos.map((v: any) => {
+    const file = v.video_files?.find((f: any) => f.quality === "hd") || v.video_files?.[0];
+    return {
+      id: String(v.id),
+      url: file?.link || "",
+      title: v.user?.name || "Pexels Video",
+      duration: v.duration || 0,
+      thumbnail: v.image || ""
+    };
+  });
+}
+
 export const Route = createFileRoute("/api/search-media")({
   server: {
     handlers: {
@@ -203,6 +231,24 @@ export const Route = createFileRoute("/api/search-media")({
               size,
               source,
               images
+            });
+          } catch (err: any) {
+            return new Response(JSON.stringify({ error: err.message }), {
+              status: 500,
+              headers: { "content-type": "application/json" },
+            });
+          }
+        }
+
+        if (source === "pexels-video") {
+          try {
+            const videos = await queryPexelsVideos(query);
+            return Response.json({
+              query,
+              page,
+              size,
+              source,
+              images: videos
             });
           } catch (err: any) {
             return new Response(JSON.stringify({ error: err.message }), {

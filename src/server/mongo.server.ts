@@ -73,6 +73,11 @@ export type ClipDoc = {
     enabled: boolean;
     bottomImageKey?: string;
     bottomImageUrl?: string;
+    bottomVideoKey?: string;
+    bottomVideoUrl?: string;
+    bottomVideoDuration?: number;
+    bottomTrimStart?: number;
+    bottomTrimEnd?: number;
   };
   keyframes?: { time: number; scale?: number; posX?: number; posY?: number; rotation?: number; opacity?: number }[];
   keyframedProps?: string[];
