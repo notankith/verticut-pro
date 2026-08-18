@@ -263,8 +263,8 @@ function KenBurns({
   const appliedScale = (kfScale ?? clip.scale ?? 1) * baseScale;
   // For panning, we apply txPercent to the entire container transform, not objectPosition
   // So appliedPosX and appliedPosY only reflect explicit keyframes or anchor positions for objectPosition
-  const appliedPosX = kfPosX ?? clip.posX ?? anchorX;
-  const appliedPosY = kfPosY ?? clip.posY ?? anchorY;
+  const appliedPosX = kfPosX ?? (clip.layer === "overlay" ? (clip.posX ?? anchorX) : anchorX);
+  const appliedPosY = kfPosY ?? (clip.layer === "overlay" ? (clip.posY ?? anchorY) : anchorY);
   const appliedOpacity = kfOpacity ?? clip.opacity ?? 1;
 
   if (clip.layer === "overlay") {
@@ -302,6 +302,8 @@ function KenBurns({
             src={resolveProxyUrl(imageUrl)}
             {...({ crossOrigin: "anonymous" } as any)}
             fit="cover"
+            width={compWidth}
+            height={compHeight}
             style={{
               width: "100%",
               height: "100%",
@@ -416,6 +418,8 @@ function KenBurns({
       <AnimatedImage
         src={imageUrl}
         fit="cover"
+        width={compWidth}
+        height={compHeight}
         style={{
           position: "absolute",
           inset: 0,
