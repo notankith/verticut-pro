@@ -27,6 +27,7 @@ import { MongoClient, ObjectId } from 'mongodb';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { bundle } from '@remotion/bundler';
 import { renderMedia, selectComposition, getCompositions } from '@remotion/renderer';
+import { VERSION as REMOTION_VERSION } from 'remotion';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -133,11 +134,11 @@ async function getOrCreateBundle(entryPathOverride) {
     bundleCache.delete(entryPoint);
   }
 
-  log('BUNDLE', `Creating new Remotion bundle for ${entryPoint}`);
+  log('BUNDLE', `Creating new Remotion bundle for ${entryPoint} (remotion ${REMOTION_VERSION})`);
   const safeKey = entryPoint.replace(/[^a-z0-9]/gi, '_').slice(-80);
   const bundleUrl = await bundle({
     entryPoint,
-    outDir: path.join(os.tmpdir(), `remotion-bundle-${safeKey}`),
+    outDir: path.join(os.tmpdir(), `remotion-bundle-${REMOTION_VERSION}-${safeKey}`),
     publicDir: fs.existsSync(PUBLIC_DIR) ? PUBLIC_DIR : undefined,
   });
   bundleCache.set(entryPoint, bundleUrl);

@@ -666,18 +666,18 @@ export const VertiCutComposition = ({
           const startFrom = Math.round(seg.srcStart * fps);
           return (
             <Sequence key={seg.id} from={from} durationInFrames={dur}>
-              <Audio src={audioUrl} startFrom={startFrom} pauseWhenBuffering acceptableTimeShiftInSeconds={2} />
+              <Audio src={audioUrl} trimBefore={startFrom} />
             </Sequence>
           );
         })
       ) : audioUrl ? (
         <Sequence from={0} durationInFrames={durationInFrames}>
-          <Audio src={audioUrl} pauseWhenBuffering acceptableTimeShiftInSeconds={2} />
+          <Audio src={audioUrl} />
         </Sequence>
       ) : null}
       {musicUrl ? (
         <Sequence from={0} durationInFrames={durationInFrames}>
-          <Audio src={musicUrl} volume={musicVolume} loop acceptableTimeShiftInSeconds={2} />
+          <Audio src={musicUrl} volume={musicVolume} loop />
         </Sequence>
       ) : null}
       {renderClips(solidClips)}

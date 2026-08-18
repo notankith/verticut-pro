@@ -92,4 +92,4 @@ Status is reported through the same `GET /render/status/:jobId` endpoint.
 
 ## Deployment notes
 
-After pulling new code on the VPS, run `npm install` (the new flow needs `react`, `react-dom`, and a Verticut Remotion entry at `src/remotion-entry.jsx`) and restart the service. Bundle cache is keyed by entry path, so the captioned and Verticut compositions are bundled independently and only once each.
+After pulling new code on the VPS, run `npm install` (the Verticut composition needs `react`, `react-dom`, `@remotion/media`, and `src/remotion-entry.jsx`) and restart the service. All Remotion packages (`remotion`, `@remotion/bundler`, `@remotion/renderer`, `@remotion/media`) must be the same version as the editor app. Bundle cache is keyed by entry path, so the captioned and Verticut compositions are bundled independently and only once each. After a Remotion upgrade, delete leftover `/tmp/remotion-bundle-*` directories so the server does not reuse a stale webpack cache.
