@@ -1,6 +1,7 @@
 // Mirror of src/remotion/composition.tsx in plain JSX so the worker can bundle without TS.
 import React from "react";
-import { AbsoluteFill, Audio, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate, Video } from "remotion";
+import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate } from "remotion";
+import { Audio, Video } from "@remotion/media";
 
 const ANIM_SHIFT = 0.6;
 const TRANSITION_FRAMES = 8;
@@ -83,7 +84,7 @@ function KenBurns({
         <Sequence from={i * vidDurFrames} durationInFrames={vidDurFrames} key={i}>
           <Video
             src={actualVideoUrl}
-            startFrom={trimStartFrames}
+            trimBefore={trimStartFrames}
             muted={clip.muted ?? true}
             volume={(clip.volume ?? 100) / 100}
             style={{

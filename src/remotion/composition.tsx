@@ -1,5 +1,5 @@
-import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate, staticFile, Video, AnimatedImage } from "remotion";
-import { Audio } from "@remotion/media";
+import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate, staticFile, AnimatedImage } from "remotion";
+import { Audio, Video } from "@remotion/media";
 import { useEffect, useRef } from "react";
 import type { ClipDoc, AudioSegment } from "../server/mongo.server";
 import type { TemplateWindow } from "@/lib/templates";
@@ -288,7 +288,7 @@ function KenBurns({
         {isVid ? (
           <Video
             src={actualVideoUrl}
-            startFrom={Math.round((clip.trimStart ?? 0) * fps)}
+            trimBefore={Math.round((clip.trimStart ?? 0) * fps)}
             muted={clip.muted ?? true}
             volume={(clip.volume ?? 100) / 100}
             style={{
@@ -384,7 +384,7 @@ function KenBurns({
         <Sequence from={i * vidDurFrames} durationInFrames={vidDurFrames} key={i}>
           <Video
             src={actualVideoUrl}
-            startFrom={trimStartFrames}
+            trimBefore={trimStartFrames}
             muted={clip.muted ?? true}
             volume={(clip.volume ?? 100) / 100}
             style={{

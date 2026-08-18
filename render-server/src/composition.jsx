@@ -1,7 +1,8 @@
 // Mirror of src/remotion/composition.tsx in plain JSX so the render-server can
 // bundle the VertiCut composition without TypeScript.
 import React from "react";
-import { AbsoluteFill, Audio, Img, Sequence, staticFile, useCurrentFrame, useVideoConfig, interpolate, Video, AnimatedImage } from "remotion";
+import { AbsoluteFill, Img, Sequence, staticFile, useCurrentFrame, useVideoConfig, interpolate, AnimatedImage } from "remotion";
+import { Audio, Video } from "@remotion/media";
 
 const ANIM_SHIFT = 0.6;
 const TRANSITION_FRAMES = 8;
@@ -128,7 +129,7 @@ function KenBurns({
         {actualVideoUrl ? (
           <Video
             src={actualVideoUrl}
-            startFrom={Math.round((clip.trimStart ?? 0) * (fps || 30))}
+            trimBefore={Math.round((clip.trimStart ?? 0) * (fps || 30))}
             muted={clip.muted ?? true}
             volume={(clip.volume ?? 100) / 100}
             style={{
@@ -222,7 +223,7 @@ function KenBurns({
         <Sequence from={i * vidDurFrames} durationInFrames={vidDurFrames} key={i}>
           <Video
             src={actualVideoUrl}
-            startFrom={trimStartFrames}
+            trimBefore={trimStartFrames}
             muted={clip.muted ?? true}
             volume={(clip.volume ?? 100) / 100}
             style={{
