@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, PutBucketCorsCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 let s3: S3Client | null = null;
@@ -57,4 +57,44 @@ export async function uploadBuffer(key: string, buffer: Buffer | Uint8Array, con
   });
   await getClient().send(cmd);
   return publicUrl(key);
+}
+
+// Browser WebCodecs (`renderMediaOnWeb` / @remotion/media) fetches media with
+// `fetch()`, which requires CORS. Custom-domain R2 (media.ankith.studio) does
+// not send ACAO unless a bucket CORS policy is set. Idempotent and cached.
+let corsReady: Promise<void> | null = null;
+
+export function ensureR2Cors(): Promise<void> {
+  if (!corsReady) {
+    corsReady = (async () => {
+      try {
+        await getClient().send(
+          new PutBucketCorsCommand({
+            Bucket: getBucket(),
+            CORSConfiguration: {
+              CORSRules: [
+                {
+                  AllowedOrigins: ["*"],
+                  AllowedMethods: ["GET", "HEAD", "PUT"],
+                  AllowedHeaders: ["*"],
+                  ExposeHeaders: [
+                    "ETag",
+                    "Content-Length",
+                    "Content-Type",
+                    "Content-Range",
+                    "Accept-Ranges",
+                  ],
+                  MaxAgeSeconds: 86400,
+                },
+              ],
+            },
+          }),
+        );
+      } catch (err) {
+        console.error("Failed to apply R2 CORS policy:", err);
+        corsReady = null;
+      }
+    })();
+  }
+  return corsReady;
 }

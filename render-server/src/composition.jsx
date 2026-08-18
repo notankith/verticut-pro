@@ -1,7 +1,7 @@
 // Mirror of src/remotion/composition.tsx in plain JSX so the render-server can
 // bundle the VertiCut composition without TypeScript.
 import React from "react";
-import { AbsoluteFill, Img, Sequence, staticFile, useCurrentFrame, useVideoConfig, interpolate, AnimatedImage } from "remotion";
+import { AbsoluteFill, Img, Sequence, staticFile, useCurrentFrame, useVideoConfig, interpolate } from "remotion";
 import { Audio, Video } from "@remotion/media";
 
 const ANIM_SHIFT = 0.6;
@@ -139,14 +139,12 @@ function KenBurns({
             }}
           />
         ) : isGif ? (
-          <AnimatedImage
+          <Img
             src={imageUrl}
-            fit="cover"
-            width={compWidth}
-            height={compHeight}
             style={{
               width: "100%",
               height: "100%",
+              objectFit: "cover",
             }}
           />
         ) : (
@@ -254,16 +252,14 @@ function KenBurns({
 
   if (isGif) {
     return (
-      <AnimatedImage
+      <Img
         src={imageUrl}
-        fit="cover"
-        width={compWidth}
-        height={compHeight}
         style={{
           position: "absolute",
           inset: 0,
           width: "100%",
           height: "100%",
+          objectFit: "cover",
           objectPosition: `${appliedPosX}% ${appliedPosY}%`,
           filter: `contrast(${CONTRAST_MULTIPLIER})`,
           opacity: appliedOpacity,

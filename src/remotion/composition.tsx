@@ -166,12 +166,21 @@ function KenBurns({
   overrideVideoDuration?: number;
 }) {
   const { width: compWidth, height: compHeight } = useVideoConfig();
-  const actualVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
+  const rawVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
+  const actualVideoUrl = rawVideoUrl ? resolveProxyUrl(rawVideoUrl) : undefined;
 
   const frameRef = useRef(frame);
   frameRef.current = frame;
 
   useEffect(() => {
+    if (rawVideoUrl && actualVideoUrl) {
+      logDiagnostic(
+        "remotion",
+        "info",
+        `[VIDEO] REQUEST\noriginal: ${rawVideoUrl}\nresolved: ${actualVideoUrl}\nclip ID: ${clip.id}`
+      );
+      return;
+    }
     if (!imageUrl || actualVideoUrl) return;
     const resolvedUrl = resolveProxyUrl(imageUrl);
     const method = imageUrl && /\.gif($|\?)/i.test(imageUrl) ? "AnimatedImage" : "Remotion <Img>";
@@ -198,7 +207,7 @@ function KenBurns({
       logDiagnostic("image", "error", `[IMAGE] FAILED\noriginal URL: ${imageUrl}\nresolved URL: ${resolvedUrl}\ncrossOrigin: anonymous\nloading method: ${method}\nerror message: ${String(err)}\ncurrent frame: ${frameRef.current}\nclip ID: ${clip.id}`);
     };
     img.src = resolvedUrl;
-  }, [imageUrl, clip.id]);
+  }, [imageUrl, rawVideoUrl, actualVideoUrl, clip.id]);
 
   const t = interpolate(frame, [0, duration], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const range = ANIM_SHIFT * intensity;
@@ -291,6 +300,10 @@ function KenBurns({
             trimBefore={Math.round((clip.trimStart ?? 0) * fps)}
             muted={clip.muted ?? true}
             volume={(clip.volume ?? 100) / 100}
+            onError={(error) => {
+              logDiagnostic("remotion", "error", `[VIDEO] FAILED\noriginal: ${rawVideoUrl}\nresolved: ${actualVideoUrl}\nerror: ${error.message || error}`);
+              return undefined;
+            }}
             style={{
               width: "100%",
               height: "100%",
@@ -389,6 +402,10 @@ function KenBurns({
             trimBefore={trimStartFrames}
             muted={clip.muted ?? true}
             volume={(clip.volume ?? 100) / 100}
+            onError={(error) => {
+              logDiagnostic("remotion", "error", `[VIDEO] FAILED\noriginal: ${rawVideoUrl}\nresolved: ${actualVideoUrl}\nerror: ${error.message || error}`);
+              return undefined;
+            }}
             style={{
               width: "100%",
               height: "100%",
@@ -416,7 +433,7 @@ function KenBurns({
   if (imageUrl && /\.gif($|\?)/i.test(imageUrl)) {
     return (
       <AnimatedImage
-        src={imageUrl}
+        src={resolveProxyUrl(imageUrl)}
         fit="cover"
         width={compWidth}
         height={compHeight}

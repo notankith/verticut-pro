@@ -338,10 +338,13 @@ function EditorPage() {
   // loaded here it stays decoded for the rest of the session — scrubbing
   // and switching clips never re-downloads.
   useEffect(() => {
+    const isVideoUrl = (u: string) => /\.(mp4|webm|mov|mkv)(\?|$)/i.test(u) || u.includes("/video/");
     const urls = new Set<string>();
     for (const c of clips) {
-      if (c.imageUrl) urls.add(c.imageUrl);
-      if (c.splitScreen?.bottomImageUrl) urls.add(c.splitScreen.bottomImageUrl);
+      if (c.imageUrl && !isVideoUrl(c.imageUrl)) urls.add(c.imageUrl);
+      if (c.splitScreen?.bottomImageUrl && !isVideoUrl(c.splitScreen.bottomImageUrl)) {
+        urls.add(c.splitScreen.bottomImageUrl);
+      }
     }
     const tpl = getTemplateById(settings.activeTemplateId);
     if (tpl?.overlayUrl) {

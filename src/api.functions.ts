@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { randomUUID } from "crypto";
 import { getDb, type ProjectDoc, type SettingsDoc, type ClipDoc, type RenderDoc, type MarkerDoc, type AudioSegment } from "./server/mongo.server";
-import { presignPut, publicUrl } from "./server/r2.server";
+import { presignPut, publicUrl, ensureR2Cors } from "./server/r2.server";
 import { uploadBuffer } from "./server/r2.server";
 import { submitTranscript, getTranscript } from "./server/assemblyai.server";
 import { DEFAULT_TEMPLATE_WINDOW, getTemplateById } from "@/lib/templates";
@@ -24,6 +24,7 @@ async function C<T = unknown>(name: string) {
 export const presignUpload = createServerFn({ method: "POST" })
   .inputValidator((d: { kind: "audio" | "image" | "music" | "video"; ext: string; contentType: string }) => d)
   .handler(async ({ data }) => {
+    void ensureR2Cors();
     const id = randomUUID();
     const safeExt = data.ext.replace(/[^a-z0-9]/gi, "").toLowerCase() || "bin";
     const key = `${data.kind}/${id}.${safeExt}`;
@@ -330,6 +331,7 @@ export const getProject = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => d)
   .handler(async ({ data }): Promise<ProjectFull> => {
     const user = await requireAuthUser();
+    void ensureR2Cors();
     const projects = await C<ProjectDoc>("projects");
     const p = await projects.findOne({ _id: data.id });
     if (!p) throw new Error("Project not found");
