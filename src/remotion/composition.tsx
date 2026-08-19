@@ -1,6 +1,6 @@
-import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate, staticFile, AnimatedImage, getRemotionEnvironment } from "remotion";
+import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate, staticFile, AnimatedImage, getRemotionEnvironment, delayRender, continueRender } from "remotion";
 import { Audio, Video } from "@remotion/media";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ClipDoc, AudioSegment } from "../server/mongo.server";
 import type { TemplateWindow } from "@/lib/templates";
 
@@ -113,14 +113,113 @@ export function resolveProxyUrl(url: string) {
 
   const env = getRemotionEnvironment();
   const isAudio = /\.(wav|mp3|aac|ogg|m4a|flac)($|\?)/i.test(url) || url.includes("/audio/");
+  const isVideo = /\.(mp4|webm|mov|mkv)($|\?)/i.test(url) || url.includes("/video/");
 
-  // For preview: only proxy audio files, don't proxy images/videos (renders can proxy both)
-  if (!env.isRendering && !isAudio) {
+  // Images can always safely be proxied in both preview and render to prevent CORS issues.
+  // Audio files are also proxied in both preview and render.
+  // Video files are only proxied when rendering (env.isRendering === true).
+  const isImage = !isAudio && !isVideo;
+
+  if (!env.isRendering && !isAudio && !isImage) {
     return url;
   }
 
   // Always relative so SSR and the client produce the same string.
   return `/api/proxy-image?url=${encodeURIComponent(url)}`;
+}
+
+function isGifUrl(url?: string) {
+  if (!url) return false;
+  return (
+    /\.gif($|\?)/i.test(url) ||
+    url.startsWith("data:image/gif") ||
+    /giphy\.com/i.test(url)
+  );
+}
+
+// Client-side WebCodecs render does not support CSS object-position
+// (https://www.remotion.dev/docs/client-side-rendering/limitations).
+// Cover-crop with left/top/width/height instead, which are supported.
+function coverRect(
+  containerW: number,
+  containerH: number,
+  mediaW: number,
+  mediaH: number,
+  posX: number,
+  posY: number,
+) {
+  const scale = Math.max(containerW / mediaW, containerH / mediaH);
+  const width = mediaW * scale;
+  const height = mediaH * scale;
+  return {
+    width,
+    height,
+    left: -(width - containerW) * (Math.max(0, Math.min(100, posX)) / 100),
+    top: -(height - containerH) * (Math.max(0, Math.min(100, posY)) / 100),
+  };
+}
+
+function useNaturalSize(src: string | undefined, kind: "image" | "video") {
+  const [measured, setMeasured] = useState<{ src: string; w: number; h: number } | null>(null);
+  const handleRef = useRef<number | null>(null);
+  const size = measured && measured.src === src ? { w: measured.w, h: measured.h } : null;
+
+  // Hold the frame until cover-crop math has real media dimensions.
+  if (src && !size && handleRef.current === null) {
+    handleRef.current = delayRender(`measure-media ${src.slice(0, 96)}`);
+  }
+
+  useEffect(() => {
+    if (!src) {
+      setMeasured(null);
+      return;
+    }
+
+    let cancelled = false;
+    const release = () => {
+      if (handleRef.current === null) return;
+      continueRender(handleRef.current);
+      handleRef.current = null;
+    };
+
+    const apply = (w: number, h: number) => {
+      if (cancelled) return;
+      if (w > 0 && h > 0) setMeasured({ src, w, h });
+      else release();
+    };
+
+    if (kind === "video") {
+      const video = document.createElement("video");
+      video.preload = "metadata";
+      video.muted = true;
+      video.onloadedmetadata = () => apply(video.videoWidth, video.videoHeight);
+      video.onerror = () => release();
+      video.src = src;
+      return () => {
+        cancelled = true;
+        video.removeAttribute("src");
+        video.load();
+        release();
+      };
+    }
+
+    const img = new Image();
+    img.onload = () => apply(img.naturalWidth, img.naturalHeight);
+    img.onerror = () => release();
+    img.src = src;
+    return () => {
+      cancelled = true;
+      release();
+    };
+  }, [src, kind]);
+
+  useEffect(() => {
+    if (!size || handleRef.current === null) return;
+    continueRender(handleRef.current);
+    handleRef.current = null;
+  }, [size]);
+
+  return size;
 }
 
 type TransitionKind = (typeof TRANSITION_DIRECTIONS)[number];
@@ -158,6 +257,8 @@ function KenBurns({
   overrideTrimEnd,
   overrideVideoDuration,
   isRendering = false,
+  viewportWidth,
+  viewportHeight,
 }: {
   frame: number;
   duration: number;
@@ -173,8 +274,12 @@ function KenBurns({
   overrideTrimEnd?: number;
   overrideVideoDuration?: number;
   isRendering?: boolean;
+  viewportWidth?: number;
+  viewportHeight?: number;
 }) {
   const { width: compWidth, height: compHeight } = useVideoConfig();
+  const viewportW = viewportWidth ?? compWidth;
+  const viewportH = viewportHeight ?? compHeight;
   const rawVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
   // Only rewrite through the same-origin proxy during WebCodecs export.
   // Preview keeps the raw URL so @remotion/media does not fire a storm of
@@ -182,6 +287,11 @@ function KenBurns({
   const actualVideoUrl = rawVideoUrl
     ? (isRendering ? resolveProxyUrl(rawVideoUrl) : rawVideoUrl)
     : undefined;
+  const resolvedImageUrl = imageUrl ? resolveProxyUrl(imageUrl) : undefined;
+  const natural = useNaturalSize(
+    actualVideoUrl || resolvedImageUrl,
+    actualVideoUrl ? "video" : "image",
+  );
 
   const frameRef = useRef(frame);
   frameRef.current = frame;
@@ -189,7 +299,7 @@ function KenBurns({
   useEffect(() => {
     if (!imageUrl || actualVideoUrl) return;
     const resolvedUrl = resolveProxyUrl(imageUrl);
-    const method = imageUrl && /\.gif($|\?)/i.test(imageUrl) ? "AnimatedImage" : "Remotion <Img>";
+    const method = isGifUrl(imageUrl) ? "AnimatedImage" : "Remotion <Img>";
 
     // Check duplication
     if (typeof window !== "undefined" && (window as any).__trackImageRequest) {
@@ -281,6 +391,23 @@ function KenBurns({
   const appliedPosX = kfPosX ?? (clip.layer === "overlay" ? (clip.posX ?? anchorX) : anchorX);
   const appliedPosY = kfPosY ?? (clip.layer === "overlay" ? (clip.posY ?? anchorY) : anchorY);
   const appliedOpacity = kfOpacity ?? clip.opacity ?? 1;
+  const layout = natural
+    ? coverRect(viewportW, viewportH, natural.w, natural.h, appliedPosX, appliedPosY)
+    : null;
+  const mediaBox: React.CSSProperties = layout
+    ? {
+      position: "absolute",
+      left: layout.left,
+      top: layout.top,
+      width: layout.width,
+      height: layout.height,
+    }
+    : {
+      position: "absolute",
+      inset: 0,
+      width: "100%",
+      height: "100%",
+    };
 
   if (clip.layer === "overlay") {
     // Render as a sticker centered at appliedPosX%, appliedPosY%
@@ -306,39 +433,22 @@ function KenBurns({
             trimBefore={Math.round((clip.trimStart ?? 0) * fps)}
             muted={clip.muted ?? true}
             volume={(clip.volume ?? 100) / 100}
+            objectFit="cover"
             style={{
               width: "100%",
               height: "100%",
-              objectFit: "cover",
             }}
           />
-        ) : imageUrl && (/\.gif($|\?)/i.test(imageUrl) || imageUrl.startsWith("data:image/gif")) ? (
-          isRendering ? (
-            <Img
-              src={resolveProxyUrl(imageUrl)}
-              crossOrigin="anonymous"
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-              }}
-            />
-          ) : (
-            <AnimatedImage
-              src={resolveProxyUrl(imageUrl)}
-              {...({ crossOrigin: "anonymous" } as any)}
-              fit="cover"
-              width={compWidth}
-              height={compHeight}
-              style={{
-                width: "100%",
-                height: "100%",
-              }}
-            />
-          )
+        ) : isGifUrl(imageUrl) ? (
+          <AnimatedImage
+            src={resolvedImageUrl || ""}
+            fit="cover"
+            width={Math.round(compWidth * 0.4)}
+            height={Math.round(compHeight * 0.225)}
+          />
         ) : (
           <Img
-            src={resolveProxyUrl(imageUrl || "")}
+            src={resolvedImageUrl || ""}
             crossOrigin="anonymous"
             style={{
               width: "100%",
@@ -416,11 +526,10 @@ function KenBurns({
             trimBefore={trimStartFrames}
             muted={clip.muted ?? true}
             volume={(clip.volume ?? 100) / 100}
+            objectFit={layout ? "fill" : "cover"}
             style={{
               width: "100%",
               height: "100%",
-              objectFit: "cover",
-              objectPosition: `${appliedPosX}% ${appliedPosY}%`,
             }}
           />
         </Sequence>
@@ -434,72 +543,54 @@ function KenBurns({
         opacity: appliedOpacity,
         filter: `contrast(${CONTRAST_MULTIPLIER})`,
         willChange: "transform, opacity",
+        overflow: "hidden",
       }}>
-        {loops}
+        <div style={mediaBox}>{loops}</div>
       </AbsoluteFill>
     );
   }
 
-  if (imageUrl && (/\.gif($|\?)/i.test(imageUrl) || imageUrl.startsWith("data:image/gif"))) {
-    if (isRendering) {
-      return (
-        <Img
-          src={resolveProxyUrl(imageUrl)}
-          crossOrigin="anonymous"
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            objectPosition: `${appliedPosX}% ${appliedPosY}%`,
-            filter: `contrast(${CONTRAST_MULTIPLIER})`,
-            opacity: appliedOpacity,
-            transform: `translate(${txPercent}%, 0%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
-            transformOrigin: `${appliedPosX}% ${appliedPosY}%`,
-          }}
-        />
-      );
-    }
-
+  if (isGifUrl(imageUrl)) {
     return (
-      <AnimatedImage
-        src={resolveProxyUrl(imageUrl)}
-        fit="cover"
-        width={compWidth}
-        height={compHeight}
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          objectPosition: `${appliedPosX}% ${appliedPosY}%`,
-          filter: `contrast(${CONTRAST_MULTIPLIER})`,
-          opacity: appliedOpacity,
-          transform: `translate(${txPercent}%, 0%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
-          transformOrigin: `${appliedPosX}% ${appliedPosY}%`,
-        }}
-      />
+      <AbsoluteFill style={{
+        transform: `translate(${txPercent}%, 0%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        transformOrigin: `${appliedPosX}% ${appliedPosY}%`,
+        opacity: appliedOpacity,
+        filter: `contrast(${CONTRAST_MULTIPLIER})`,
+        overflow: "hidden",
+      }}>
+        <div style={mediaBox}>
+          <AnimatedImage
+            src={resolvedImageUrl || ""}
+            fit={layout ? "fill" : "cover"}
+            width={Math.round(layout ? layout.width : viewportW)}
+            height={Math.round(layout ? layout.height : viewportH)}
+          />
+        </div>
+      </AbsoluteFill>
     );
   }
 
   return (
-    <Img
-      src={resolveProxyUrl(imageUrl || "")}
-      crossOrigin="anonymous"
-      style={{
-        position: "absolute",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        objectFit: "cover",
-        objectPosition: `${appliedPosX}% ${appliedPosY}%`,
-        filter: `contrast(${CONTRAST_MULTIPLIER})`,
-        opacity: appliedOpacity,
-        transform: `translate(${txPercent}%, 0%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
-        transformOrigin: `${appliedPosX}% ${appliedPosY}%`,
-      }}
-    />
+    <AbsoluteFill style={{
+      transform: `translate(${txPercent}%, 0%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+      transformOrigin: `${appliedPosX}% ${appliedPosY}%`,
+      opacity: appliedOpacity,
+      filter: `contrast(${CONTRAST_MULTIPLIER})`,
+      overflow: "hidden",
+    }}>
+      <div style={mediaBox}>
+        <Img
+          src={resolvedImageUrl || ""}
+          crossOrigin="anonymous"
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: layout ? "fill" : "cover",
+          }}
+        />
+      </div>
+    </AbsoluteFill>
   );
 }
 
@@ -515,6 +606,8 @@ function ClipLayer({
   totalClips,
   enableTransitions = true,
   isRendering = false,
+  viewportWidth,
+  viewportHeight,
 }: {
   clip: ClipDoc;
   intensity: number;
@@ -522,9 +615,11 @@ function ClipLayer({
   totalClips: number;
   enableTransitions?: boolean;
   isRendering?: boolean;
+  viewportWidth?: number;
+  viewportHeight?: number;
 }) {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const { fps, width: compWidth, height: compHeight } = useVideoConfig();
   const dur = Math.max(1, Math.round(clip.duration * fps));
   const anchorX = clip.anchorX ?? 50;
   const anchorY = clip.anchorY ?? 50;
@@ -577,6 +672,8 @@ function ClipLayer({
               clip={clip}
               fps={fps}
               isRendering={isRendering}
+              viewportWidth={compWidth}
+              viewportHeight={compHeight / 2}
             />
           </div>
           <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 3, backgroundColor: "#000", zIndex: 1 }} />
@@ -597,6 +694,8 @@ function ClipLayer({
                 overrideTrimEnd={clip.splitScreen.bottomTrimEnd}
                 overrideVideoDuration={clip.splitScreen.bottomVideoDuration}
                 isRendering={isRendering}
+                viewportWidth={compWidth}
+                viewportHeight={compHeight / 2}
               />
             </div>
           ) : (
@@ -629,6 +728,8 @@ function ClipLayer({
           anchorY={anchorY}
           clip={clip}
           fps={fps}
+          viewportWidth={viewportWidth}
+          viewportHeight={viewportHeight}
         />
 
       </AbsoluteFill>
@@ -892,7 +993,18 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
   gradientOverlayUrl = DEFAULT_GRADIENT_OVERLAY_URL,
   isRendering = false,
 }) => {
-  const renderClips = (subset: { c: typeof clips[0]; originalIndex: number }[]) => (
+  const { width: compW, height: compH } = useVideoConfig();
+  const templateViewport = templateWindow
+    ? {
+      width: (compW * templateWindow.width) / 100,
+      height: (compH * templateWindow.height) / 100,
+    }
+    : undefined;
+
+  const renderClips = (
+    subset: { c: typeof clips[0]; originalIndex: number }[],
+    viewport?: { width: number; height: number },
+  ) => (
     <>
       {subset.map(({ c, originalIndex }) => {
         const from = Math.round(c.start * fps);
@@ -906,6 +1018,8 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
               intensity={intensity}
               enableTransitions={enableTransitions && c.kind !== "text" && c.kind !== "solid"}
               isRendering={isRendering}
+              viewportWidth={viewport?.width}
+              viewportHeight={viewport?.height}
             />
           </Sequence>
         );
@@ -967,7 +1081,7 @@ export const VertiCutComposition: React.FC<CompositionProps> = ({
             height: `${templateWindow!.height}%`,
           }}
         >
-          {renderClips(mediaClips)}
+          {renderClips(mediaClips, templateViewport)}
         </div>
       ) : (
         renderClips(mediaClips)

@@ -1,7 +1,7 @@
 // Mirror of src/remotion/composition.tsx in plain JSX so the render-server can
 // bundle the VertiCut composition without TypeScript.
-import React from "react";
-import { AbsoluteFill, AnimatedImage, Img, Sequence, staticFile, useCurrentFrame, useVideoConfig, interpolate } from "remotion";
+import React, { useEffect, useState } from "react";
+import { AbsoluteFill, AnimatedImage, Img, Sequence, staticFile, useCurrentFrame, useVideoConfig, interpolate, delayRender, continueRender } from "remotion";
 import { Audio, Video } from "@remotion/media";
 
 const ANIM_SHIFT = 0.6;
@@ -30,6 +30,80 @@ function ClipGif({ src, width, height, fit = "cover" }) {
       fit={fit}
     />
   );
+}
+
+function coverRect(containerW, containerH, mediaW, mediaH, posX, posY) {
+  const scale = Math.max(containerW / mediaW, containerH / mediaH);
+  const width = mediaW * scale;
+  const height = mediaH * scale;
+  return {
+    width,
+    height,
+    left: -(width - containerW) * (Math.max(0, Math.min(100, posX)) / 100),
+    top: -(height - containerH) * (Math.max(0, Math.min(100, posY)) / 100),
+  };
+}
+
+function useNaturalSize(src, kind) {
+  const [measured, setMeasured] = useState(null);
+  const handleRef = React.useRef(null);
+  const size = measured && measured.src === src ? { w: measured.w, h: measured.h } : null;
+
+  if (src && !size && handleRef.current === null) {
+    handleRef.current = delayRender(`measure-media ${String(src).slice(0, 96)}`);
+  }
+
+  useEffect(() => {
+    if (!src) {
+      setMeasured(null);
+      return;
+    }
+
+    let cancelled = false;
+    const release = () => {
+      if (handleRef.current === null) return;
+      continueRender(handleRef.current);
+      handleRef.current = null;
+    };
+
+    const apply = (w, h) => {
+      if (cancelled) return;
+      if (w > 0 && h > 0) setMeasured({ src, w, h });
+      else release();
+    };
+
+    if (kind === "video") {
+      const video = document.createElement("video");
+      video.preload = "metadata";
+      video.muted = true;
+      video.onloadedmetadata = () => apply(video.videoWidth, video.videoHeight);
+      video.onerror = () => release();
+      video.src = src;
+      return () => {
+        cancelled = true;
+        video.removeAttribute("src");
+        video.load();
+        release();
+      };
+    }
+
+    const img = new Image();
+    img.onload = () => apply(img.naturalWidth, img.naturalHeight);
+    img.onerror = () => release();
+    img.src = src;
+    return () => {
+      cancelled = true;
+      release();
+    };
+  }, [src, kind]);
+
+  useEffect(() => {
+    if (!size || handleRef.current === null) return;
+    continueRender(handleRef.current);
+    handleRef.current = null;
+  }, [size]);
+
+  return size;
 }
 
 function getBoundaryTransition(index) {
@@ -64,8 +138,12 @@ function KenBurns({
   overrideTrimStart,
   overrideTrimEnd,
   overrideVideoDuration,
+  viewportWidth,
+  viewportHeight,
 }) {
   const { width: compWidth, height: compHeight } = useVideoConfig();
+  const viewportW = viewportWidth ?? compWidth;
+  const viewportH = viewportHeight ?? compHeight;
   const t = interpolate(frame, [0, duration], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const range = ANIM_SHIFT * intensity;
   let baseScale = 1.05;
@@ -131,6 +209,13 @@ function KenBurns({
 
   const actualVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
   const isGif = isGifUrl(imageUrl);
+  const natural = useNaturalSize(actualVideoUrl || imageUrl, actualVideoUrl ? "video" : "image");
+  const layout = natural
+    ? coverRect(viewportW, viewportH, natural.w, natural.h, appliedPosX, appliedPosY)
+    : null;
+  const mediaBox = layout
+    ? { position: "absolute", left: layout.left, top: layout.top, width: layout.width, height: layout.height }
+    : { position: "absolute", inset: 0, width: "100%", height: "100%" };
 
   if (clip.layer === "overlay") {
     return (
@@ -154,10 +239,10 @@ function KenBurns({
             trimBefore={Math.round((clip.trimStart ?? 0) * (fps || 30))}
             muted={clip.muted ?? true}
             volume={(clip.volume ?? 100) / 100}
+            objectFit="cover"
             style={{
               width: "100%",
               height: "100%",
-              objectFit: "cover",
             }}
           />
         ) : isGif ? (
@@ -245,11 +330,10 @@ function KenBurns({
             trimBefore={trimStartFrames}
             muted={clip.muted ?? true}
             volume={(clip.volume ?? 100) / 100}
+            objectFit={layout ? "fill" : "cover"}
             style={{
               width: "100%",
               height: "100%",
-              objectFit: "cover",
-              objectPosition: `${appliedPosX}% ${appliedPosY}%`,
             }}
           />
         </Sequence>
@@ -263,8 +347,9 @@ function KenBurns({
         opacity: appliedOpacity,
         filter: `contrast(${CONTRAST_MULTIPLIER})`,
         willChange: "transform, opacity",
+        overflow: "hidden",
       }}>
-        {loops}
+        <div style={mediaBox}>{loops}</div>
       </AbsoluteFill>
     );
   }
@@ -276,32 +361,39 @@ function KenBurns({
         transformOrigin: `${appliedPosX}% ${appliedPosY}%`,
         opacity: appliedOpacity,
         filter: `contrast(${CONTRAST_MULTIPLIER})`,
+        overflow: "hidden",
       }}>
-        <ClipGif
-          src={imageUrl}
-          width={compWidth}
-          height={compHeight}
-        />
+        <div style={mediaBox}>
+          <ClipGif
+            src={imageUrl}
+            width={Math.round(layout ? layout.width : viewportW)}
+            height={Math.round(layout ? layout.height : viewportH)}
+            fit={layout ? "fill" : "cover"}
+          />
+        </div>
       </AbsoluteFill>
     );
   }
 
   return (
-    <Img
-      src={imageUrl}
-      style={{
-        position: "absolute",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        objectFit: "cover",
-        objectPosition: `${appliedPosX}% ${appliedPosY}%`,
-        filter: `contrast(${CONTRAST_MULTIPLIER})`,
-        opacity: appliedOpacity,
-        transform: `translate(${txPercent}%, ${ty}%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
-        transformOrigin: `${appliedPosX}% ${appliedPosY}%`,
-      }}
-    />
+    <AbsoluteFill style={{
+      transform: `translate(${txPercent}%, ${ty}%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+      transformOrigin: `${appliedPosX}% ${appliedPosY}%`,
+      opacity: appliedOpacity,
+      filter: `contrast(${CONTRAST_MULTIPLIER})`,
+      overflow: "hidden",
+    }}>
+      <div style={mediaBox}>
+        <Img
+          src={imageUrl}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: layout ? "fill" : "cover",
+          }}
+        />
+      </div>
+    </AbsoluteFill>
   );
 }
 
@@ -309,7 +401,7 @@ const REF_DURATION_SEC = 3.5;
 
 function ClipLayer({ clip, intensity, defaultLabelText, fontSize, clipIndex, totalClips, enableTransitions = true, showLabels = true }) {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const { fps, width: compWidth, height: compHeight } = useVideoConfig();
   const dur = Math.max(1, Math.round(clip.duration * fps));
   const anchorX = clip.anchorX ?? 50;
   const anchorY = clip.anchorY ?? 50;
@@ -344,7 +436,7 @@ function ClipLayer({ clip, intensity, defaultLabelText, fontSize, clipIndex, tot
       <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
         <AbsoluteFill style={{ transform: `translate3d(${transitionX}%, ${transitionY}%, 0)`, opacity: transitionOpacity, willChange: "transform, opacity" }}>
           <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "50%", overflow: "hidden" }}>
-            <KenBurns frame={frame} duration={dur} animation="pan-left" intensity={scaledIntensity} imageUrl={clip.imageUrl} videoUrl={clip.videoUrl} anchorX={anchorX} anchorY={anchorY} clip={clip} fps={fps} />
+            <KenBurns frame={frame} duration={dur} animation="pan-left" intensity={scaledIntensity} imageUrl={clip.imageUrl} videoUrl={clip.videoUrl} anchorX={anchorX} anchorY={anchorY} clip={clip} fps={fps} viewportWidth={compWidth} viewportHeight={compHeight / 2} />
           </div>
           <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 3, backgroundColor: "#000", zIndex: 1 }} />
           {clip.splitScreen.bottomImageUrl || clip.splitScreen.bottomVideoUrl ? (
@@ -363,6 +455,8 @@ function ClipLayer({ clip, intensity, defaultLabelText, fontSize, clipIndex, tot
                 overrideTrimStart={clip.splitScreen.bottomTrimStart}
                 overrideTrimEnd={clip.splitScreen.bottomTrimEnd}
                 overrideVideoDuration={clip.splitScreen.bottomVideoDuration}
+                viewportWidth={compWidth}
+                viewportHeight={compHeight / 2}
               />
             </div>
           ) : (

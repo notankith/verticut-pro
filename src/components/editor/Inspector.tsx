@@ -360,22 +360,39 @@ export function AnimationPanel() {
         />
       </div>
 
-      {/* Anchor point X slider */}
-      <div className="space-y-1.5 border-t border-border pt-3">
-        <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
-          <label>Ken Burns Focus (Anchor X)</label>
-          <span className="font-mono">{(clip.anchorX ?? 50)}%</span>
+      {/* Anchor point sliders — crop focus for cover-fit media */}
+      <div className="space-y-3 border-t border-border pt-3">
+        <div className="space-y-1.5">
+          <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+            <label>Focus X</label>
+            <span className="font-mono">{(clip.anchorX ?? 50)}%</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={clip.anchorX ?? 50}
+            onChange={(e) => updateClip(clip.id, { anchorX: Number(e.target.value) })}
+            className="w-full accent-primary"
+          />
         </div>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          step={1}
-          value={clip.anchorX ?? 50}
-          onChange={(e) => updateClip(clip.id, { anchorX: Number(e.target.value) })}
-          className="w-full accent-primary"
-        />
-        <div className="mt-1.5 flex items-center justify-between">
+        <div className="space-y-1.5">
+          <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+            <label>Focus Y</label>
+            <span className="font-mono">{(clip.anchorY ?? 50)}%</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={clip.anchorY ?? 50}
+            onChange={(e) => updateClip(clip.id, { anchorY: Number(e.target.value) })}
+            className="w-full accent-primary"
+          />
+        </div>
+        <div className="flex items-center justify-between">
           <button
             onClick={() => updateClip(clip.id, { anchorX: 50, anchorY: 50 })}
             className="text-[10px] text-muted-foreground hover:text-foreground"
