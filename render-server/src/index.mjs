@@ -213,6 +213,18 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+app.get('/static/audio/:filename', (req, res) => {
+  const filename = req.params.filename;
+  if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+    return res.status(400).send('Invalid filename');
+  }
+  const filePath = path.join(os.tmpdir(), filename);
+  if (fs.existsSync(filePath)) {
+    return res.sendFile(filePath);
+  }
+  res.status(404).send('Not found');
+});
+
 // Health
 app.get('/health', (_req, res) => {
   res.json({
@@ -697,10 +709,11 @@ async function downloadToTempFile(url, jobId, label) {
     const arrayBuffer = await resp.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const ext = url.match(/\.(wav|mp3|aac|ogg|m4a|flac)(\?|$)/i)?.[1] || 'wav';
-    const tmpPath = path.join(os.tmpdir(), `audio-${jobId}-${label}.${ext}`);
+    const filename = `audio-${jobId}-${label}.${ext}`;
+    const tmpPath = path.join(os.tmpdir(), filename);
     fs.writeFileSync(tmpPath, buffer);
-    const fileUrl = `file://${tmpPath}`;
-    log('DOWNLOAD_AUDIO', `Saved ${label} to ${tmpPath} (${buffer.length} bytes)`);
+    const fileUrl = `http://localhost:${PORT}/static/audio/${filename}`;
+    log('DOWNLOAD_AUDIO', `Saved ${label} to ${tmpPath} (${buffer.length} bytes). Served at: ${fileUrl}`);
     return { localPath: fileUrl, cleanup: () => { try { fs.unlinkSync(tmpPath); } catch { } } };
   } catch (err) {
     log('DOWNLOAD_AUDIO_WARNING', `Failed to pre-download ${label} ${url}: ${err.message}. Using original URL.`);
