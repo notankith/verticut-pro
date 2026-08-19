@@ -342,8 +342,8 @@ function EditorPage() {
 
   // Autosave
   useAutoSave(
-    async (clipsArg, audioDurationArg, audioSegmentsArg) => {
-      await saveProject({ data: { id, clips: clipsArg, audioDuration: audioDurationArg, audioSegments: audioSegmentsArg } });
+    async (clipsArg, audioDurationArg, audioSegmentsArg, transcriptArg) => {
+      await saveProject({ data: { id, clips: clipsArg, audioDuration: audioDurationArg, audioSegments: audioSegmentsArg, transcript: transcriptArg } });
     },
     async (settingsArg) => {
       await saveGlobalSettings({ data: { settings: settingsArg } });
@@ -584,7 +584,7 @@ function EditorPage() {
   async function onExport() {
     setEnqueuing(true);
     try {
-      await saveProject({ data: { id, clips } });
+      await saveProject({ data: { id, clips, transcript: useEditor.getState().transcript } });
       await saveGlobalSettings({ data: { settings } });
       const job = await enqueueRender({ data: { projectId: id } });
       setRenderJob({
@@ -699,7 +699,7 @@ function EditorPage() {
         gradientOverlayUrl: GRADIENT_OVERLAY_URL,
       };
 
-      await saveProject({ data: { id, clips: freshClips } });
+      await saveProject({ data: { id, clips: freshClips, transcript: state.transcript } });
       await saveGlobalSettings({ data: { settings: freshSettings } });
 
       logDiagnostic("render", "info", `[RENDER] Assets ready`);
@@ -1264,7 +1264,7 @@ function EditorPage() {
         <>
           <div className="flex flex-col lg:flex-row flex-grow min-h-0 gap-2 px-2 pb-2 pt-2">
             {/* Left: Tabbed Sidebar with Vertical Selector Strip on the left & Active Panel on the right */}
-            <div className={`shrink-0 select-none transition-all duration-200 ${activeSidebarTab === "search" ? "lg:w-[550px]" : "lg:w-80"} w-full lg:flex ${mobileTab === "media" ? "flex flex-col lg:flex-row" : "hidden"}`}>
+            <div className={`shrink-0 select-none transition-all duration-200 ${activeSidebarTab === "search" ? "lg:w-[550px]" : activeSidebarTab === "captions" ? "lg:w-[400px]" : "lg:w-80"} w-full lg:flex ${mobileTab === "media" ? "flex flex-col lg:flex-row" : "hidden"}`}>
 
               {/* Leftmost narrow vertical tab icon bar */}
               <nav className="w-full lg:w-[68px] bg-panel-2 border border-border lg:border-r-0 rounded-t-md lg:rounded-l-md lg:rounded-tr-none flex flex-row lg:flex-col items-center justify-around lg:justify-start py-2 lg:py-4 gap-2 lg:gap-4.5 shrink-0">
@@ -1334,7 +1334,7 @@ function EditorPage() {
               </nav>
 
               {/* Right Sidebar Content Panel */}
-              <aside className={`w-full lg:shrink-0 overflow-hidden rounded-b-md lg:rounded-r-md lg:rounded-bl-none border border-border bg-panel flex flex-col transition-all duration-200 ${activeSidebarTab === "search" ? "lg:w-[482px]" : "lg:w-[252px]"
+              <aside className={`w-full lg:shrink-0 overflow-hidden rounded-b-md lg:rounded-r-md lg:rounded-bl-none border border-border bg-panel flex flex-col transition-all duration-200 ${activeSidebarTab === "search" ? "lg:w-[482px]" : activeSidebarTab === "captions" ? "lg:w-[332px]" : "lg:w-[252px]"
                 }`}>
                 <div className="flex-1 overflow-hidden min-h-0 relative">
                   <div className={activeSidebarTab !== "search" ? "hidden" : "h-full"}>
@@ -1352,7 +1352,7 @@ function EditorPage() {
                     />
                   </div>
                   <div className={activeSidebarTab !== "captions" ? "hidden" : "h-full"}>
-                    <CaptionsPanel />
+                    <CaptionsPanel onSeek={seekTo} />
                   </div>
                 </div>
               </aside>

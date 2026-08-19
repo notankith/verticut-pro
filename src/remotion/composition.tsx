@@ -3,6 +3,7 @@ import { Audio, Video } from "@remotion/media";
 import { useEffect, useRef, useState } from "react";
 import type { ClipDoc, AudioSegment } from "../server/mongo.server";
 import type { TemplateWindow } from "@/lib/templates";
+import { buildCaptionSegments, type TranscriptWord } from "@/lib/captions";
 
 export type CompositionProps = {
   audioUrl: string;
@@ -99,7 +100,7 @@ function DiagnosticAudio({
   return <Audio {...props} trimBefore={trimBefore ?? startFrom} src={resolveProxyUrl(props.src || "")} onError={handleError} />;
 }
 
-export function resolveProxyUrl(url: string) {
+export function resolveProxyUrl(url: string, isRendering: boolean = false) {
   if (!url) return "";
   if (
     url.startsWith("/") ||
@@ -112,15 +113,12 @@ export function resolveProxyUrl(url: string) {
   }
 
   const env = getRemotionEnvironment();
+  const isCurrentlyRendering = env.isRendering || isRendering;
   const isAudio = /\.(wav|mp3|aac|ogg|m4a|flac)($|\?)/i.test(url) || url.includes("/audio/");
-  const isVideo = /\.(mp4|webm|mov|mkv)($|\?)/i.test(url) || url.includes("/video/");
 
-  // Images can always safely be proxied in both preview and render to prevent CORS issues.
-  // Audio files are also proxied in both preview and render.
-  // Video files are only proxied when rendering (env.isRendering === true).
-  const isImage = !isAudio && !isVideo;
-
-  if (!env.isRendering && !isAudio && !isImage) {
+  // Preview (not rendering) only proxies audio files.
+  // Images and videos are only proxied during active renders (VPS or Browser WebCodecs).
+  if (!isCurrentlyRendering && !isAudio) {
     return url;
   }
 
@@ -281,13 +279,11 @@ function KenBurns({
   const viewportW = viewportWidth ?? compWidth;
   const viewportH = viewportHeight ?? compHeight;
   const rawVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
-  // Only rewrite through the same-origin proxy during WebCodecs export.
-  // Preview keeps the raw URL so @remotion/media does not fire a storm of
-  // Range fetches that log into React state and loop the Player.
+  // Only rewrite through the same-origin proxy during active renders (VPS or WebCodecs).
   const actualVideoUrl = rawVideoUrl
-    ? (isRendering ? resolveProxyUrl(rawVideoUrl) : rawVideoUrl)
+    ? resolveProxyUrl(rawVideoUrl, isRendering)
     : undefined;
-  const resolvedImageUrl = imageUrl ? resolveProxyUrl(imageUrl) : undefined;
+  const resolvedImageUrl = imageUrl ? resolveProxyUrl(imageUrl, isRendering) : undefined;
   const natural = useNaturalSize(
     actualVideoUrl || resolvedImageUrl,
     actualVideoUrl ? "video" : "image",
@@ -298,7 +294,7 @@ function KenBurns({
 
   useEffect(() => {
     if (!imageUrl || actualVideoUrl) return;
-    const resolvedUrl = resolveProxyUrl(imageUrl);
+    const resolvedUrl = resolveProxyUrl(imageUrl, isRendering);
     const method = isGifUrl(imageUrl) ? "AnimatedImage" : "Remotion <Img>";
 
     // Check duplication
@@ -437,6 +433,7 @@ function KenBurns({
             style={{
               width: "100%",
               height: "100%",
+              objectPosition: `${appliedPosX}% ${appliedPosY}%`,
             }}
           />
         ) : isGifUrl(imageUrl) ? (
@@ -454,6 +451,7 @@ function KenBurns({
               width: "100%",
               height: "100%",
               objectFit: "cover",
+              objectPosition: `${appliedPosX}% ${appliedPosY}%`,
             }}
           />
         )}
@@ -530,6 +528,7 @@ function KenBurns({
             style={{
               width: "100%",
               height: "100%",
+              objectPosition: layout ? undefined : `${appliedPosX}% ${appliedPosY}%`,
             }}
           />
         </Sequence>
@@ -587,6 +586,7 @@ function KenBurns({
             width: "100%",
             height: "100%",
             objectFit: layout ? "fill" : "cover",
+            objectPosition: layout ? undefined : `${appliedPosX}% ${appliedPosY}%`,
           }}
         />
       </div>
@@ -746,12 +746,6 @@ function getSourceTime(audioSegments: AudioSegment[], t: number): number {
   return -1;
 }
 
-type TranscriptWord = {
-  text: string;
-  start: number;
-  end: number;
-};
-
 function getWordProgress(
   words: TranscriptWord[],
   wordIndex: number,
@@ -827,46 +821,7 @@ const CaptionOverlay: React.FC<{
 
     if (srcT < 0) return null;
 
-    // Group segments: break on full stops or commas or max lines/words configuration
-    const segments: { words: TranscriptWord[]; lines: TranscriptWord[][]; start: number; end: number; text: string }[] = [];
-    let currentLine: TranscriptWord[] = [];
-    let currentSegmentLines: TranscriptWord[][] = [];
-
-    for (let i = 0; i < transcript.length; i++) {
-      const w = transcript[i];
-      currentLine.push(w);
-
-      const text = w.text.trim();
-      const hasPunctuation = /[.!?,]$/.test(text);
-
-      if (currentLine.length >= captionWordsPerLine || hasPunctuation) {
-        currentSegmentLines.push(currentLine);
-        currentLine = [];
-
-        if (currentSegmentLines.length >= captionLinesPerSegment || hasPunctuation) {
-          segments.push({
-            words: currentSegmentLines.flat(),
-            lines: currentSegmentLines,
-            text: currentSegmentLines.map(line => line.map(x => x.text).join(" ")).join("\n"),
-            start: currentSegmentLines[0][0].start,
-            end: currentSegmentLines[currentSegmentLines.length - 1][currentSegmentLines[currentSegmentLines.length - 1].length - 1].end,
-          });
-          currentSegmentLines = [];
-        }
-      }
-    }
-    if (currentLine.length > 0) {
-      currentSegmentLines.push(currentLine);
-    }
-    if (currentSegmentLines.length > 0) {
-      segments.push({
-        words: currentSegmentLines.flat(),
-        lines: currentSegmentLines,
-        text: currentSegmentLines.map(line => line.map(x => x.text).join(" ")).join("\n"),
-        start: currentSegmentLines[0][0].start,
-        end: currentSegmentLines[currentSegmentLines.length - 1][currentSegmentLines[currentSegmentLines.length - 1].length - 1].end,
-      });
-    }
+    const segments = buildCaptionSegments(transcript, captionWordsPerLine, captionLinesPerSegment);
 
     let activeSegment = null;
     if (segments.length > 0) {

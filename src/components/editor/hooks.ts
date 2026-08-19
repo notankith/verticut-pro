@@ -344,12 +344,13 @@ export function useTimelineActions() {
 
 // Auto-save hook
 export function useAutoSave(
-  save: (clips: ClipDoc[], audioDuration: number, audioSegments: AudioSegment[]) => Promise<void>,
+  save: (clips: ClipDoc[], audioDuration: number, audioSegments: AudioSegment[], transcript: { text: string; start: number; end: number }[]) => Promise<void>,
   saveSettings?: (settings: SettingsDoc) => Promise<void>
 ) {
   const clips = useEditor((s) => s.clips);
   const audioDuration = useEditor((s) => s.audioDuration);
   const audioSegments = useEditor((s) => s.audioSegments);
+  const transcript = useEditor((s) => s.transcript);
   const settings = useEditor((s) => s.settings);
   const setSaving = useEditor((s) => s.set);
   const [first, setFirst] = useState(true);
@@ -368,7 +369,7 @@ export function useAutoSave(
     const t = setTimeout(async () => {
       try {
         await Promise.all([
-          saveRef.current(clips, audioDuration, audioSegments),
+          saveRef.current(clips, audioDuration, audioSegments, transcript),
           saveSettingsRef.current ? saveSettingsRef.current(settings) : Promise.resolve(),
         ]);
         setSaving({ saving: "saved" });
@@ -378,5 +379,5 @@ export function useAutoSave(
     }, 500);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clips, audioDuration, audioSegments, settings]);
+  }, [clips, audioDuration, audioSegments, transcript, settings]);
 }

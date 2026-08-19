@@ -394,7 +394,7 @@ export const getProject = createServerFn({ method: "POST" })
   });
 
 export const saveProject = createServerFn({ method: "POST" })
-  .inputValidator((d: { id: string; clips: ClipDoc[]; audioDuration?: number; audioSegments?: AudioSegment[]; name?: string }) => d)
+  .inputValidator((d: { id: string; clips: ClipDoc[]; audioDuration?: number; audioSegments?: AudioSegment[]; name?: string; transcript?: ProjectDoc["transcript"] }) => d)
   .handler(async ({ data }) => {
     const user = await requireAuthUser();
     const projects = await C<ProjectDoc>("projects");
@@ -410,6 +410,9 @@ export const saveProject = createServerFn({ method: "POST" })
     }
     if (typeof data.name === "string") {
       update.name = data.name;
+    }
+    if (data.transcript && data.transcript.length > 0) {
+      update.transcript = data.transcript;
     }
     await projects.updateOne(
       { _id: data.id },

@@ -4,6 +4,7 @@ import { uploadToR2 } from "@/lib/upload";
 import { useEffect, useRef, useState } from "react";
 import type { ClipDoc } from "@/server/mongo.server";
 import { Trash2, RefreshCw, Image as ImageIcon, Star, Diamond, VolumeX, Volume2, Sparkles, Type, Film } from "lucide-react";
+import { SpellCheckPanel } from "./SpellCheckPanel";
 
 const ANIMS: ClipDoc["animation"][] = ["zoom-in", "zoom-out", "pan-left", "pan-right"];
 
@@ -639,7 +640,43 @@ export function MediaPanel({
 // ----------------------------------------------------
 // CAPTIONS PANEL
 // ----------------------------------------------------
-export function CaptionsPanel() {
+export function CaptionsPanel({ onSeek }: { onSeek?: (t: number) => void }) {
+  const [captionsTab, setCaptionsTab] = useState<"style" | "spellcheck">("style");
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-panel">
+      <div className="grid shrink-0 grid-cols-2 border-b border-border">
+        <button
+          type="button"
+          onClick={() => setCaptionsTab("style")}
+          className={`py-2 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+            captionsTab === "style"
+              ? "border-b-2 border-primary text-primary"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Style
+        </button>
+        <button
+          type="button"
+          onClick={() => setCaptionsTab("spellcheck")}
+          className={`py-2 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+            captionsTab === "spellcheck"
+              ? "border-b-2 border-primary text-primary"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Spell Check
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {captionsTab === "spellcheck" ? <SpellCheckPanel onSeek={onSeek} /> : <CaptionsStylePanel />}
+      </div>
+    </div>
+  );
+}
+
+function CaptionsStylePanel() {
   const { settings } = useEditor();
   const updateSettings = useEditor((s) => s.updateSettings);
 

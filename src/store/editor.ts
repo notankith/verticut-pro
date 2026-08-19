@@ -37,9 +37,14 @@ export type EditorState = {
   audioSegments: AudioSegment[];
 
   set: (patch: Partial<EditorState>) => void;
-  init: (p: Omit<EditorState, "selectedClipId" | "zoom" | "saving" | "past" | "future" | "set" | "init" | "updateClips" | "updateSettings" | "select" | "undo" | "redo" | "currentTime">) => void;
+  init: (p: Omit<EditorState, "selectedClipId" | "zoom" | "saving" | "past" | "future" | "set" | "init" | "updateClips" | "updateSettings" | "updateTranscript" | "select" | "undo" | "redo" | "currentTime">) => void;
   updateClips: (next: ClipDoc[] | ((prev: ClipDoc[]) => ClipDoc[]), record?: boolean) => void;
   updateSettings: (next: Partial<SettingsDoc>) => void;
+  updateTranscript: (
+    next:
+      | EditorState["transcript"]
+      | ((prev: EditorState["transcript"]) => EditorState["transcript"]),
+  ) => void;
   select: (id: string | null) => void;
   undo: () => void;
   redo: () => void;
@@ -128,6 +133,11 @@ export const useEditor = create<EditorState>((set, get) => ({
     }
   },
   updateSettings: (next) => set({ settings: { ...get().settings, ...next } }),
+  updateTranscript: (next) => {
+    const prev = get().transcript;
+    const value = typeof next === "function" ? next(prev) : next;
+    set({ transcript: value });
+  },
   select: (id) => set({ selectedClipId: id, selectedClipIds: id ? [id] : [] }),
   undo: () => {
     const { past, clips, future } = get();
