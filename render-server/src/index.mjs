@@ -213,17 +213,23 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-app.get('/static/audio/:filename', (req, res) => {
+function serveTempFile(req, res) {
   const filename = req.params.filename;
   if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
     return res.status(400).send('Invalid filename');
   }
   const filePath = path.join(os.tmpdir(), filename);
-  if (fs.existsSync(filePath)) {
-    return res.sendFile(filePath);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).send('Not found');
   }
-  res.status(404).send('Not found');
-});
+  // AnimatedImage / <Img> fetch from Remotion's bundle origin, so CORS is required.
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  return res.sendFile(filePath);
+}
+
+app.get('/static/audio/:filename', serveTempFile);
+app.get('/static/media/:filename', serveTempFile);
 
 // Health
 app.get('/health', (_req, res) => {
@@ -672,34 +678,40 @@ async function processRender(jobId, params) {
   }
 }
 
-// Helper to pre-fetch external images in the VPS render pipeline to bypass CORS and Cloudflare blocks
-async function getBase64DataUri(url) {
-  if (!url || !/^https?:\/\//i.test(url)) return url;
-  try {
-    log('DOWNLOAD_ASSET', `Fetching & converting to base64: ${url}`);
-    const resp = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      }
-    });
-    if (!resp.ok) {
-      throw new Error(`HTTP ${resp.status}`);
-    }
-    const arrayBuffer = await resp.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const contentType = resp.headers.get('Content-Type') || 'image/jpeg';
-    return `data:${contentType};base64,${buffer.toString('base64')}`;
-  } catch (err) {
-    log('DOWNLOAD_ASSET_WARNING', `Failed to download/proxy ${url}: ${err.message}. Using original URL.`);
-    return url; // fallback to original URL
-  }
+const MEDIA_EXT_RE = /\.(wav|mp3|aac|ogg|m4a|flac|png|jpe?g|webp|avif|gif|bmp|svg)(\?|$)/i;
+const CONTENT_TYPE_EXT = {
+  'image/gif': 'gif',
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/webp': 'webp',
+  'image/avif': 'avif',
+  'image/bmp': 'bmp',
+  'image/svg+xml': 'svg',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/aac': 'aac',
+  'audio/ogg': 'ogg',
+  'audio/mp4': 'm4a',
+  'audio/flac': 'flac',
+};
+
+function guessMediaExt(url, contentType, fallback) {
+  const fromUrl = url.match(MEDIA_EXT_RE)?.[1]?.toLowerCase();
+  if (fromUrl) return fromUrl === 'jpeg' ? 'jpg' : fromUrl;
+  const ct = (contentType || '').split(';')[0].trim().toLowerCase();
+  return CONTENT_TYPE_EXT[ct] || fallback;
 }
 
-// Helper to pre-download audio/music to local temp file to bypass SSL issues in headless Chromium
-async function downloadToTempFile(url, jobId, label) {
+// Download remote audio/images to a local temp file and serve them over HTTP.
+// GIFs must stay real files (not data: URIs) so Remotion's <AnimatedImage> can
+// decode frames and sync them to the timeline.
+async function downloadToTempFile(url, jobId, label, fallbackExt = 'bin') {
   if (!url || !/^https?:\/\//i.test(url)) return { localPath: url, cleanup: () => { } };
   try {
-    log('DOWNLOAD_AUDIO', `Pre-downloading ${label}: ${url}`);
+    log('DOWNLOAD_MEDIA', `Pre-downloading ${label}: ${url}`);
     const resp = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -708,15 +720,15 @@ async function downloadToTempFile(url, jobId, label) {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const arrayBuffer = await resp.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const ext = url.match(/\.(wav|mp3|aac|ogg|m4a|flac)(\?|$)/i)?.[1] || 'wav';
-    const filename = `audio-${jobId}-${label}.${ext}`;
+    const ext = guessMediaExt(url, resp.headers.get('Content-Type'), fallbackExt);
+    const filename = `media-${jobId}-${label}.${ext}`;
     const tmpPath = path.join(os.tmpdir(), filename);
     fs.writeFileSync(tmpPath, buffer);
-    const fileUrl = `http://localhost:${PORT}/static/audio/${filename}`;
-    log('DOWNLOAD_AUDIO', `Saved ${label} to ${tmpPath} (${buffer.length} bytes). Served at: ${fileUrl}`);
+    const fileUrl = `http://localhost:${PORT}/static/media/${filename}`;
+    log('DOWNLOAD_MEDIA', `Saved ${label} to ${tmpPath} (${buffer.length} bytes). Served at: ${fileUrl}`);
     return { localPath: fileUrl, cleanup: () => { try { fs.unlinkSync(tmpPath); } catch { } } };
   } catch (err) {
-    log('DOWNLOAD_AUDIO_WARNING', `Failed to pre-download ${label} ${url}: ${err.message}. Using original URL.`);
+    log('DOWNLOAD_MEDIA_WARNING', `Failed to pre-download ${label} ${url}: ${err.message}. Using original URL.`);
     return { localPath: url, cleanup: () => { } };
   }
 }
@@ -743,29 +755,35 @@ async function processVerticutRender(jobId, params) {
   try {
     await updateJob({ status: 'rendering', started_at: new Date() });
 
-    // Pre-download audio and music to local temp files to bypass SSL/SNI issues in headless Chromium
-    const audioDownload = await downloadToTempFile(project.audioUrl, jobId, 'voiceover');
+    // Pre-download audio, music, and clip images to local temp files.
+    // Images (especially GIFs) are served as real files — not base64 — so
+    // Remotion can fetch and decode them frame-by-frame.
+    const audioDownload = await downloadToTempFile(project.audioUrl, jobId, 'voiceover', 'wav');
     tempCleanups.push(audioDownload.cleanup);
     const localAudioUrl = audioDownload.localPath;
 
     let localMusicUrl = settings.musicUrl || undefined;
     if (localMusicUrl) {
-      const musicDownload = await downloadToTempFile(localMusicUrl, jobId, 'music');
+      const musicDownload = await downloadToTempFile(localMusicUrl, jobId, 'music', 'mp3');
       tempCleanups.push(musicDownload.cleanup);
       localMusicUrl = musicDownload.localPath;
     }
 
-    // Pre-download external images for clips and split-screen to Base64 to bypass browser fetch blocks during Remotion export
     const processedClips = [];
+    let assetIndex = 0;
     for (const clip of (clips || [])) {
       const copy = { ...clip };
       if (copy.imageUrl) {
-        copy.imageUrl = await getBase64DataUri(copy.imageUrl);
+        const downloaded = await downloadToTempFile(copy.imageUrl, jobId, `clip-${assetIndex++}`, 'jpg');
+        tempCleanups.push(downloaded.cleanup);
+        copy.imageUrl = downloaded.localPath;
       }
       if (copy.splitScreen && copy.splitScreen.bottomImageUrl) {
+        const downloaded = await downloadToTempFile(copy.splitScreen.bottomImageUrl, jobId, `clip-${assetIndex++}`, 'jpg');
+        tempCleanups.push(downloaded.cleanup);
         copy.splitScreen = {
           ...copy.splitScreen,
-          bottomImageUrl: await getBase64DataUri(copy.splitScreen.bottomImageUrl),
+          bottomImageUrl: downloaded.localPath,
         };
       }
       processedClips.push(copy);
@@ -841,6 +859,11 @@ async function processVerticutRender(jobId, params) {
         outputLocation: outputPath,
         inputProps,
         timeoutInMilliseconds: 10 * 60 * 1000,
+        // Remote / localhost GIFs are fetched by <AnimatedImage>; disable CORS
+        // in headless Chromium so decode is not blocked (Remotion docs).
+        chromiumOptions: {
+          disableWebSecurity: true,
+        },
         onProgress: ({ progress }) => {
           const pct = Math.round(progress * 100);
           job.progress = pct;

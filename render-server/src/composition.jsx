@@ -1,7 +1,7 @@
 // Mirror of src/remotion/composition.tsx in plain JSX so the render-server can
 // bundle the VertiCut composition without TypeScript.
 import React from "react";
-import { AbsoluteFill, Img, Sequence, staticFile, useCurrentFrame, useVideoConfig, interpolate } from "remotion";
+import { AbsoluteFill, AnimatedImage, Img, Sequence, staticFile, useCurrentFrame, useVideoConfig, interpolate } from "remotion";
 import { Audio, Video } from "@remotion/media";
 
 const ANIM_SHIFT = 0.6;
@@ -9,6 +9,28 @@ const TRANSITION_FRAMES = 8;
 const CONTRAST_MULTIPLIER = 1.3;
 const TRANSITION_DIRECTIONS = ["slide-left", "slide-right", "slide-up", "slide-down"];
 const DEFAULT_GRADIENT_OVERLAY_URL = "https://i.ibb.co/C5phXbpz/Gradient-Overlay.png";
+
+// <Img> plays GIFs on wall-clock time, so they race during faster-than-realtime
+// renders. <AnimatedImage> maps GIF frames to useCurrentFrame() instead.
+function isGifUrl(url) {
+  if (!url) return false;
+  return (
+    /\.gif($|\?)/i.test(url) ||
+    url.startsWith("data:image/gif") ||
+    /giphy\.com/i.test(url)
+  );
+}
+
+function ClipGif({ src, width, height, fit = "cover" }) {
+  return (
+    <AnimatedImage
+      src={src}
+      width={width}
+      height={height}
+      fit={fit}
+    />
+  );
+}
 
 function getBoundaryTransition(index) {
   return index >= 0 && index < TRANSITION_DIRECTIONS.length ? TRANSITION_DIRECTIONS[index] : null;
@@ -108,7 +130,7 @@ function KenBurns({
   const appliedOpacity = kfOpacity ?? clip.opacity ?? 1;
 
   const actualVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
-  const isGif = imageUrl && (/\.gif($|\?)/i.test(imageUrl) || imageUrl.startsWith("data:image/gif"));
+  const isGif = isGifUrl(imageUrl);
 
   if (clip.layer === "overlay") {
     return (
@@ -139,13 +161,10 @@ function KenBurns({
             }}
           />
         ) : isGif ? (
-          <Img
+          <ClipGif
             src={imageUrl}
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-            }}
+            width={Math.round(compWidth * 0.4)}
+            height={Math.round(compHeight * 0.225)}
           />
         ) : (
           <Img
@@ -252,21 +271,18 @@ function KenBurns({
 
   if (isGif) {
     return (
-      <Img
-        src={imageUrl}
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",
-          objectPosition: `${appliedPosX}% ${appliedPosY}%`,
-          filter: `contrast(${CONTRAST_MULTIPLIER})`,
-          opacity: appliedOpacity,
-          transform: `translate(${txPercent}%, ${ty}%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
-          transformOrigin: `${appliedPosX}% ${appliedPosY}%`,
-        }}
-      />
+      <AbsoluteFill style={{
+        transform: `translate(${txPercent}%, ${ty}%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+        transformOrigin: `${appliedPosX}% ${appliedPosY}%`,
+        opacity: appliedOpacity,
+        filter: `contrast(${CONTRAST_MULTIPLIER})`,
+      }}>
+        <ClipGif
+          src={imageUrl}
+          width={compWidth}
+          height={compHeight}
+        />
+      </AbsoluteFill>
     );
   }
 
