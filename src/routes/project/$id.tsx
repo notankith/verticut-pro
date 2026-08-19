@@ -2157,6 +2157,7 @@ function PreviewAudio({
   loop?: boolean;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const resolvedSrc = useMemo(() => resolveProxyUrl(src), [src]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -2250,12 +2251,12 @@ function PreviewAudio({
       player.removeEventListener("ended", onEnded);
       audio.pause();
     };
-  }, [playerRef, fps, src]);
+  }, [playerRef, fps, resolvedSrc]);
 
   return (
     <audio
       ref={audioRef}
-      src={src}
+      src={resolvedSrc}
       preload="auto"
       loop={loop}
       style={{ display: "none" }}
@@ -2277,6 +2278,7 @@ function PreviewAudioSegment({
   volume?: number;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const resolvedSrc = useMemo(() => resolveProxyUrl(src), [src]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -2406,12 +2408,12 @@ function PreviewAudioSegment({
       player.removeEventListener("ended", onEnded);
       audio.pause();
     };
-  }, [playerRef, fps, src, segment.id, segment.projStart, segment.duration, segment.srcStart]);
+  }, [playerRef, fps, resolvedSrc, segment.id, segment.projStart, segment.duration, segment.srcStart]);
 
   return (
     <audio
       ref={audioRef}
-      src={src}
+      src={resolvedSrc}
       preload="auto"
       style={{ display: "none" }}
     />

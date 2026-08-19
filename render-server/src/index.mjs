@@ -683,6 +683,31 @@ async function getBase64DataUri(url) {
   }
 }
 
+// Helper to pre-download audio/music to local temp file to bypass SSL issues in headless Chromium
+async function downloadToTempFile(url, jobId, label) {
+  if (!url || !/^https?:\/\//i.test(url)) return { localPath: url, cleanup: () => { } };
+  try {
+    log('DOWNLOAD_AUDIO', `Pre-downloading ${label}: ${url}`);
+    const resp = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      }
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const arrayBuffer = await resp.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const ext = url.match(/\.(wav|mp3|aac|ogg|m4a|flac)(\?|$)/i)?.[1] || 'wav';
+    const tmpPath = path.join(os.tmpdir(), `audio-${jobId}-${label}.${ext}`);
+    fs.writeFileSync(tmpPath, buffer);
+    const fileUrl = `file://${tmpPath}`;
+    log('DOWNLOAD_AUDIO', `Saved ${label} to ${tmpPath} (${buffer.length} bytes)`);
+    return { localPath: fileUrl, cleanup: () => { try { fs.unlinkSync(tmpPath); } catch { } } };
+  } catch (err) {
+    log('DOWNLOAD_AUDIO_WARNING', `Failed to pre-download ${label} ${url}: ${err.message}. Using original URL.`);
+    return { localPath: url, cleanup: () => { } };
+  }
+}
+
 // ────────────────────────────────────────────────────────────────
 // VertiCut render processor
 // ────────────────────────────────────────────────────────────────
@@ -699,8 +724,23 @@ async function processVerticutRender(jobId, params) {
     );
   };
 
+  // Track temp files for cleanup
+  const tempCleanups = [];
+
   try {
     await updateJob({ status: 'rendering', started_at: new Date() });
+
+    // Pre-download audio and music to local temp files to bypass SSL/SNI issues in headless Chromium
+    const audioDownload = await downloadToTempFile(project.audioUrl, jobId, 'voiceover');
+    tempCleanups.push(audioDownload.cleanup);
+    const localAudioUrl = audioDownload.localPath;
+
+    let localMusicUrl = settings.musicUrl || undefined;
+    if (localMusicUrl) {
+      const musicDownload = await downloadToTempFile(localMusicUrl, jobId, 'music');
+      tempCleanups.push(musicDownload.cleanup);
+      localMusicUrl = musicDownload.localPath;
+    }
 
     // Pre-download external images for clips and split-screen to Base64 to bypass browser fetch blocks during Remotion export
     const processedClips = [];
@@ -737,8 +777,8 @@ async function processVerticutRender(jobId, params) {
     const durationInFrames = Math.max(fps, Math.round(durationInSeconds * fps));
 
     const inputProps = {
-      audioUrl: project.audioUrl,
-      musicUrl: settings.musicUrl || undefined,
+      audioUrl: localAudioUrl,
+      musicUrl: localMusicUrl,
       musicVolume: (settings.musicVolume ?? 30) / 100,
       clips: processedClips,
       defaultLabelText: settings.defaultLabelText || '',
@@ -843,6 +883,9 @@ async function processVerticutRender(jobId, params) {
       error: msg,
       failed_at: new Date(),
     });
+  } finally {
+    // Clean up temp audio files
+    for (const cleanup of tempCleanups) cleanup();
   }
 }
 

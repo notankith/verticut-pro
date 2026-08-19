@@ -1,4 +1,4 @@
-import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate, staticFile, AnimatedImage } from "remotion";
+import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig, interpolate, staticFile, AnimatedImage, getRemotionEnvironment } from "remotion";
 import { Audio, Video } from "@remotion/media";
 import { useEffect, useRef } from "react";
 import type { ClipDoc, AudioSegment } from "../server/mongo.server";
@@ -110,6 +110,15 @@ export function resolveProxyUrl(url: string) {
   ) {
     return url;
   }
+
+  const env = getRemotionEnvironment();
+  const isAudio = /\.(wav|mp3|aac|ogg|m4a|flac)($|\?)/i.test(url) || url.includes("/audio/");
+
+  // For preview: only proxy audio files, don't proxy images/videos (renders can proxy both)
+  if (!env.isRendering && !isAudio) {
+    return url;
+  }
+
   // Always relative so SSR and the client produce the same string.
   return `/api/proxy-image?url=${encodeURIComponent(url)}`;
 }
@@ -304,17 +313,29 @@ function KenBurns({
             }}
           />
         ) : imageUrl && /\.gif($|\?)/i.test(imageUrl) ? (
-          <AnimatedImage
-            src={resolveProxyUrl(imageUrl)}
-            {...({ crossOrigin: "anonymous" } as any)}
-            fit="cover"
-            width={compWidth}
-            height={compHeight}
-            style={{
-              width: "100%",
-              height: "100%",
-            }}
-          />
+          isRendering ? (
+            <Img
+              src={resolveProxyUrl(imageUrl)}
+              crossOrigin="anonymous"
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+              }}
+            />
+          ) : (
+            <AnimatedImage
+              src={resolveProxyUrl(imageUrl)}
+              {...({ crossOrigin: "anonymous" } as any)}
+              fit="cover"
+              width={compWidth}
+              height={compHeight}
+              style={{
+                width: "100%",
+                height: "100%",
+              }}
+            />
+          )
         ) : (
           <Img
             src={resolveProxyUrl(imageUrl || "")}
@@ -420,6 +441,27 @@ function KenBurns({
   }
 
   if (imageUrl && /\.gif($|\?)/i.test(imageUrl)) {
+    if (isRendering) {
+      return (
+        <Img
+          src={resolveProxyUrl(imageUrl)}
+          crossOrigin="anonymous"
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition: `${appliedPosX}% ${appliedPosY}%`,
+            filter: `contrast(${CONTRAST_MULTIPLIER})`,
+            opacity: appliedOpacity,
+            transform: `translate(${txPercent}%, 0%) scale(${appliedScale}) rotate(${kfRot ?? clip.rotation ?? 0}deg)`,
+            transformOrigin: `${appliedPosX}% ${appliedPosY}%`,
+          }}
+        />
+      );
+    }
+
     return (
       <AnimatedImage
         src={resolveProxyUrl(imageUrl)}
