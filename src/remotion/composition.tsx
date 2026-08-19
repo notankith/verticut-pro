@@ -312,7 +312,7 @@ function KenBurns({
               objectFit: "cover",
             }}
           />
-        ) : imageUrl && /\.gif($|\?)/i.test(imageUrl) ? (
+        ) : imageUrl && (/\.gif($|\?)/i.test(imageUrl) || imageUrl.startsWith("data:image/gif")) ? (
           isRendering ? (
             <Img
               src={resolveProxyUrl(imageUrl)}
@@ -440,7 +440,7 @@ function KenBurns({
     );
   }
 
-  if (imageUrl && /\.gif($|\?)/i.test(imageUrl)) {
+  if (imageUrl && (/\.gif($|\?)/i.test(imageUrl) || imageUrl.startsWith("data:image/gif"))) {
     if (isRendering) {
       return (
         <Img

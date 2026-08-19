@@ -108,7 +108,7 @@ function KenBurns({
   const appliedOpacity = kfOpacity ?? clip.opacity ?? 1;
 
   const actualVideoUrl = videoUrl || (imageUrl && (imageUrl.match(/\.(mp4|webm|mov|mkv)$/i) || imageUrl.includes("/video/")) ? imageUrl : undefined);
-  const isGif = imageUrl && /\.gif($|\?)/i.test(imageUrl);
+  const isGif = imageUrl && (/\.gif($|\?)/i.test(imageUrl) || imageUrl.startsWith("data:image/gif"));
 
   if (clip.layer === "overlay") {
     return (
